@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Chessboard Overview</title>
+    <style>
+        .chessboard {
+            display: grid;
+            grid-template-columns: repeat(8, 50px);
+            grid-template-rows: repeat(8, 50px);
+            gap: 0;
+            border: 2px solid #333;
+            width: 400px;
+            height: 400px;
+        }
+
+        .square {
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .white {
+            background: #f0d9b5;
+        }
+
+        .black {
+            background: #b58863;
+        }
+
+        .highlight {
+            background: #ffeb3b !important;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="chessboard" class="chessboard"></div>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script>
+        const pieces = [
+            ["&#9820;", "&#9822;", "&#9821;", "&#9819;", "&#9818;", "&#9821;", "&#9822;", "&#9820;"],
+            ["&#9823;", "&#9823;", "&#9823;", "&#9823;", "&#9823;", "&#9823;", "&#9823;", "&#9823;"],
+            ["", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", ""],
+            ["&#9817;", "&#9817;", "&#9817;", "&#9817;", "&#9817;", "&#9817;", "&#9817;", "&#9817;"],
+            ["&#9814;", "&#9816;", "&#9815;", "&#9813;", "&#9812;", "&#9815;", "&#9816;", "&#9814;"]
+        ];
+
+        const board = document.getElementById('chessboard');
+        const squares = [];
+
+        for (let row = 0; row < 8; row++) {
+            squares[row] = [];
+            for (let col = 0; col < 8; col++) {
+                const square = document.createElement('div');
+                square.className = 'square ' + ((row + col) % 2 === 0 ? 'white' : 'black');
+                square.dataset.row = row;
+                square.dataset.col = col;
+                square.innerHTML = pieces[row][col];
+                board.appendChild(square);
+                squares[row][col] = square;
+
+                // Listen for lift piece (mousedown)
+                square.addEventListener('mousedown', function (e) {
+                    if (square.innerHTML.trim() !== "") {
+                        alert(`Lifted piece at (${row}, ${col})`);
+                    }
+                });
+
+                // Listen for change square color (double click)
+                square.addEventListener('dblclick', function (e) {
+                    square.classList.toggle('highlight');
+                });
+            }
+        }
+
+        // Socket.IO client
+        const socket = io();
+
+        // Track lifted piece
+        let liftedPiece = null;
+        let liftedFrom = null;
+
+        // Listen for PieceLiftedEvent
+        socket.on('board_event.PieceLiftedEvent', function (data) {
+            // data: {square: [row, col], color: ...}
+            const [row, col] = data.square;
+            liftedPiece = pieces[row][col];
+            liftedFrom = [row, col];
+            // Visually indicate lifted piece
+            squares[row][col].classList.add('highlight');
+        });
+
+        // Listen for PiecePlacedEvent
+        socket.on('board_event.PiecePlacedEvent', function (data) {
+            // data: {square: [row, col], color: ...}
+            const [row, col] = data.square;
+            if (liftedPiece && liftedFrom) {
+                // Remove piece from original square
+                pieces[liftedFrom[0]][liftedFrom[1]] = "";
+                squares[liftedFrom[0]][liftedFrom[1]].innerHTML = "";
+                squares[liftedFrom[0]][liftedFrom[1]].classList.remove('highlight');
+
+                // Place piece on new square
+                pieces[row][col] = liftedPiece;
+                squares[row][col].innerHTML = liftedPiece;
+                squares[row][col].classList.remove('highlight');
+
+                // Reset lifted state
+                liftedPiece = null;
+                liftedFrom = null;
+            }
+        });
+    </script>
+</body>
+
+</html>

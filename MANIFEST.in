@@ -1,0 +1,5 @@
+recursive-include chessboard/api/templates *.html
+recursive-include chessboard/api/static *.js
+recursive-include chessboard/api/static *.html
+recursive-include chessboard/api/static *.css
+recursive-include chessboard/api/static *.ico

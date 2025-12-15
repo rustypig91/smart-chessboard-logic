@@ -1,0 +1,10 @@
+chess==1.11.2
+flask==3.1.2
+flask-socketio==5.3.6
+nmcli==1.5.0
+pyserial==3.5
+keyboard==0.13.5
+rpi-ws281x==5.0.0
+RPi.GPIO==0.7.1
+simple-websocket==1.1.0
+psutil==7.0.0

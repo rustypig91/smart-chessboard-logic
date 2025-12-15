@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Chessboard Simulator</title>
+
+    <script src="{{ url_for('static', filename='chessboard.js')}}"></script>
+    <script src="{{ url_for('static', filename='socket.io.min.js')}}"></script>
+    <script src="{{ url_for('static', filename='events.js')}}"></script>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='chessboard.css')}}">
+    <style>
+        body {
+            /* background: #4d4d4d; */
+            background-color: #333;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: row;
+            gap: 2em;
+            justify-content: center;
+            align-items: flex-start;
+            width: 100vw;
+            height: 100vh;
+            flex-wrap: nowrap;
+        }
+
+        .storage {
+            border: 2px dashed #888;
+            padding: 8px;
+            width: 120px;
+            height: 400px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            background: #f5f5f5;
+        }
+
+        .white-button {
+            background-color: #f00;
+            border: 1px solid #000;
+            cursor: pointer;
+            width: 75px;
+            height: 75px;
+            position: absolute;
+            bottom: 0;
+            right: 0;
+        }
+
+        .black-button {
+            background-color: #f00;
+            border: 1px solid #000;
+            cursor: pointer;
+            width: 75px;
+            height: 75px;
+            position: absolute;
+            top: 0;
+            right: 0;
+        }
+
+        .display-panel {
+            width: 260px;
+            height: 340px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #222;
+            border: 2px solid #555;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.4);
+        }
+
+        .display-panel iframe {
+            width: 240px;
+            height: 320px;
+            border: none;
+            background: #000;
+            border-radius: 4px;
+        }
+    </style>
+    <script>
+        // Track lifted piece
+        let liftedPiece = null;
+        let liftedFrom = null;
+        let sensorVoltageWhite = -0.5;
+        let sensorVoltageEmpty = 0.0;
+        let sensorVoltageBlack = 0.5;
+
+        function timeButtonPress(color) {
+            console.log("Time button pressed for color:", color);
+            sendEvent("TimeButtonPressedEvent", {
+                color: color
+            });
+        }
+
+        function whiteButtonHandler() {
+            timeButtonPress("white");
+        }
+
+        function blackButtonHandler() {
+            timeButtonPress("black");
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const boardDiv = document.getElementById("chessboard");
+            initializeBoard(boardDiv, 590);
+
+            let pieceStorageDiv = document.getElementById("piece-storage");
+        });
+
+    </script>
+</head>
+
+<body>
+    <div class="container">
+        <div class="border">
+            <div id="chessboard"></div>
+            <div id="white-button" class="white-button" onclick="whiteButtonHandler()"></div>
+            <div id="black-button" class="black-button" onclick="blackButtonHandler()"></div>
+        </div>
+
+        <div id="piece-storage" class="storage" data-square_index="1000" ondragover="_dragOverHandler(event)"
+            ondragleave="_dragLeaveHandler(event)"></div>
+
+        <div class="display-panel">
+            <iframe src="{{ url_for('home') }}" title="240x320 Display"></iframe>
+        </div>
+    </div>
+</body>
+
+</html>

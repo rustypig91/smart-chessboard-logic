@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=240, initial-scale=1.0">
+    <title>Chessboard Display</title>
+
+    <script src="{{ url_for('static', filename='compatability.js')}}"></script>
+    <script src="{{ url_for('static', filename='display-240x320/buttons.js')}}"></script>
+    <script src="{{ url_for('static', filename='display-240x320/keyboards.js')}}"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='events.js')}}"></script>
+
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='display-240x320/style.css')}}">
+</head>
+
+<body>
+    <div class="container" style="position:relative;">
+
+        <div id="loading-overlay"
+            style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:100; justify-content:center; align-items:center; flex-direction:column;">
+            <div class="css-spinner"></div>
+            <div style="color:#f5f5f5; font-size:12px; margin-top:12px;">
+                Loading<span id="loading-msg-dots"></span>
+            </div>
+        </div>
+        <div class="content">
+            <!-- Status bar -->
+            <div class="status-bar">
+                <div class="status-bar-left">
+                    <span id="current-time"></span>
+                </div>
+                <div class="status-bar-right">
+                    <div class="wifi-info">
+                        <span class="wifi-icon" id="wifi-icon"></span>
+                        <span id="wifi-name" style="font-size: 9px;">ChessBoard</span>
+                        <div class="status-indicator" id="status-indicator"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Menu View -->
+            <div id="main-view" class="view active">
+                <div class="menu">
+                    <div class="menu-item selected" data-next-view="game-overview-view">
+                        <div>
+                            <h3>Resume Game</h3>
+                            <p>Continue current game</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-next-view="new-game-view">
+                        <div>
+                            <h3>New Game</h3>
+                            <p>Start a new chess game</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-action="game-history">
+                        <div>
+                            <h3>Game History</h3>
+                            <p>View previous games</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-next-view="settings-view">
+                        <div>
+                            <h3>Settings</h3>
+                            <p>Configure board settings</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-action="power-off">
+                        <div>
+                            <h3>Power Off</h3>
+                            <p>Power off the system</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Submenu -->
+            <div id="settings-view" class="view">
+                <div class="view-header">Settings</div>
+                <div class="menu">
+                    <div class="submenu-item selected" data-next-view="wifi-config-view">
+                        <div>
+                            <h4>WiFi Configuration</h4>
+                            <p>Change network settings</p>
+                        </div>
+                    </div>
+                    <div class="submenu-item" data-action="board-settings" data-next-view="board-settings-view">
+                        <div>
+                            <h4>Board Settings</h4>
+                            <p>Configure LED brightness, colors</p>
+                        </div>
+                    </div>
+                    <div class="submenu-item" data-action="display-settings">
+                        <div>
+                            <h4>Display Settings</h4>
+                            <p>Adjust screen preferences</p>
+                        </div>
+                    </div>
+                    <div class="submenu-item" data-action="about">
+                        <div>
+                            <h4>About</h4>
+                            <p>System information</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings -> WiFi Configuration -->
+            <div id="wifi-config-view" class="view">
+                <div class="view-header">WiFi Configuration</div>
+                <div class="menu">
+                    <div class="submenu-item selected" data-next-view="wifi-networks-view" data-action="scan-networks">
+                        <div>
+                            <h4>Scan Networks</h4>
+                            <p>Search for available WiFi networks</p>
+                        </div>
+                    </div>
+                    <div class="submenu-item" data-action="current-network">
+                        <div>
+                            <h4>Current Network</h4>
+                            <p>View connection details</p>
+                        </div>
+                    </div>
+                    <div class="submenu-item" data-next-view="add-network-view">
+                        <div>
+                            <h4>Add Network Manually</h4>
+                            <p>Enter SSID and password</p>
+                        </div>
+                    </div>
+                    <div class="submenu-item" data-action="forget-network">
+                        <div>
+                            <h4>Forget Network</h4>
+                            <p>Remove saved network</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings ->WiFi Configuration -> Networks View -->
+            <div id="wifi-networks-view" class="view">
+                <div class="view-header">Available Networks</div>
+                <div class="menu" id="networks-list">
+                    <!-- Dynamically populated list of networks -->
+                </div>
+            </div>
+
+            <!-- Settings -> WiFi Configuration -> Add Network View (Example of deeper submenu) -->
+            <div id="add-network-view" class="view">
+                <div class="view-header">Add Network</div>
+                <div class="menu">
+                    <div class="submenu-item selected" data-keyboard-output="ssid-input"
+                        data-keyboard-title="Enter Network Name">
+                        <div>
+                            <h4>Network Name (SSID)</h4>
+                            <div class="input-field" id="ssid-input"></div>
+                        </div>
+                    </div>
+                    <div class="submenu-item" data-keyboard-output="password-input"
+                        data-keyboard-title="Enter Password">
+                        <div>
+                            <h4>Password</h4>
+                            <div class="input-field" id="password-input"></div>
+                        </div>
+                    </div>
+                    <div class="submenu-item" data-action="connect-network">
+                        <div>
+                            <h4>Connect</h4>
+                            <p>Save and connect to network</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings -> Board Settings-->
+            <div id="board-settings-view" class="view">
+                <div class="view-header">Board Settings</div>
+                <div class="menu">
+                    <!-- Board settings generated dynamically from /api/settings -->
+                </div>
+            </div>
+
+            <!-- New Game View -->
+            <div id="new-game-view" class="view">
+                <div class="view-header">New Game</div>
+                <div class="menu">
+                    <div class="menu-item selected" data-action="start-game" data-next-view="game-overview-view">
+                        <div>
+                            <h3>Start Game</h3>
+                            <p>Begin a new chess game</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-next-view="select-opponent-view">
+                        <div>
+                            <h3>Opponent</h3>
+                            <p id="opponent-type">Human</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-action="set-time">
+                        <div>
+                            <h3>Time</h3>
+
+                            <p id="time-setting">No limit</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- New Game -> Select Opponent View -->
+            <div id="select-opponent-view" class="view">
+                <div class="view-header">Select Opponent</div>
+                <div class="menu">
+                    <div class="menu-item selected" data-action="set-opponent-human">
+                        <div>
+                            <h3>Human</h3>
+                            <p>Play against another person</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-next-view="display-computers-view">
+                        <div>
+                            <h3>Computer</h3>
+                            <p>Play against AI</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- New Game -> Select Opponent -> Computers View -->
+            <div id="display-computers-view" class="view">
+                <div class="view-header">Select Computer Opponent</div>
+                <div id="computers-menu" class="menu">
+                </div>
+            </div>
+            <script>
+                document.addEventListener("DOMContentLoaded", () => {
+                    apiCall('/api/game/bots', null, function (data) {
+                        const computersMenu = document.getElementById('computers-menu');
+                        data.bots.forEach((bot, index) => {
+                            const item = document.createElement('div');
+                            item.className = 'menu-item';
+                            if (index === 0) item.classList.add('selected');
+                            item.dataset.action = 'set-opponent-computer';
+                            item.dataset.computerLevel = bot;
+                            item.innerHTML = `
+                                    <div>
+                                        <h3>${bot}</h3>
+                                    </div>
+                                `;
+                            console.log('Adding computer opponent:', bot);
+                            computersMenu.appendChild(item);
+                        });
+                    });
+                });
+            </script>
+
+            <!-- New Game -> Start Game -> Game Overview View -->
+            <div id="game-overview-view" class="view">
+                <div class="view-header">Game Overview</div>
+                <div style="padding:6px; display:flex; flex-direction:column; gap:8px; position:relative;">
+                    <div id="pause-overlay"
+                        style="display:none; position:absolute; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.45); z-index:10; align-items:center; justify-content:center;">
+                        <div style="font-size:48px; color:#fff; line-height:1;">⏸</div>
+                    </div>
+                    <div id="black-panel"
+                        style="width:100%; background:#1a1a1a; border:0px solid #8b7355; border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:6px;">
+                        <h2 style="margin:0; font-size:16px; color:#f5f5f5;">Black</h2>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span id="black-name" style="font-size:12px; color:#f5f5f5;">Human</span>
+                            <span id="black-clock" style="font-size:26px; color:#fff; font-weight:600;">00:00</span>
+                        </div>
+                    </div>
+                    <div class="players-divider" style="height:1px; background:#444; margin:2px 0 2px 0;"></div>
+                    <div id="white-panel"
+                        style="width:100%; background:#1a1a1a; border:0px solid #8b7355; border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:6px;">
+                        <h2 style="margin:0; font-size:16px; color:#f5f5f5;">White</h2>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span id="white-name" style="font-size:12px; color:#f5f5f5;">Human-</span>
+                            <span id="white-clock" style="font-size:26px; color:#fff; font-weight:600;">00:00</span>
+                        </div>
+                    </div>
+
+                    <div style="text-align:center; font-size:12px; color:#fff; margin-top:2px;" id="last-move">Last: -
+                    </div>
+                </div>
+            </div>
+            <script>
+                let lastGameState = null;
+                let lastGameStateReceivedTime = null;
+
+                function handleGameStateEvent(data) {
+                    console.log("Received GameStateEvent:", data);
+
+                    lastGameState = data;
+                    lastGameStateReceivedTime = Date.now();
+
+                    const pauseOverlay = document.getElementById('pause-overlay');
+                    if (pauseOverlay) {
+                        pauseOverlay.style.display = data.clock_paused ? 'flex' : 'none';
+                    }
+
+                    const lastMoveEl = document.getElementById('last-move');
+                    if (lastMoveEl) lastMoveEl.textContent = `Last: ${data.last_move || '-'}`;
+
+                    const whiteNameEl = document.getElementById('white-name');
+                    const blackNameEl = document.getElementById('black-name');
+                    if (whiteNameEl) whiteNameEl.textContent = `${data.white_player}`;
+                    if (blackNameEl) blackNameEl.textContent = `${data.black_player}`;
+
+                    const whitePanel = document.getElementById('white-panel');
+                    const blackPanel = document.getElementById('black-panel');
+                    const blackClockEl = document.getElementById('black-clock');
+                    const whiteClockEl = document.getElementById('white-clock');
+
+                    if (whitePanel && blackPanel && blackClockEl && whiteClockEl) {
+                        const activeBorder = '#d4b88c';
+                        const inactiveBorder = '#8b7355';
+                        const activeBg = '#444';
+                        const inactiveBg = '#1a1a1a';
+                        const isWhiteTurn = data.turn === 'white';
+
+                        whiteClockEl.style.color = isWhiteTurn ? '#fff' : '#aaa';
+                        blackClockEl.style.color = isWhiteTurn ? '#aaa' : '#fff';
+
+                        whitePanel.style.borderColor = isWhiteTurn ? activeBorder : inactiveBorder;
+                        blackPanel.style.borderColor = isWhiteTurn ? inactiveBorder : activeBorder;
+                        whitePanel.style.background = isWhiteTurn ? activeBg : inactiveBg;
+                        blackPanel.style.background = isWhiteTurn ? inactiveBg : activeBg;
+                    }
+
+                    if (data.is_game_started && !data.is_game_paused) {
+                        showView('game-overview-view');
+                    }
+                }
+
+                addBoardEventListener('GameStateChangedEvent', handleGameStateEvent)
+
+                document.addEventListener("DOMContentLoaded", () => {
+                    setInterval(() => {
+                        if (currentView !== 'game-overview-view') return;
+
+                        if (lastGameStateReceivedTime == null) {
+                            console.warn("Clock update called before initialization");
+                            return;
+                        }
+                        const now = Date.now();
+                        const dt = (now - lastGameStateReceivedTime) / 1000.0;
+
+
+                        let whiteTime;
+                        if (lastGameState.white_time_left != 'inf') {
+                            // Both players have unlimited time; no need to update clocks
+                            whiteTime = Math.max(0.0, lastGameState.white_time_left - (lastGameState.turn === 'white' && !lastGameState.clock_paused ? dt : 0));
+                        } else {
+                            whiteTime = lastGameState.white_time_elapsed + (dt * (lastGameState.turn === 'white' && !lastGameState.clock_paused ? 1 : 0));
+                        }
+
+                        let blackTime;
+                        if (lastGameState.black_time_left != 'inf') {
+                            // Both players have unlimited time; no need to update clocks
+                            blackTime = Math.max(0.0, lastGameState.black_time_left - (lastGameState.turn === 'black' && !lastGameState.clock_paused ? dt : 0));
+                        } else {
+                            blackTime = lastGameState.black_time_elapsed + (dt * (lastGameState.turn === 'black' && !lastGameState.clock_paused ? 1 : 0));
+                        }
+
+                        const wMin = Math.floor((whiteTime || 0) / 60);
+                        const wSec = ((whiteTime || 0) % 60).toFixed(1);
+                        const bMin = Math.floor((blackTime || 0) / 60);
+                        const bSec = ((blackTime || 0) % 60).toFixed(1);
+
+                        const wEl = document.getElementById('white-clock');
+                        const bEl = document.getElementById('black-clock');
+
+                        if (wEl) wEl.textContent = `${padStart(String(wMin), 2, '0')}:${padStart(String(wSec), 2, '0')}`;
+                        if (bEl) bEl.textContent = `${padStart(String(bMin), 2, '0')}:${padStart(String(bSec), 2, '0')}`;
+
+                    }, 100);
+
+                    socket.emit("request_last_event", { event_type: "GameStateChangedEvent" })
+                });
+
+            </script>
+
+            <!-- Color Picker View -->
+            <div id="color-picker-view" class="view">
+                <div class="view-header">Pick Color (RGB)</div>
+                <div class="menu" id="color-picker-menu">
+                    <div class="submenu-item selected" data-keyboard-numeric-output="color-r"
+                        data-keyboard-title="Enter R (0-255)" data-on-keyboard-done="updateColorPreview()">
+                        <div style="display: flex; align-items: center;">
+                            <h4 style="margin: 0;">Red</h4>
+                            <div class="input-field" id="color-r" style="margin-left: 10px;"></div>
+                        </div>
+                    </div>
+                    <div class=" submenu-item" data-keyboard-numeric-output="color-g"
+                        data-keyboard-title="Enter G (0-255)">
+                        <div style="display: flex; align-items: center;">
+                            <h4 style="margin: 0;">Green</h4>
+                            <div class="input-field" id="color-g" style="margin-left: 10px;"></div>
+                        </div>
+                    </div>
+                    <div class=" submenu-item" data-keyboard-numeric-output="color-b"
+                        data-keyboard-title="Enter B (0-255)">
+                        <div style="display: flex; align-items: center;">
+                            <h4 style="margin: 0;">Blue</h4>
+                            <div class="input-field" id="color-b" style="margin-left: 10px;"></div>
+                        </div>
+                    </div>
+                    <div class=" submenu-item" data-action="color-picker-apply">
+                        <div>
+                            <h4>Apply</h4>
+                            <p>Save selected color</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Virtual Keyboard View -->
+            <div id="keyboard-view" class="view">
+                <div class="view-header" id="keyboard-title">Enter Text</div>
+                <div
+                    style="padding: 6px 8px; background: #1a1a1a; margin: 4px 8px; border-radius: 4px; border: 2px solid #8b7355;">
+                    <div style="font-size: 11px; color: #f5f5f5; min-height: 18px; font-family: 'Courier New', monospace;"
+                        id="keyboard-input-display"></div>
+                </div>
+                <div id="keyboard-grid">
+                    <!-- Keyboard keys will be generated here -->
+                </div>
+            </div>
+
+            <!-- Message View (submenu style) -->
+            <div id="message-view" class="view">
+                <div class="view-header" id="message-title">Message</div>
+                <div class="menu" style="padding: 16px 10px;">
+                    <div id="message-content"
+                        style="background:none; border:none; color:#fff; font-size:13px; padding:0; margin:0;">
+                        <!-- Message will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div> <!-- End of content -->
+
+
+        <div class="button-hints">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex:1; text-align: center;" id="hint-0">0</div>
+                <div style="flex:1; text-align: center;" id="hint-1">1</div>
+                <div style="flex:1; text-align: center;" id="hint-2">2</div>
+                <div style="flex:1; text-align: center;" id="hint-3">3</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Loading overlay helpers
+        let loadingTimer = null;
+        let loadingOverlayVisible = false;
+        let loadingBaseMsg = 'Loading';
+
+        function loadingShow(msg) {
+            // Only show overlay if still loading after 0.5s
+            loadingHide(); // Always clear any previous state
+            loadingTimer = setTimeout(() => {
+                const overlay = document.getElementById('loading-overlay');
+                if (overlay) {
+                    overlay.style.display = 'flex';
+                    loadingOverlayVisible = true;
+                    const textDiv = overlay.querySelector('div > div:last-child');
+                    loadingBaseMsg = msg || 'Loading';
+                    if (textDiv) {
+                        textDiv.innerHTML = `<span id='loading-msg-text'></span><span id='loading-msg-dots'></span>`;
+                        const msgSpan = textDiv.querySelector('#loading-msg-text');
+                        if (msgSpan) msgSpan.textContent = loadingBaseMsg;
+                    }
+                }
+            }, 500);
+        }
+
+        function loadingHide() {
+            if (loadingTimer) {
+                clearTimeout(loadingTimer);
+                loadingTimer = null;
+            }
+            if (loadingOverlayVisible) {
+                const overlay = document.getElementById('loading-overlay');
+                if (overlay) overlay.style.display = 'none';
+                loadingOverlayVisible = false;
+            }
+        }
+
+        // Navigation state management
+        let viewStack = ['main-view'];
+        let currentView = 'main-view';
+        let selectedIndex = 0;
+
+        function gamePause() {
+            apiCall('/api/game/pause', {});
+        }
+
+        function gameResume() {
+            apiCall('/api/game/resume', {});
+        }
+
+        function regretLastMove() {
+            apiCall('/api/game/regret_last_move', {});
+        }
+
+        function resignGame() {
+            apiCall('/api/game/resign', {});
+        }
+
+        let menuButtonFunctions = [
+            { short: menuGoBack, shortHint: 'Back', long: menuReset, longHint: 'Reset' },
+            { short: menuUp, shortHint: '↑', long: null, longHint: '' },
+            { short: menuDown, shortHint: '↓', long: null, longHint: '' },
+            { short: menuSelect, shortHint: 'Select', long: null, longHint: '' },
+        ];
+
+        let keyboardButtonFunctions = [
+            { short: keyboardMoveLeft, shortHint: '←', long: menuGoBack, longHint: 'Back' },
+            { short: keyboardMoveUp, shortHint: '↑', long: null, longHint: '' },
+            { short: keyboardMoveDown, shortHint: '↓', long: null, longHint: '' },
+            { short: keyboardMoveRight, shortHint: '→', long: keyboardEnter, longHint: 'ENTER' },
+        ];
+
+        let gameOverviewButtonFunctions = [
+            { short: menuGoBack, shortHint: 'Back', long: null, longHint: '' },
+            { short: null, shortHint: '-', long: regretLastMove, longHint: 'Regret' },
+            { short: null, shortHint: '-', long: resignGame, longHint: 'Resign' },
+            { short: gameResume, shortHint: '▶', long: gamePause, longHint: '⏸' },
+        ];
+
+        let messageButtonFunctions = [
+            { short: menuGoBack, shortHint: 'Back', long: null, longHint: '' },
+            { short: null, shortHint: '', long: null, longHint: '' },
+            { short: null, shortHint: '', long: null, longHint: '' },
+            { short: menuGoBack, shortHint: 'Ok', long: null, longHint: '' },
+        ];
+
+        const viewButtonsConfig = {
+            'keyboard-view': keyboardButtonFunctions,
+            'message-view': messageButtonFunctions,
+            'game-overview-view': gameOverviewButtonFunctions,
+        };
+
+        // Get current menu items based on active view
+        function menuGetCurrentItems() {
+            const view = document.getElementById(currentView);
+            if (currentView === 'keyboard-view' || currentView === 'message-view') {
+                return []; // Keyboard and message view use different navigation
+            }
+            return Array.from(view.querySelectorAll('.menu-item, .submenu-item'));
+        }
+
+        // Show a specific view
+        // Track selectedIndex for each view
+        const viewSelectedIndices = {};
+
+        function showView(viewId) {
+            // Save current selectedIndex before leaving
+            if (currentView == viewId) {
+                return; // Already in requested view
+            }
+
+            if (currentView) {
+                viewSelectedIndices[currentView] = selectedIndex;
+            }
+            // Hide all views
+            Array.from(document.querySelectorAll('.view')).forEach(v => v.classList.remove('active'));
+
+            // Show the requested view
+            const targetView = document.getElementById(viewId);
+            if (targetView) {
+                viewStack.push(viewId);
+                currentView = viewId;
+                // Restore previous selectedIndex for this view, or default to 0
+                selectedIndex = 0;
+                menuUpdateSelection();
+                buttonsUpdate(viewButtonsConfig[viewId] || menuButtonFunctions);
+
+                targetView.classList.add('active');
+                console.log('Navigated to:', viewId);
+            }
+        }
+
+        function apiCall(endpoint, post_data = null, callback = function (data) { }) {
+            const options = {
+                method: post_data ? 'POST' : 'GET',
+                headers: { 'Content-Type': 'application/json' },
+            };
+            if (post_data) {
+                options.body = JSON.stringify(post_data);
+            }
+
+            return fetch(endpoint, options)
+                .then(response => response.json())
+                .then(data => {
+                    loadingHide();
+                    console.log('API call success (' + endpoint + '):', data);
+                    callback(data);
+                    return data;
+                }).catch(error => {
+                    loadingHide();
+                    showMessageView('Error', endpoint + ' call error: ' + (error.message || error));
+                    throw error;
+                });
+        }
+
+        // Go back to previous view
+        function menuGoBack() {
+            if (viewStack.length > 1) {
+                if (currentView) {
+                    viewSelectedIndices[currentView] = null;
+                }
+                // Remove current view
+                viewStack.pop();
+
+                // Get previous view
+                const previousView = viewStack[viewStack.length - 1];
+
+                // Hide all views
+                Array.from(document.querySelectorAll('.view')).forEach(v => v.classList.remove('active'));
+
+                // Show previous view
+                document.getElementById(previousView).classList.add('active');
+                currentView = previousView;
+                // Restore previous selectedIndex for this view, or default to 0
+                selectedIndex = viewSelectedIndices[previousView] !== undefined ? viewSelectedIndices[previousView] : 0;
+                menuUpdateSelection();
+                buttonsUpdate(viewButtonsConfig[previousView] || menuButtonFunctions);
+
+                console.log('Back to:', previousView);
+            } else {
+                console.log('Already at main view');
+            }
+        }
+
+
+        // Show virtual keyboard
+        function keyboardShow(title, initialInput, callback, numberOnly = false) {
+            keyboardInput = initialInput || '';
+            keyboardCallback = callback || null;
+            keyboardRow = 0; // Initialize keyboard row to 0
+            keyboardCol = 0; // Initialize keyboard column to 0
+            currentKeyboardLayout = numberOnly ? keyboardLayoutNumber : keyboardLayoutNormal;
+
+            document.getElementById('keyboard-title').textContent = title || 'Enter Text';
+
+            generateKeyboard();
+            showView('keyboard-view');
+        }
+
+        function keyboardEnter() {
+            const key = keyboardGetSelectedKey();
+            if (key === 'DONE') {
+                // Finish input
+                if (keyboardCallback) {
+                    keyboardCallback(keyboardInput);
+                    keyboardCallback = null;
+                }
+                menuGoBack();
+                return;
+            } else if (key === 'DEL') {
+                // Remove last character
+                keyboardInput = keyboardInput.slice(0, -1);
+            } else if (key === 'CLEAR') {
+                // Clear entire input
+                keyboardInput = '';
+            } else if (key === '?!@') {
+                // Toggle keyboard layout
+                if (currentKeyboardLayout === keyboardLayoutNormal) {
+                    currentKeyboardLayout = keyboardLayoutUppercase;
+                } else {
+                    currentKeyboardLayout = keyboardLayoutNormal;
+                }
+                generateKeyboard();
+            } else if (key === 'SPACE') {
+                // Add space character
+                keyboardInput += ' ';
+            } else {
+                // Add character to input
+                keyboardInput += key;
+            }
+
+            const display = document.getElementById('keyboard-input-display');
+            display.textContent = keyboardInput;
+            keyboardUpdateSelection();
+        }
+
+
+        function padLeft(str, length, pad) {
+            str = String(str);
+            pad = pad || ' ';
+            while (str.length < length) {
+                str = pad + str;
+            }
+            return str;
+        }
+
+        // Update current time in status bar
+        function updateTime() {
+            now = new Date();
+            hours = now.getHours();
+            minutes = padLeft(now.getMinutes(), 2, '0');
+            document.getElementById('current-time').textContent = `${hours}:${minutes}`;
+        }
+
+        // Fetch WiFi status from server
+        function wifiUpdateIcon() {
+            apiCall('/api/system/wifi/info', null, function (data) {
+                const indicator = document.getElementById('status-indicator');
+                const wifiName = document.getElementById('wifi-name');
+                const wifiIcon = document.getElementById('wifi-icon');
+
+                if (data.connected) {
+                    indicator.classList.remove('disconnected');
+                    wifiName.textContent = data.ssid || 'Connected';
+                    wifiIcon.textContent = '';
+                } else {
+                    indicator.classList.add('disconnected');
+                    wifiName.textContent = 'No WiFi';
+                    wifiIcon.textContent = '';
+                }
+            });
+        }
+
+        function wifiConnect(ssid, password) {
+            loadingShow('Connecting');
+            post_data = { 'ssid': ssid, 'password': password };
+            apiCall('/api/system/wifi/connect', post_data, function (data) {
+                if (data.success) {
+                    showMessageView('Success', 'Connected successfully!');
+                    wifiUpdateIcon();
+                } else {
+                    showMessageView('Failed', 'Connection failed: ' + (data.error || 'Unknown error'));
+                }
+            });
+        }
+
+        function wifiShowInfo() {
+            loadingShow('Fetching Info');
+            apiCall('/api/system/wifi/info', null, function (data) {
+                const info = `
+                        <strong>Connected:</strong> ${data.connected ? 'Yes' : 'No'}<br>
+                        <strong>SSID:</strong> ${data.ssid || 'N/A'}<br>
+                        <strong>Signal:</strong> ${data.signal || 'N/A'}<br>
+                        <strong>IP Address:</strong> ${data.ip || 'N/A'}<br>
+                    `;
+                showMessageView('Current Network Info', info);
+            });
+        }
+
+        function wifiScanNetworks() {
+            loadingShow('Scanning');
+
+            apiCall('/api/system/wifi/scan', null, function (data) {
+                console.log('Available networks:', data.networks);
+                const networksList = document.getElementById('networks-list');
+                networksList.innerHTML = '';
+                if (Array.isArray(data.networks) && data.networks.length > 0) {
+                    data.networks.forEach((network, idx) => {
+                        const item = document.createElement('div');
+                        item.className = 'menu-item';
+                        item.dataset.action = 'select-network';
+                        item.dataset.ssid = network.ssid;
+                        item.innerHTML = `
+                                <div>
+                                    <h3>${network.ssid || '(Hidden SSID)'}</h3>
+                                    <p>Signal: ${network.signal || 'N/A'}${network.secure ? ' • 🔒' : ''}</p>
+                                </div>
+                            `;
+                        networksList.appendChild(item);
+                    });
+                } else {
+                    const empty = document.createElement('div');
+                    empty.className = 'menu-item';
+                    empty.innerHTML = '<div><h3>No networks found</h3></div>';
+                    networksList.appendChild(empty);
+                }
+                selectedIndex = 0;
+                menuUpdateSelection();
+                // You can update the UI to show available networks here
+            })
+                .catch(error => {
+                    loadingHide();
+                    console.error('Error scanning networks:', error);
+                });
+        }
+
+        // Update selection highlighting
+        function menuUpdateSelection() {
+            const menuItems = menuGetCurrentItems();
+            menuItems.forEach((item, index) => {
+                if (index === selectedIndex) {
+                    item.classList.add('selected');
+                    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+        }
+
+        function menuUp() {
+            const menuItems = menuGetCurrentItems();
+            if (menuItems.length > 0) {
+                selectedIndex = (selectedIndex - 1 + menuItems.length) % menuItems.length;
+                menuUpdateSelection();
+            }
+        }
+
+        function menuDown() {
+            const menuItems = menuGetCurrentItems();
+            if (menuItems.length > 0) {
+                selectedIndex = (selectedIndex + 1) % menuItems.length;
+                menuUpdateSelection();
+            }
+        }
+
+
+        // Store pending color path for picker
+        let pendingColorPath = null;
+
+        function loadBoardSettings() {
+            loadingShow('Loading Settings');
+            apiCall('/api/settings', null, function (data) {
+                const boardSettingsView = document.getElementById('board-settings-view').querySelector('.menu');
+                boardSettingsView.innerHTML = '';
+
+                Object.entries(data.settings).forEach(([key, setting]) => {
+                    // key is the property name, setting is the value object
+                    const item = document.createElement('div');
+                    item.className = 'submenu-item';
+                    item.dataset.action = `set-board-setting`;
+                    item.dataset.settingKey = key;
+                    item.innerHTML = `
+                            <div>
+                                <h4>${key}</h4>
+                                <p>${setting.description}</p>
+                                <p>Current: ${setting.value}</p>
+                            </div>
+                        `;
+                    boardSettingsView.appendChild(item);
+                });
+
+                selectedIndex = 0;
+                menuUpdateSelection();
+            });
+        }
+
+        function showBoardSettingView(settingKey) {
+            loadingShow('Loading Setting');
+            apiCall(`/api/settings/${encodeURIComponent(settingKey)}`, null, function (data) {
+                const setting = data.setting;
+                if (!setting) {
+                    showMessageView('Error', 'Setting not found');
+                    return;
+                }
+
+                if (setting.type === 'ColorSetting') {
+                    // Open color picker with current value
+                    // const rgb = setting.value.match(/\d+/g).map(Number);
+                    pendingColorPath = settingKey;
+                    openColorPicker(settingKey, setting.value);
+                } else {
+                    showMessageView('Error', 'Unsupported setting type: ' + setting.type);
+                }
+            });
+        }
+
+        function startNewGame() {
+            loadingShow('Starting Game');
+
+            let time_setting = document.getElementById('time-setting').textContent
+            const match = /([\d.]+)\s*min/i.exec(time_setting || '');
+
+            if (match) {
+                time_minutes = parseFloat(match[1]);
+            } else {
+                time_minutes = 0.0;
+            }
+
+            post_data = {
+                opponent: document.getElementById('opponent-type').textContent || 'Human',
+                start_time_seconds: time_minutes * 60.0,  // Convert minutes to seconds
+                increment_seconds: 0.0,
+            };
+
+            apiCall('/api/game/new', post_data, function (data) {
+                if (!data.success) {
+                    showMessageView('Error', 'Failed to start new game: ' + (data.error || 'Unknown error'));
+                } else {
+                    showView('game-overview-view');
+                }
+            });
+        }
+
+        function menuSelect() {
+            const menuItems = menuGetCurrentItems();
+            if (menuItems.length === 0) return;
+
+            const selectedItem = menuItems[selectedIndex];
+            const nextView = selectedItem.dataset.nextView;
+            const action = selectedItem.dataset.action;
+            const keyboardOutput = selectedItem.dataset.keyboardOutput;
+            const keyboardNumericOutput = selectedItem.dataset.keyboardNumericOutput;
+
+            // If the item has a next view, navigate directly
+            if (nextView) {
+                showView(nextView);
+            }
+
+            if (keyboardOutput || keyboardNumericOutput) {
+                const isNumeric = true;
+                const outputId = keyboardOutput || keyboardNumericOutput;
+                const keyboardTitle = selectedItem.dataset.keyboardTitle || 'Enter Text';
+                const callback = selectedItem.dataset.onKeyboardDone;
+                // This is a text input field
+                keyboardShow(keyboardTitle, document.getElementById(outputId).textContent, function (inputText) {
+                    document.getElementById(outputId).textContent = inputText;
+                    if (callback) {
+                        // Evaluate the callback function if provided
+                        eval(callback);
+                    }
+                }, isNumeric);
+            }
+
+
+            if (action) {
+                // Handle different actions (for items that do not have nextView)
+                switch (action) {
+                    case 'select-network':
+                        const ssid = selectedItem.dataset.ssid;
+                        keyboardShow(`Enter password for "${ssid}"`, '', function (inputPassword) {
+                            wifiConnect(ssid, inputPassword);
+                        });
+                        break;
+                    case 'connect-network':
+                        networkSSID = document.getElementById('ssid-input').textContent || '';
+                        networkPassword = document.getElementById('password-input').textContent || '';
+                        wifiConnect(networkSSID, networkPassword);
+                        break;
+                    case 'scan-networks':
+                        wifiScanNetworks();
+                        break;
+                    case 'current-network':
+                        wifiShowInfo();
+                        break;
+                    case 'board-settings':
+                        loadBoardSettings();
+                        break;
+                    case 'set-board-setting':
+                        showBoardSettingView(selectedItem.dataset.settingKey);
+                        break;
+                    case 'display-settings':
+                        // Add your display settings logic here
+                        break;
+                    case 'change-board-setting':
+                        loadBoardSettings();
+                        break;
+                    case 'about':
+                        // Add your about page logic here
+                        break;
+                    case 'set-opponent-human':
+                        document.getElementById('opponent-type').textContent = 'Human';
+                        setCookie('opponent', 'Human');
+                        menuGoBack();
+                        break;
+                    case 'set-opponent-computer':
+                        document.getElementById('opponent-type').textContent = selectedItem.dataset.computerLevel;
+                        setCookie('opponent', selectedItem.dataset.computerLevel);
+                        menuGoBack();
+                        menuGoBack(); // Go back to New Game view
+                        break;
+                    case 'set-time':
+                        keyboardShow('Enter Minutes (blank=no limit)', '', function (inputText) {
+                            if (inputText && !isNaN(inputText) && Number(inputText) > 0) {
+                                document.getElementById('time-setting').textContent = inputText + ' min';
+                                setCookie('time', inputText + ' min');
+                            } else {
+                                document.getElementById('time-setting').textContent = 'No limit';
+                                setCookie('time', 'No limit');
+                            }
+                        }, true);
+                        break;
+                    case 'power-off':
+                        loadingShow('Powering Off');
+                        apiCall('/api/system/shutdown', {}, function (data) {
+                            if (data.success) {
+                                showMessageView('Power Off', 'The system is powering off.');
+                            } else {
+                                showMessageView('Error', 'Failed to power off: ' + (data.error || 'Unknown error'));
+                            }
+                        });
+                        break;
+                    case 'start-game':
+                        startNewGame();
+                        break;
+                    default:
+                        console.error('Action not yet implemented:', action);
+                }
+            }
+        }
+
+        // Update color preview box when inputs change
+        function updateColorPreview() {
+            const r = parseInt(document.getElementById('color-r').textContent || '0', 10) || 0;
+            const g = parseInt(document.getElementById('color-g').textContent || '0', 10) || 0;
+            const b = parseInt(document.getElementById('color-b').textContent || '0', 10) || 0;
+            const clamp = (x) => Math.max(0, Math.min(255, x));
+
+            const rr = clamp(r), gg = clamp(g), bb = clamp(b);
+
+            console.log('Color preview updated to:', rr, gg, bb);
+            sendEvent('SetSquareColorEvent', {
+                color_map: {
+                    27: [rr, gg, bb],
+                    28: [rr, gg, bb],
+                    35: [rr, gg, bb],
+                    36: [rr, gg, bb],
+                }
+            });
+        }
+
+        // Expose a function to open color picker with initial RGB and path
+        function openColorPicker(path, initialRGB) {
+            document.getElementById('color-r').textContent = (initialRGB && initialRGB[0] != null) ? initialRGB[0] : '0';
+            document.getElementById('color-g').textContent = (initialRGB && initialRGB[1] != null) ? initialRGB[1] : '0';
+            document.getElementById('color-b').textContent = (initialRGB && initialRGB[2] != null) ? initialRGB[2] : '0';
+            updateColorPreview();
+            showView('color-picker-view');
+        }
+
+        function menuReset() {
+            console.log('Menu reset pressed');
+            // Reset to main view
+            while (currentView !== 'main-view' && viewStack.length > 1) {
+                menuGoBack();
+            }
+        }
+
+        // --- Cookie helpers ---
+        function setCookie(name, value, days = 365) {
+            const d = new Date();
+            d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+            const expires = 'expires=' + d.toUTCString();
+            document.cookie = name + '=' + encodeURIComponent(value) + ';' + expires + ';path=/';
+        }
+
+        function getCookie(name) {
+            const cname = name + '=';
+            const decodedCookie = decodeURIComponent(document.cookie);
+            const ca = decodedCookie.split(';');
+            for (let i = 0; i < ca.length; i++) {
+                let c = ca[i]; while (c.charAt(0) === ' ') c = c.substring(1); if (c.indexOf(cname) === 0)
+                    return c.substring(cname.length, c.length);
+            } return '';
+        }
+
+        // --- Load settings from cookies on page load ---
+        function loadSettingsFromCookies() {
+            const opponent = getCookie('opponent');
+            if (opponent) {
+                document.getElementById('opponent-type').textContent = opponent;
+            }
+            const time = getCookie('time');
+            if (time) {
+                document.getElementById('time-setting').textContent = time;
+            }
+        }
+
+        // Initialize on page load
+        menuUpdateSelection();
+        updateTime();
+        wifiUpdateIcon();
+        loadSettingsFromCookies();
+        // updateNetworkInputs();
+        buttonsUpdate(menuButtonFunctions);
+
+        // Update time every second
+        setInterval(updateTime, 1000);
+
+        // Update WiFi status every 10 seconds
+        setInterval(wifiUpdateIcon, 10000);
+
+        // --- Message View Helper ---
+        function showMessageView(title, message) {
+            document.getElementById('message-title').textContent = title;
+            document.getElementById('message-content').innerHTML = `<p style="font-size:12px; color:#fff;">${message}</p>`;
+            showView('message-view');
+        }
+
+        addBoardEventListener("PlayerNotifyEvent", (data) => {
+            showMessageView(data.title, data.message);
+        });
+
+        addBoardEventListener("ChessMoveEvent", (data) => {
+            const lm = document.getElementById('last-move');
+            if (!lm) return;
+            const from = data.from_square || '';
+            const to = data.to_square || '';
+            const promo = data.promotion || '';
+            const uci = from + to + (promo || '');
+            lm.textContent = 'Last: ' + (uci || '-');
+        });
+    </script>
+</body>
+
+</html>

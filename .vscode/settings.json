@@ -1,0 +1,10 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "python.terminal.activateEnvInCurrentTerminal": false,
+    "python.analysis.typeCheckingMode": "standard",
+    "python-envs.pythonProjects": [],
+    "autopep8.args": [
+        "--max-line-length=120"
+    ],
+    "editor.formatOnSave": true,
+}

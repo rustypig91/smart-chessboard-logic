@@ -1,13 +1,14 @@
 import os
 import pickle
 from time import time
-
+from typing import Iterable as iterable
 import chess
 
 from chessboard.game.chess_clock import ChessClock
 import chessboard.events as events
 from chessboard.logger import log
 from chessboard.settings import settings, ColorSetting
+from chessboard.game.engine import Engine
 
 settings.register("game.colors.invalid_piece_placement",
                   ColorSetting(255, 0, 0),
@@ -69,8 +70,8 @@ class Board:
         events.event_manager.subscribe(events.PieceLiftedEvent, self._handle_piece_lifted)
         events.event_manager.subscribe(events.PiecePlacedEvent, self._handle_piece_placed)
         events.event_manager.subscribe(events.SquarePieceStateChange, self._handle_piece_state_change)
-
         events.event_manager.subscribe(events.TimeButtonPressedEvent, self._handle_time_button_pressed)
+        events.event_manager.subscribe(events.ChessMoveEvent, self._handle_move)
 
         self._board_square_color_map: dict[chess.Square, tuple[int, int, int]] = {}
 
@@ -81,6 +82,7 @@ class Board:
             self._board_piece_color_map[square] = self.board.color_at(square)
 
         self._reset_color(chess.SQUARES)
+        self._engine: Engine | None = None
 
     @property
     def board(self) -> chess.Board:
@@ -99,12 +101,20 @@ class Board:
         """ Get the current pieces on the board according to game state """
         return self.board.piece_map()
 
-    def new_game(self, start_time_seconds: int = 300, increment_seconds: int = 0):
+    def new_game(self, start_time_seconds: int = 300,
+                 increment_seconds: int = 0,
+                 engine_weight: str | None = None,
+                 engine_color: chess.Color = chess.BLACK) -> None:
         """ Start a new game """
         self.board.reset()
         self._game.chess_clock = ChessClock(start_time_seconds, increment_seconds)
         self._reset_color(chess.SQUARES)
+
+        if engine_weight is not None:
+            self._engine = Engine(time_limit=1.0, weight=engine_weight, color=engine_color)
+
         self._game.save()
+        self.chess_clock.start()
 
     def start(self):
         """ Start the game """
@@ -116,10 +126,6 @@ class Board:
         self.chess_clock.set_player(self.board.turn)
         self._reset_color(chess.SQUARES)
         self._game.save()
-
-    def _on_piece_move(self, event: events.ChessMoveEvent):
-        self.board.push(event.move)
-        self.chess_clock.set_player(self.board.turn)
 
     def _handle_piece_lifted(self, event: events.PieceLiftedEvent):
         if self._board_piece_color_map[event.square] is None:
@@ -147,18 +153,32 @@ class Board:
             log.warning(f"Time button pressed for {'white' if event.color == chess.WHITE else 'black'} out of turn")
             return
 
+        if self._engine is not None and self._engine.color == event.color:
+            log.warning("Time button pressed for engine color, ignoring")
+            return
+
         move = self._scan_board()
         if move is None:
             log.error("No valid move detected on time button press")
             return
 
-        self.board.push(move)
         log.info(f"Move {move.uci()} registered")
         self._reset_color(chess.SQUARES)
 
         self._game.save()
-
         events.event_manager.publish(events.ChessMoveEvent(move=move))
+
+    def _handle_move(self, event: events.ChessMoveEvent):
+        self.board.push(event.move)
+
+        self.chess_clock.set_player(self.board.turn)
+
+        self._scan_board()
+        self._game.save()
+
+        if self._engine is not None and self._engine.color == self.board.turn:
+            move = self._engine.get_move(self.board)
+            events.event_manager.publish(events.ChessMoveEvent(move=move))
 
     def _apply_color_map(self, color_map: dict[chess.Square, tuple[int, int, int] | None]):
         for square, color in color_map.items():
@@ -167,7 +187,7 @@ class Board:
 
         events.event_manager.publish(events.SetSquareColorEvent(color_map))
 
-    def _get_reset_color_map(self, squares: list[chess.Square]):
+    def _get_reset_color_map(self, squares: iterable[chess.Square]):
         white_squares = [sq for sq in squares if (chess.square_rank(sq) + chess.square_file(sq)) % 2 == 1]
         black_squares = [sq for sq in squares if (chess.square_rank(sq) + chess.square_file(sq)) % 2 == 0]
 
@@ -200,7 +220,7 @@ class Board:
 
         return color_map
 
-    def _reset_color(self, squares: list[chess.Square]):
+    def _reset_color(self, squares: iterable[chess.Square]):
         color_map = self._get_reset_color_map(squares)
         self._apply_color_map(color_map)
 

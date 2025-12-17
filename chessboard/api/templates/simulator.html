@@ -5,8 +5,8 @@
     <meta charset="UTF-8" />
     <title>Chessboard Simulator</title>
 
-    <script src="{{ url_for('static', filename='socket.io.min.js')}}"></script>
-    <script src="{{ url_for('static', filename='events.js')}}"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <!-- <script src="{{ url_for('static', filename='events.js')}}"></script> -->
 
     <style>
         body {
@@ -425,12 +425,10 @@
 
         socket.onAny((event, ...args) => {
             // if (event === "board_event.SetSquareColorEvent") return; // Disabled to not spam the console
-            if (event == "board_event.HalSensorVoltageEvent") return;
+            // if (event == "board_event.HalSensorVoltageEvent") return;
 
             console.log("Socket.IO event:", event, args);
         });
-
-
 
         socket.on("board_event.SetSquareColorEvent", function (data) {
             console.log("LED Change Event data:", data);

@@ -2,11 +2,10 @@ import os
 import io
 import argparse
 
-from flask_socketio import SocketIO
+import chess
 from chessboard.game.board import board
 import chessboard.events as events
 import chessboard.api.api as api
-from chessboard.logger import log
 
 is_raspberrypi = False
 if os.name != 'posix':
@@ -27,9 +26,13 @@ if is_raspberrypi:
 
 parser = argparse.ArgumentParser(description="Chessboard Web App")
 parser.add_argument('--new-game', action='store_true', help='Start a new game instead of loading the old one')
+parser.add_argument('--engine-weight', type=str, default=None,
+                    help='Engine weight file to use for the engine (if applicable)')
+parser.add_argument('--engine-color', type=chess.Color, default=chess.BLACK,
+                    help='Engine color to use for the engine (if applicable)')
 args = parser.parse_args()
 
 if args.new_game:
-    board.new_game()
+    board.new_game(engine_weight=args.engine_weight, engine_color=args.engine_color)
 
 api.socketio.run(api.app, debug=False)

@@ -19,7 +19,7 @@ app.register_blueprint(api_board_system, url_prefix='/api/board/system', name='s
 app.register_blueprint(api_board, url_prefix='/api/board', name='board')
 app.register_blueprint(api_settings, url_prefix='/api/settings', name='settings')
 
-socketio = SocketIO(app, mode='rw')
+socketio = SocketIO(app, async_mode='threading')
 
 
 @app.route('/')
@@ -31,13 +31,6 @@ def home():
 def favicon():
     return send_from_directory(os.path.join(app.root_path, 'static'),
                                'favicon.ico', mimetype='image/vnd.microsoft.icon')
-
-
-@app.route("/quit")
-def quit():
-    """API endpoint to quit the application"""
-    socketio.stop()
-    return 'Server shutting down...'
 
 
 @app.route('/overview')
@@ -58,8 +51,6 @@ def handle_publish_event(data):
     Handle events published by clients.
     Expects 'event_type' and 'event_data' in data.
     """
-    # log.debug(f"Received publish_event with data: {data}")
-
     event_type = data.get('event_type')
     event_data = data.get('event_data', {})
     if not event_type:
@@ -86,4 +77,4 @@ def emit_event(event):
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    socketio.run(app)

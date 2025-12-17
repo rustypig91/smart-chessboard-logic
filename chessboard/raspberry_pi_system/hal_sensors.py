@@ -1,4 +1,5 @@
 import serial
+import serial.tools.list_ports
 import re
 from time import sleep, time
 from threading import Thread, Lock
@@ -13,7 +14,7 @@ import os
 from RPi import GPIO  # type: ignore
 
 
-settings.register('hal_sensor.offset', 0.07, description="Voltage offset in volts")
+settings.register('hal_sensor.offset', 0.10, description="Voltage offset in volts")
 settings.register('hal_sensor.piece_detection_consecutive', 2,
                   description="Number of consecutive readings to confirm piece detection")
 
@@ -22,7 +23,7 @@ class _HalSensorsInterface:
     PROMPT = "chess:~$"
     BAUDRATE = 115200
     RESET_PIN = 21
-    DEVICE_PATH = '/dev/ttyACM0'
+    DEVICE_DESC = 'Chessboard console'
 
     DEFAULT_SENSOR_PIECE_OFFSET_MV = 100
 
@@ -76,6 +77,17 @@ class _HalSensorsInterface:
         self._send_command('board calibrate set')
         self._monitor_start()
 
+    def _find_tty_device(self) -> str | None:
+        """ Find the TTY device corresponding to the HAL sensor device. """
+
+        device = None
+        for port in serial.tools.list_ports.comports():
+            if self.DEVICE_DESC in port.description:
+                device = port.device
+                break
+
+        return device
+
     def _reset_device(self):
         if self._port is not None:
             self._port.close()
@@ -88,24 +100,33 @@ class _HalSensorsInterface:
         log.info("Resetting HAL sensor device via GPIO pin.")
 
         GPIO.output(self.RESET_PIN, GPIO.LOW)
+        sleep(0.1)
+
         timeout = 5  # seconds
         start = time()
-        while os.path.exists(self.DEVICE_PATH):
+
+        tty_device = self._find_tty_device()
+
+        while tty_device is not None:
             if time() - start > timeout:
-                raise TimeoutError(f"Timeout waiting for {self.DEVICE_PATH} to become unavailable.")
+                raise TimeoutError(f"Timeout waiting for {tty_device} to become unavailable.")
             sleep(0.1)
+            tty_device = self._find_tty_device()
+
         GPIO.output(self.RESET_PIN, GPIO.HIGH)
         # Wait for DEVICE_PATH to become available
         timeout = 5  # seconds
         start = time()
-        while not os.path.exists(self.DEVICE_PATH):
+
+        while tty_device is None:
             if time() - start > timeout:
-                raise TimeoutError(f"Timeout waiting for {self.DEVICE_PATH} to become available.")
+                raise TimeoutError(f"Timeout waiting for {tty_device} to become available.")
             sleep(0.1)
+            tty_device = self._find_tty_device()
 
         sleep(1)  # Wait for the serial connection to stabilize
         self._port = serial.Serial(
-            self.DEVICE_PATH, baudrate=self.BAUDRATE, timeout=1)
+            tty_device, baudrate=self.BAUDRATE, timeout=1)
         sleep(1)
         self._port.flush()
 

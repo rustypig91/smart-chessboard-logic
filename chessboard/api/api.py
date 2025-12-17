@@ -19,7 +19,8 @@ app.register_blueprint(api_board_system, url_prefix='/api/board/system', name='s
 app.register_blueprint(api_board, url_prefix='/api/board', name='board')
 app.register_blueprint(api_settings, url_prefix='/api/settings', name='settings')
 
-socketio = SocketIO(app, async_mode='threading')
+socketio = SocketIO(app)
+# socketio = SocketIO(app, async_mode='threading') # Use threading mode to avoid eventlet issues
 
 
 @app.route('/')

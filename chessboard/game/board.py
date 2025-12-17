@@ -3,6 +3,7 @@ import pickle
 from time import time
 from typing import Iterable as iterable
 import chess
+import chess.engine
 
 from chessboard.game.chess_clock import ChessClock
 import chessboard.events as events
@@ -72,6 +73,7 @@ class Board:
         events.event_manager.subscribe(events.SquarePieceStateChange, self._handle_piece_state_change)
         events.event_manager.subscribe(events.TimeButtonPressedEvent, self._handle_time_button_pressed)
         events.event_manager.subscribe(events.ChessMoveEvent, self._handle_move)
+        events.event_manager.subscribe(events.GameOverEvent, self._handle_game_over)
 
         self._board_square_color_map: dict[chess.Square, tuple[int, int, int]] = {}
 
@@ -168,6 +170,43 @@ class Board:
         self._game.save()
         events.event_manager.publish(events.ChessMoveEvent(move=move))
 
+    def _handle_engine_move(self, result: chess.engine.PlayResult):
+        assert self._engine is not None
+
+        if result.resigned:
+            log.info("Engine resigned the game")
+            events.event_manager.publish(events.GameOverEvent(winner=not self._engine.color, reason="Resignation"))
+            return
+
+        if result.draw_offered:
+            log.info("Engine offered a draw")
+            # For simplicity, we accept all draw offers from the engine
+            events.event_manager.publish(events.PlayerNotifyEvent(
+                title="Draw Offered",
+                message="The engine has offered a draw. The draw is accepted."
+            ))
+
+        if result.move is None:
+            log.error("Engine did not return a valid move")
+            return
+
+        events.event_manager.publish(events.PlayerNotifyEvent(
+            title="Engine Move",
+            message=f"The engine played move: {result.move.uci()}"
+        ))
+
+        events.event_manager.publish(events.ChessMoveEvent(move=result.move))
+
+    def _handle_game_over(self, event: events.GameOverEvent):
+        self.chess_clock.pause()
+
+        self._reset_color(chess.SQUARES)
+        winner = 'Draw' if event.winner is None else ('White wins' if event.winner == chess.WHITE else 'Black wins')
+        events.event_manager.publish(events.PlayerNotifyEvent(
+            title="Game Over",
+            message=f"Game over! {winner} by {event.reason.lower()}."
+        ))
+
     def _handle_move(self, event: events.ChessMoveEvent):
         self.board.push(event.move)
 
@@ -176,9 +215,17 @@ class Board:
         self._scan_board()
         self._game.save()
 
+        outcome = self.board.outcome()
+        if outcome is not None:
+            log.info(f"Game over: {self.board.result()}")
+            events.event_manager.publish(events.GameOverEvent(
+                winner=outcome.winner,
+                reason=outcome.termination.name.capitalize().replace('_', ' '))
+            )
+            return
+
         if self._engine is not None and self._engine.color == self.board.turn:
-            move = self._engine.get_move(self.board)
-            events.event_manager.publish(events.ChessMoveEvent(move=move))
+            self._engine.get_move_async(self.board, self._handle_engine_move)
 
     def _apply_color_map(self, color_map: dict[chess.Square, tuple[int, int, int] | None]):
         for square, color in color_map.items():
@@ -217,6 +264,14 @@ class Board:
             last_move = self.board.peek()
             for sq in [last_move.from_square, last_move.to_square]:
                 color_map[sq] = settings['game.colors.previous_move']
+
+        # Light up check
+        checkers = self.board.checkers()
+        king_square = self.board.king(self.board.turn)
+        if checkers and king_square is not None:
+            color_map[king_square] = settings['game.colors.invalid_piece_placement']
+            for sq in checkers:
+                color_map[sq] = settings['game.colors.capture']
 
         return color_map
 

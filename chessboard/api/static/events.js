@@ -15,9 +15,9 @@ function addBoardEventListener(eventType, callback) {
     socket.on("board_event." + eventType, callback);
 }
 
-// window.socket.onAny((event, ...args) => {
-//     if (event === "board_event.SetSquareColorEvent") return; // Disabled to not spam the console
-//     if (event == "board_event.HalSensorVoltageEvent") return;
+window.socket.onAny((event, ...args) => {
+    // if (event === "board_event.SetSquareColorEvent") return; // Disabled to not spam the console
+    // if (event == "board_event.HalSensorVoltageEvent") return;
 
-//     console.log("Socket.IO event:", event, args);
-// });
+    console.log("Socket.IO event:", event, args);
+});

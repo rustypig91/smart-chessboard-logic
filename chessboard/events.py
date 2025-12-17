@@ -98,6 +98,18 @@ class ClockTickEvent(Event):
         self.turn = turn
 
 
+class GameOverEvent(Event):
+    def __init__(self, winner: chess.Color | None, reason: str):
+        self.winner = winner
+        self.reason = reason
+
+
+class PlayerNotifyEvent(Event):
+    def __init__(self, title: str, message: str):
+        self.title = title
+        self.message = message
+
+
 class _EventManager:
     def __init__(self):
         self._subscribers: dict[type[Event],

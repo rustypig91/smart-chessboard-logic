@@ -903,6 +903,10 @@
             document.getElementById('message-content').innerHTML = `<p style="font-size:12px; color:#fff;">${message}</p>`;
             showView('message-view');
         }
+
+        addBoardEventListener("PlayerNotifyEvent", (data) => {
+            showMessageView(data.title, data.message);
+        });
     </script>
 </body>
 

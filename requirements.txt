@@ -6,4 +6,3 @@ pyserial==3.5
 keyboard==0.13.5
 rpi-ws281x==5.0.0
 RPi.GPIO==0.7.1
-eventlet==0.40.4

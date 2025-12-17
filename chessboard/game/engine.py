@@ -3,7 +3,10 @@ import chess
 import chess.engine
 from chessboard.logger import log
 from chessboard.settings import settings
-
+from threading import Thread
+from threading import Event
+from typing import Callable, Optional
+from random import choice
 
 settings.register("engine.path", "lc0", "Path to the chess engine executable")
 settings.register("engine.weights_path", "/usr/share/chessboard-weights/",
@@ -12,17 +15,15 @@ settings.register("engine.weights_path", "/usr/share/chessboard-weights/",
 
 class Engine:
     def __init__(self, time_limit: float, weight: str, color: chess.Color = chess.BLACK):
-        weight = os.path.join(settings['engine.weights_path'], weight)
-        if not os.path.isfile(weight):
-            raise FileNotFoundError(f"Engine weights file not found: {weight}")
+        weight_path = os.path.join(settings['engine.weights_path'], weight)
+        if not os.path.isfile(weight_path):
+            raise FileNotFoundError(f"Engine weights file not found: {weight_path}")
 
-        # command = f"{settings['engine.path']} --weights {weight}"
-        self.engine = chess.engine.SimpleEngine.popen_uci([settings['engine.path']] + [f"--weights={weight}"])
+        # Thread to initialize the engine process; signal readiness via event
+        self.engine = chess.engine.SimpleEngine.popen_uci([settings['engine.path'], f"--weights={weight_path}"])
 
         self.color = color
         self.time_limit = time_limit
-
-        # log.info(f"Initialized engine with command: {command}")
 
     @staticmethod
     def get_available_weights() -> list[str]:
@@ -37,7 +38,7 @@ class Engine:
 
     def get_move(self, board: chess.Board) -> chess.Move:
         log.debug(f"Getting best move for board:\n{board.fen()}")
-
+        # Ensure engine is initialized
         result = self.engine.play(board, chess.engine.Limit(depth=2))
 
         if result.move is None:
@@ -46,3 +47,23 @@ class Engine:
 
         log.info(f"Engine selected move: {result}")
         return result.move
+
+    def get_move_async(self, board: chess.Board, callback: Callable[[chess.engine.PlayResult], None]) -> None:
+        """Run engine.play in a background thread and invoke callback with the move.
+
+        The callback receives a `chess.Move` or `None` if no valid move was found
+        or an error occurred.
+        """
+
+        def _run():
+            depth = choice([2, 3, 4])  # Randomize depth for variability
+            try:
+                log.debug("(async) Getting best move")
+                result = self.engine.play(board, chess.engine.Limit(depth=depth))
+                log.info(f"(async) Engine selected move: {result}")
+                callback(result)
+            except Exception as e:
+                log.exception(f"Error during async engine play: {e}")
+
+        t = Thread(target=_run)
+        t.start()

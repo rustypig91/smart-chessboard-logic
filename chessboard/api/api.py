@@ -3,6 +3,7 @@ import os
 from flask import Flask, render_template, send_from_directory, request
 from flask_socketio import SocketIO
 
+
 import chessboard.events
 from chessboard.api.system.wifi import api as api_board_wifi
 from chessboard.api.system.system import api as api_board_system
@@ -19,8 +20,9 @@ app.register_blueprint(api_board_system, url_prefix='/api/board/system', name='s
 app.register_blueprint(api_board, url_prefix='/api/board', name='board')
 app.register_blueprint(api_settings, url_prefix='/api/settings', name='settings')
 
-socketio = SocketIO(app)
-# socketio = SocketIO(app, async_mode='threading') # Use threading mode to avoid eventlet issues
+socketio = SocketIO(app, async_mode="threading")
+# socketio = SocketIO(app, async_mode='threading')  # Use threading mode to avoid eventlet issues
+# log.error(f"SocketIO async_mode: {socketio.async_mode}")
 
 
 @app.route('/')
@@ -44,6 +46,15 @@ def overview():
 def simulator():
     """API endpoint to get the board simulator page"""
     return render_template('simulator.html')
+
+
+@socketio.on('connect')
+def handle_connect():
+    log.info(f"Client connected: {request.sid}")
+    emit_event(chessboard.events.PlayerNotifyEvent(
+        title="Connection Established",
+        message="You are now connected to the Smart Chessboard server."
+    ))
 
 
 @socketio.on('publish_event')

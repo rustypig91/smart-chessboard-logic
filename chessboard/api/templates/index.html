@@ -905,6 +905,7 @@
         }
 
         addBoardEventListener("PlayerNotifyEvent", (data) => {
+            alert('Notification: ' + data.message);
             showMessageView(data.title, data.message);
         });
     </script>

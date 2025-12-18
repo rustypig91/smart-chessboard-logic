@@ -190,11 +190,6 @@ class Board:
             log.error("Engine did not return a valid move")
             return
 
-        events.event_manager.publish(events.PlayerNotifyEvent(
-            title="Engine Move",
-            message=f"The engine played move: {result.move.uci()}"
-        ))
-
         events.event_manager.publish(events.ChessMoveEvent(move=result.move))
 
     def _handle_game_over(self, event: events.GameOverEvent):
@@ -283,6 +278,10 @@ class Board:
         # Update self._pieces to match the current board_state
 
         log.debug("Scanning board for piece changes...")
+        events.event_manager.publish(events.PlayerNotifyEvent(
+            title="Scanning Board",
+            message="Scanning the board for piece changes..."
+        ))
 
         legal_move = None
         missing_friendly_pieces = []

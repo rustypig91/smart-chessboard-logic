@@ -21,3 +21,5 @@ window.socket.onAny((event, ...args) => {
 
     console.log("Socket.IO event:", event, args);
 });
+
+socket.on('connect', () => console.log('Socket connected'));

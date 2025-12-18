@@ -278,10 +278,6 @@ class Board:
         # Update self._pieces to match the current board_state
 
         log.debug("Scanning board for piece changes...")
-        events.event_manager.publish(events.PlayerNotifyEvent(
-            title="Scanning Board",
-            message="Scanning the board for piece changes..."
-        ))
 
         legal_move = None
         missing_friendly_pieces = []

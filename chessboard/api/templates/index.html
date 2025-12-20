@@ -1,912 +1,561 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=240, initial-scale=1.0">
-    <title>Chessboard Display</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Smart Chessboard Interface</title>
+    <style>
+        :root {
+            --sq: 64px;
+            --light: #f0d9b5;
+            --dark: #b58863;
+            --accent: #1f6feb;
+            --warn: #ff7b72;
+        }
 
-    <script src="{{ url_for('static', filename='compatability.js')}}"></script>
-    <script src="{{ url_for('static', filename='buttons.js')}}"></script>
-    <script src="{{ url_for('static', filename='keyboards.js')}}"></script>
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <script src="{{ url_for('static', filename='events.js')}}"></script>
+        body {
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 16px;
+            color: #24292f;
+            background: #ffffff;
+        }
 
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='styles.css')}}">
+        header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        h1 {
+            font-size: 18px;
+            margin: 0;
+        }
+
+        #status {
+            font-size: 12px;
+            color: #6e7781;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(240px, 1fr));
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .card {
+            border: 1px solid #d0d7de;
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .card h2 {
+            font-size: 14px;
+            margin: 0 0 8px 0;
+            color: #57606a;
+        }
+
+        .row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        button,
+        input[type="text"],
+        input[type="color"],
+        select {
+            font: inherit;
+            padding: 6px 10px;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            background: #f6f8fa;
+        }
+
+        button {
+            background: #f6f8fa;
+            cursor: pointer;
+        }
+
+        button.primary {
+            background: #1f6feb;
+            color: white;
+            border-color: #1f6feb;
+        }
+
+        button:disabled {
+            opacity: .6;
+            cursor: not-allowed;
+        }
+
+        #board-wrap {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        #board {
+            width: calc(var(--sq) * 8);
+            height: calc(var(--sq) * 8);
+            display: grid;
+            grid-template-columns: repeat(8, var(--sq));
+            grid-template-rows: repeat(8, var(--sq));
+            border: 2px solid #111;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #0002;
+            transition: transform .2s ease;
+            user-select: none;
+        }
+
+        .sq {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: calc(var(--sq) * .64);
+        }
+
+        .sq.light {
+            background: var(--light);
+        }
+
+        .sq.dark {
+            background: var(--dark);
+        }
+
+        .sq .piece {
+            pointer-events: none;
+        }
+
+        .sq.selected {
+            outline: 3px solid var(--accent);
+            outline-offset: -3px;
+        }
+
+        .sq.last {
+            box-shadow: inset 0 0 0 3px rgba(255, 230, 0, .8);
+        }
+
+        .sq.sensor {
+            box-shadow: inset 0 0 0 3px rgba(31, 111, 235, .8);
+        }
+
+        .sq.led::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: var(--led, rgba(31, 111, 235, .25));
+            mix-blend-mode: multiply;
+        }
+
+        #right-panel {
+            width: 280px;
+        }
+
+        #log {
+            font-size: 12px;
+            border: 1px solid #d0d7de;
+            border-radius: 8px;
+            padding: 8px;
+            height: 140px;
+            overflow: auto;
+            white-space: pre-line;
+        }
+
+        .small {
+            font-size: 12px;
+            color: #6e7781;
+        }
+
+        .spacer {
+            flex: 1 1 auto;
+        }
+    </style>
 </head>
 
 <body>
-    <div class="container" style="position:relative;">
+    <header>
+        <h1>Smart Chessboard</h1>
+        <span id="status">Initializing…</span>
+        <span class="spacer"></span>
+        <button id="refresh">Refresh</button>
+    </header>
 
-        <div id="loading-overlay"
-            style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:100; justify-content:center; align-items:center; flex-direction:column;">
-            <div class="css-spinner"></div>
-            <div style="color:#f5f5f5; font-size:12px; margin-top:12px;">
-                Loading<span id="loading-msg-dots"></span>
+    <div class="controls">
+        <div class="card">
+            <h2>Board Control</h2>
+            <div class="row">
+                <button id="connect">Connect</button>
+                <button id="calibrate">Calibrate</button>
+                <button id="scan">Scan Sensors</button>
+                <button id="reset">Reset</button>
+                <button id="flip">Flip</button>
+            </div>
+            <div class="row" style="margin-top:8px">
+                <button id="newGame" class="primary">New Game</button>
+                <button id="stopGame">Stop</button>
             </div>
         </div>
-        <div class="content">
-            <!-- Status bar -->
-            <div class="status-bar">
-                <div class="status-bar-left">
-                    <span id="current-time"></span>
-                </div>
-                <div class="status-bar-right">
-                    <div class="wifi-info">
-                        <span class="wifi-icon" id="wifi-icon"></span>
-                        <span id="wifi-name" style="font-size: 9px;">ChessBoard</span>
-                        <div class="status-indicator" id="status-indicator"></div>
-                    </div>
-                </div>
+
+        <div class="card">
+            <h2>Move</h2>
+            <div class="row">
+                <input id="moveUci" type="text" placeholder="e2e4, g7g8q…" />
+                <select id="promotion">
+                    <option value="">Promotion</option>
+                    <option value="q">Queen</option>
+                    <option value="r">Rook</option>
+                    <option value="b">Bishop</option>
+                    <option value="n">Knight</option>
+                </select>
+                <button id="sendMove">Send</button>
             </div>
+            <div class="small">Tip: Click two squares on the board to populate the move.</div>
+        </div>
 
-            <!-- Main Menu View -->
-            <div id="main-view" class="view active">
-                <div class="menu">
-                    <div class="menu-item selected" data-next-view="new-game-view">
-                        <div>
-                            <h3>New Game</h3>
-                            <p>Start a new chess game</p>
-                        </div>
-                    </div>
-                    <div class="menu-item" data-action="game-history">
-                        <div>
-                            <h3>Game History</h3>
-                            <p>View previous games</p>
-                        </div>
-                    </div>
-                    <div class="menu-item" data-next-view="settings-view">
-                        <div>
-                            <h3>Settings</h3>
-                            <p>Configure board settings</p>
-                        </div>
-                    </div>
-                    <div class="menu-item" data-action="power-off">
-                        <div>
-                            <h3>Power Off</h3>
-                            <p>Power off the system</p>
-                        </div>
-                    </div>
-                </div>
+        <div class="card">
+            <h2>LEDs</h2>
+            <div class="row">
+                <input id="ledSquares" type="text" placeholder="e2,e4,a1…" />
+                <input id="ledColor" type="color" value="#1f6feb" />
+                <button id="setLeds">Set</button>
+                <button id="clearLeds">Clear</button>
             </div>
+        </div>
 
-            <!-- Settings Submenu -->
-            <div id="settings-view" class="view">
-                <div class="view-header">Settings</div>
-                <div class="menu">
-                    <div class="submenu-item selected" data-next-view="wifi-config-view">
-                        <div>
-                            <h4>WiFi Configuration</h4>
-                            <p>Change network settings</p>
-                        </div>
-                    </div>
-                    <div class="submenu-item" data-action="board-settings" data-next-view="board-settings-view">
-                        <div>
-                            <h4>Board Settings</h4>
-                            <p>Configure LED brightness, colors</p>
-                        </div>
-                    </div>
-                    <div class="submenu-item" data-action="display-settings">
-                        <div>
-                            <h4>Display Settings</h4>
-                            <p>Adjust screen preferences</p>
-                        </div>
-                    </div>
-                    <div class="submenu-item" data-action="about">
-                        <div>
-                            <h4>About</h4>
-                            <p>System information</p>
-                        </div>
-                    </div>
-                </div>
+        <div class="card">
+            <h2>Engine</h2>
+            <div class="row">
+                <button id="engineStart">Start</button>
+                <button id="engineStop">Stop</button>
+                <button id="engineSuggest">Suggest Move</button>
             </div>
+            <div class="small" id="engineInfo"></div>
+        </div>
+    </div>
 
-            <!-- Settings -> WiFi Configuration -->
-            <div id="wifi-config-view" class="view">
-                <div class="view-header">WiFi Configuration</div>
-                <div class="menu">
-                    <div class="submenu-item selected" data-next-view="wifi-networks-view" data-action="scan-networks">
-                        <div>
-                            <h4>Scan Networks</h4>
-                            <p>Search for available WiFi networks</p>
-                        </div>
-                    </div>
-                    <div class="submenu-item" data-action="current-network">
-                        <div>
-                            <h4>Current Network</h4>
-                            <p>View connection details</p>
-                        </div>
-                    </div>
-                    <div class="submenu-item" data-next-view="add-network-view">
-                        <div>
-                            <h4>Add Network Manually</h4>
-                            <p>Enter SSID and password</p>
-                        </div>
-                    </div>
-                    <div class="submenu-item" data-action="forget-network">
-                        <div>
-                            <h4>Forget Network</h4>
-                            <p>Remove saved network</p>
-                        </div>
-                    </div>
-                </div>
+    <div id="board-wrap">
+        <div id="board" aria-label="Chessboard"></div>
+        <div id="right-panel">
+            <div class="card">
+                <h2>State</h2>
+                <div class="small">Turn: <span id="turn">-</span></div>
+                <div class="small">FEN:</div>
+                <div id="fen" class="small"></div>
             </div>
-
-            <!-- Settings ->WiFi Configuration -> Networks View -->
-            <div id="wifi-networks-view" class="view">
-                <div class="view-header">Available Networks</div>
-                <div class="menu" id="networks-list">
-                    <!-- Dynamically populated list of networks -->
-                </div>
-            </div>
-
-            <!-- Settings -> WiFi Configuration -> Add Network View (Example of deeper submenu) -->
-            <div id="add-network-view" class="view">
-                <div class="view-header">Add Network</div>
-                <div class="menu">
-                    <div class="submenu-item selected" data-keyboard-output="ssid-input"
-                        data-keyboard-title="Enter Network Name">
-                        <div>
-                            <h4>Network Name (SSID)</h4>
-                            <div class="input-field" id="ssid-input"></div>
-                        </div>
-                    </div>
-                    <div class="submenu-item" data-keyboard-output="password-input"
-                        data-keyboard-title="Enter Password">
-                        <div>
-                            <h4>Password</h4>
-                            <div class="input-field" id="password-input"></div>
-                        </div>
-                    </div>
-                    <div class="submenu-item" data-action="connect-network">
-                        <div>
-                            <h4>Connect</h4>
-                            <p>Save and connect to network</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Settings-> Board Settings-->
-            <div id="board-settings-view" class="view">
-                <div class="view-header">Board Settings</div>
-                <div class="menu">
-                    <!-- Board settings generated dynamically from /api/settings -->
-                </div>
-            </div>
-
-            <!-- Color Picker View -->
-            <div id="color-picker-view" class="view">
-                <div class="view-header">Pick Color (RGB)</div>
-                <div class="menu" id="color-picker-menu">
-                    <div class="submenu-item selected" data-keyboard-numeric-output="color-r"
-                        data-keyboard-title="Enter R (0-255)" data-on-keyboard-done="updateColorPreview()">
-                        <div style="display: flex; align-items: center;">
-                            <h4 style="margin: 0;">Red</h4>
-                            <div class="input-field" id="color-r" style="margin-left: 10px;"></div>
-                        </div>
-                    </div>
-                    <div class=" submenu-item" data-keyboard-numeric-output="color-g"
-                        data-keyboard-title="Enter G (0-255)">
-                        <div style="display: flex; align-items: center;">
-                            <h4 style="margin: 0;">Green</h4>
-                            <div class="input-field" id="color-g" style="margin-left: 10px;"></div>
-                        </div>
-                    </div>
-                    <div class=" submenu-item" data-keyboard-numeric-output="color-b"
-                        data-keyboard-title="Enter B (0-255)">
-                        <div style="display: flex; align-items: center;">
-                            <h4 style="margin: 0;">Blue</h4>
-                            <div class="input-field" id="color-b" style="margin-left: 10px;"></div>
-                        </div>
-                    </div>
-                    <div class=" submenu-item" data-action="color-picker-apply">
-                        <div>
-                            <h4>Apply</h4>
-                            <p>Save selected color</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Virtual Keyboard View -->
-            <div id="keyboard-view" class="view">
-                <div class="view-header" id="keyboard-title">Enter Text</div>
-                <div
-                    style="padding: 6px 8px; background: #1a1a1a; margin: 4px 8px; border-radius: 4px; border: 2px solid #8b7355;">
-                    <div style="font-size: 11px; color: #f5f5f5; min-height: 18px; font-family: 'Courier New', monospace;"
-                        id="keyboard-input-display"></div>
-                </div>
-                <div id="keyboard-grid">
-                    <!-- Keyboard keys will be generated here -->
-                </div>
-            </div>
-
-            <!-- Message View (submenu style) -->
-            <div id="message-view" class="view">
-                <div class="view-header" id="message-title">Message</div>
-                <div class="menu" style="padding: 16px 10px;">
-                    <div id="message-content"
-                        style="background:none; border:none; color:#fff; font-size:13px; padding:0; margin:0;">
-                        <!-- Message will be inserted here -->
-                    </div>
-                </div>
-            </div>
-
-            <div id="new-game-view" class="view">
-                <div class="view-header">New Game</div>
-                <div class="menu">
-                    <div class="menu-item selected" data-action="start-game">
-                        <div>
-                            <h3>Start Game</h3>
-                            <p>Begin a new chess match</p>
-                        </div>
-                    </div>
-                    <div class="menu-item" data-next-view="select-opponent-view">
-                        <div>
-                            <h3>Opponent</h3>
-                            <p id="opponent-type">Computer</p>
-                        </div>
-                    </div>
-                    <div class="menu-item" data-action="set-time">
-                        <div>
-                            <h3>Time</h3>
-
-                            <p id="time-setting">No limit</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div id="select-opponent-view" class="view">
-                <div class="view-header">Select Opponent</div>
-                <div class="menu">
-                    <div class="menu-item" data-action="set-opponent-computer">
-                        <div>
-                            <h3>Computer</h3>
-                            <p>Play against AI</p>
-                        </div>
-                    </div>
-                    <div class="menu-item selected" data-action="set-opponent-human">
-                        <div>
-                            <h3>Human</h3>
-                            <p>Play against another person</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div> <!-- End of content -->
-
-
-        <div class="button-hints">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="flex:1; text-align: center;" id="hint-0">0</div>
-                <div style="flex:1; text-align: center;" id="hint-1">1</div>
-                <div style="flex:1; text-align: center;" id="hint-2">2</div>
-                <div style="flex:1; text-align: center;" id="hint-3">3</div>
+            <div class="card" style="margin-top:12px">
+                <h2>Log</h2>
+                <div id="log"></div>
             </div>
         </div>
     </div>
 
     <script>
-        // Loading overlay helpers
-        let loadingTimer = null;
-        let loadingOverlayVisible = false;
-        let loadingBaseMsg = 'Loading';
-
-        function loadingShow(msg) {
-            // Only show overlay if still loading after 0.5s
-            loadingHide(); // Always clear any previous state
-            loadingTimer = setTimeout(() => {
-                const overlay = document.getElementById('loading-overlay');
-                if (overlay) {
-                    overlay.style.display = 'flex';
-                    loadingOverlayVisible = true;
-                    const textDiv = overlay.querySelector('div > div:last-child');
-                    loadingBaseMsg = msg || 'Loading';
-                    if (textDiv) {
-                        textDiv.innerHTML = `<span id='loading-msg-text'></span><span id='loading-msg-dots'></span>`;
-                        const msgSpan = textDiv.querySelector('#loading-msg-text');
-                        if (msgSpan) msgSpan.textContent = loadingBaseMsg;
-                    }
-                }
-            }, 500);
-        }
-
-        function loadingHide() {
-            if (loadingTimer) {
-                clearTimeout(loadingTimer);
-                loadingTimer = null;
-            }
-            if (loadingOverlayVisible) {
-                const overlay = document.getElementById('loading-overlay');
-                if (overlay) overlay.style.display = 'none';
-                loadingOverlayVisible = false;
-            }
-        }
-
-        // Navigation state management
-        let viewStack = ['main-view'];
-        let currentView = 'main-view';
-        let selectedIndex = 0;
-
-        let menuButtonFunctions = [
-            { short: menuGoBack, shortHint: 'Back', long: menuReset, longHint: 'Reset' },
-            { short: menuUp, shortHint: '↑', long: null, longHint: '' },
-            { short: menuDown, shortHint: '↓', long: null, longHint: '' },
-            { short: menuSelect, shortHint: 'Select', long: null, longHint: '' },
-        ];
-
-        let keyboardButtonFunctions = [
-            { short: keyboardMoveLeft, shortHint: '←', long: menuGoBack, longHint: 'Back' },
-            { short: keyboardMoveUp, shortHint: '↑', long: null, longHint: '' },
-            { short: keyboardMoveDown, shortHint: '↓', long: null, longHint: '' },
-            { short: keyboardMoveRight, shortHint: '→', long: keyboardEnter, longHint: 'ENTER' },
-        ];
-
-        let messageButtonFunctions = [
-            { short: menuGoBack, shortHint: 'Back', long: null, longHint: '' },
-            { short: null, shortHint: '', long: null, longHint: '' },
-            { short: null, shortHint: '', long: null, longHint: '' },
-            { short: menuGoBack, shortHint: 'Ok', long: null, longHint: '' },
-        ];
-
-        const viewButtonsConfig = {
-            'keyboard-view': keyboardButtonFunctions,
-            'message-view': messageButtonFunctions,
+        // Basic board + API UI for a physical chessboard.
+        const API = {
+            state: '/api/state',
+            move: '/api/move',
+            calibrate: '/api/calibrate',
+            sensors: '/api/sensors',
+            leds: '/api/leds',
+            clear_leds: '/api/leds/clear',
+            reset: '/api/reset',
+            game_new: '/api/game/new',
+            game_stop: '/api/game/stop',
+            engine_start: '/api/engine/start',
+            engine_stop: '/api/engine/stop',
+            engine_suggest: '/api/engine/suggest',
+            status: '/api/status'
         };
 
-        // Get current menu items based on active view
-        function menuGetCurrentItems() {
-            const view = document.getElementById(currentView);
-            if (currentView === 'keyboard-view' || currentView === 'message-view') {
-                return []; // Keyboard and message view use different navigation
-            }
-            return Array.from(view.querySelectorAll('.menu-item, .submenu-item'));
+        const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+        const PIECES = { P: '♙', N: '♘', B: '♗', R: '♖', Q: '♕', K: '♔', p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' };
+
+        const state = {
+            orientation: 'white',
+            selectedFrom: null,
+            lastMove: null,
+            fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+        };
+
+        const el = {
+            board: document.getElementById('board'),
+            status: document.getElementById('status'),
+            turn: document.getElementById('turn'),
+            fen: document.getElementById('fen'),
+            log: document.getElementById('log'),
+            moveUci: document.getElementById('moveUci'),
+            promotion: document.getElementById('promotion'),
+            refresh: document.getElementById('refresh'),
+            connect: document.getElementById('connect'),
+            calibrate: document.getElementById('calibrate'),
+            scan: document.getElementById('scan'),
+            reset: document.getElementById('reset'),
+            flip: document.getElementById('flip'),
+            newGame: document.getElementById('newGame'),
+            stopGame: document.getElementById('stopGame'),
+            sendMove: document.getElementById('sendMove'),
+            ledSquares: document.getElementById('ledSquares'),
+            ledColor: document.getElementById('ledColor'),
+            setLeds: document.getElementById('setLeds'),
+            clearLeds: document.getElementById('clearLeds'),
+            engineStart: document.getElementById('engineStart'),
+            engineStop: document.getElementById('engineStop'),
+            engineSuggest: document.getElementById('engineSuggest'),
+            engineInfo: document.getElementById('engineInfo'),
+        };
+
+        function log(msg) {
+            const time = new Date().toLocaleTimeString();
+            el.log.textContent = `[${time}] ${msg}\n` + el.log.textContent;
         }
 
-        // Show a specific view
-        // Track selectedIndex for each view
-        const viewSelectedIndices = {};
-
-        function showView(viewId) {
-            // Save current selectedIndex before leaving
-            if (currentView) {
-                viewSelectedIndices[currentView] = selectedIndex;
-            }
-            // Hide all views
-            Array.from(document.querySelectorAll('.view')).forEach(v => v.classList.remove('active'));
-
-            // Show the requested view
-            const targetView = document.getElementById(viewId);
-            if (targetView) {
-                viewStack.push(viewId);
-                currentView = viewId;
-                // Restore previous selectedIndex for this view, or default to 0
-                selectedIndex = 0;
-                menuUpdateSelection();
-                buttonsUpdate(viewButtonsConfig[viewId] || menuButtonFunctions);
-
-                targetView.classList.add('active');
-                console.log('Navigated to:', viewId);
+        async function fetchJSON(url, options = {}) {
+            try {
+                const res = await fetch(url, options);
+                if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+                return await res.json();
+            } catch (e) {
+                log(`Error: ${url} - ${e.message}`);
+                throw e;
             }
         }
 
-        // Go back to previous view
-        function menuGoBack() {
-            if (viewStack.length > 1) {
-                if (currentView) {
-                    viewSelectedIndices[currentView] = null;
+        function buildBoard() {
+            el.board.innerHTML = '';
+            for (let r = 8; r >= 1; r--) {
+                for (let f = 0; f < 8; f++) {
+                    const sq = document.createElement('div');
+                    const square = `${files[f]}${r}`;
+                    sq.className = `sq ${(r + f) % 2 === 0 ? 'dark' : 'light'}`;
+                    sq.dataset.square = square;
+                    sq.setAttribute('role', 'button');
+                    sq.setAttribute('aria-label', square);
+                    const piece = document.createElement('div');
+                    piece.className = 'piece';
+                    sq.appendChild(piece);
+                    sq.addEventListener('click', onSquareClick);
+                    el.board.appendChild(sq);
                 }
-                // Remove current view
-                viewStack.pop();
-
-                // Get previous view
-                const previousView = viewStack[viewStack.length - 1];
-
-                // Hide all views
-                Array.from(document.querySelectorAll('.view')).forEach(v => v.classList.remove('active'));
-
-                // Show previous view
-                document.getElementById(previousView).classList.add('active');
-                currentView = previousView;
-                // Restore previous selectedIndex for this view, or default to 0
-                selectedIndex = viewSelectedIndices[previousView] !== undefined ? viewSelectedIndices[previousView] : 0;
-                menuUpdateSelection();
-                buttonsUpdate(viewButtonsConfig[previousView] || menuButtonFunctions);
-
-                console.log('Back to:', previousView);
-            } else {
-                console.log('Already at main view');
             }
         }
 
-
-        // Show virtual keyboard
-        function keyboardShow(title, initialInput, callback, numberOnly = false) {
-            keyboardInput = initialInput || '';
-            keyboardCallback = callback || null;
-            keyboardRow = 0; // Initialize keyboard row to 0
-            keyboardCol = 0; // Initialize keyboard column to 0
-            currentKeyboardLayout = numberOnly ? keyboardLayoutNumber : keyboardLayoutNormal;
-
-            document.getElementById('keyboard-title').textContent = title || 'Enter Text';
-
-            generateKeyboard();
-            showView('keyboard-view');
-        }
-
-        function keyboardEnter() {
-            const key = keyboardGetSelectedKey();
-            if (key === 'DONE') {
-                // Finish input
-                if (keyboardCallback) {
-                    keyboardCallback(keyboardInput);
-                    keyboardCallback = null;
-                }
-                menuGoBack();
-                return;
-            } else if (key === 'DEL') {
-                // Remove last character
-                keyboardInput = keyboardInput.slice(0, -1);
-            } else if (key === 'CLEAR') {
-                // Clear entire input
-                keyboardInput = '';
-            } else if (key === '?!@') {
-                // Toggle keyboard layout
-                if (currentKeyboardLayout === keyboardLayoutNormal) {
-                    currentKeyboardLayout = keyboardLayoutUppercase;
-                } else {
-                    currentKeyboardLayout = keyboardLayoutNormal;
-                }
-                generateKeyboard();
-            } else if (key === 'SPACE') {
-                // Add space character
-                keyboardInput += ' ';
-            } else {
-                // Add character to input
-                keyboardInput += key;
-            }
-
-            const display = document.getElementById('keyboard-input-display');
-            display.textContent = keyboardInput;
-            keyboardUpdateSelection();
-        }
-
-
-        function padLeft(str, length, pad) {
-            str = String(str);
-            pad = pad || ' ';
-            while (str.length < length) {
-                str = pad + str;
-            }
-            return str;
-        }
-
-        // Update current time in status bar
-        function updateTime() {
-            now = new Date();
-            hours = now.getHours();
-            minutes = padLeft(now.getMinutes(), 2, '0');
-            document.getElementById('current-time').textContent = `${hours}:${minutes}`;
-        }
-
-        // Fetch WiFi status from server
-        function wifiFetchStatus() {
-            fetch('/api/board/wifi/info')
-                .then(function (response) { return response.json(); })
-                .then(function (data) {
-                    wifiUpdateStatus(data.connected, data.ssid, data.signal);
-                })
-                .catch(function (error) {
-                    console.error('Error fetching WiFi status:', error);
-                    wifiUpdateStatus(false, 'Error', 'N/A');
-                });
-        }
-
-        // Update WiFi status dynamically
-        function wifiUpdateStatus(connected, name, signal) {
-            const indicator = document.getElementById('status-indicator');
-            const wifiName = document.getElementById('wifi-name');
-            const wifiIcon = document.getElementById('wifi-icon');
-
-            if (connected) {
-                indicator.classList.remove('disconnected');
-                wifiName.textContent = name || 'Connected';
-                wifiIcon.textContent = '';
-            } else {
-                indicator.classList.add('disconnected');
-                wifiName.textContent = 'No WiFi';
-                wifiIcon.textContent = '';
-            }
-        }
-
-        function wifiConnect(ssid, password) {
-            loadingShow('Connecting');
-            fetch('/api/board/wifi/connect', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 'ssid': ssid, 'password': password })
-            })
-                .then(response => response.json())
-                .then(data => {
-                    loadingHide();
-                    if (data.success) {
-                        showMessageView('Success', 'Connected successfully!');
-                        wifiFetchStatus();
-                    } else {
-                        showMessageView('Failed', 'Connection failed: ' + (data.error || 'Unknown error'));
-                    }
-                })
-                .catch(error => {
-                    loadingHide();
-                    console.error('Error connecting to WiFi:', error);
-                    showMessageView('Error', 'Error connecting to WiFi' + (error.message ? ': ' + error.message : ''));
-
-                });
-        }
-
-        function wifiShowInfo() {
-            loadingShow('Fetching Info');
-            fetch('/api/board/wifi/info')
-                .then(response => response.json())
-                .then(data => {
-                    loadingHide();
-                    const info = `
-                        <strong>Connected:</strong> ${data.connected ? 'Yes' : 'No'}<br>
-                        <strong>SSID:</strong> ${data.ssid || 'N/A'}<br>
-                        <strong>Signal:</strong> ${data.signal || 'N/A'}<br>
-                        <strong>IP Address:</strong> ${data.ip || 'N/A'}<br>
-                    `;
-                    showMessageView('Current Network Info', info);
-                })
-                .catch(error => {
-                    loadingHide();
-                    console.error('Error fetching WiFi info:', error);
-                    showMessageView('Error', 'Error fetching WiFi info' + (error.message ? ': ' + error.message : ''));
-                });
-        }
-
-        function wifiScanNetworks() {
-            loadingShow('Scanning');
-
-            fetch('/api/board/wifi/scan')
-                .then(response => response.json())
-                .then(data => {
-                    loadingHide();
-                    console.log('Available networks:', data.networks);
-                    const networksList = document.getElementById('networks-list');
-                    networksList.innerHTML = '';
-                    if (Array.isArray(data.networks) && data.networks.length > 0) {
-                        data.networks.forEach((network, idx) => {
-                            const item = document.createElement('div');
-                            item.className = 'menu-item';
-                            item.dataset.action = 'select-network';
-                            item.dataset.ssid = network.ssid;
-                            item.innerHTML = `
-                                <div>
-                                    <h3>${network.ssid || '(Hidden SSID)'}</h3>
-                                    <p>Signal: ${network.signal || 'N/A'}${network.secure ? ' • 🔒' : ''}</p>
-                                </div>
-                            `;
-                            networksList.appendChild(item);
-                        });
-                    } else {
-                        const empty = document.createElement('div');
-                        empty.className = 'menu-item';
-                        empty.innerHTML = '<div><h3>No networks found</h3></div>';
-                        networksList.appendChild(empty);
-                    }
-                    selectedIndex = 0;
-                    menuUpdateSelection();
-                    // You can update the UI to show available networks here
-                })
-                .catch(error => {
-                    loadingHide();
-                    console.error('Error scanning networks:', error);
-                });
-        }
-
-        // Update selection highlighting
-        function menuUpdateSelection() {
-            const menuItems = menuGetCurrentItems();
-            menuItems.forEach((item, index) => {
-                if (index === selectedIndex) {
-                    item.classList.add('selected');
-                    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                } else {
-                    item.classList.remove('selected');
-                }
+        function clearHighlights() {
+            document.querySelectorAll('.sq.selected,.sq.last,.sq.sensor,.sq.led').forEach(sq => {
+                sq.classList.remove('selected', 'last', 'sensor', 'led');
+                sq.style.setProperty('--led', '');
             });
         }
 
-        function menuUp() {
-            const menuItems = menuGetCurrentItems();
-            if (menuItems.length > 0) {
-                selectedIndex = (selectedIndex - 1 + menuItems.length) % menuItems.length;
-                menuUpdateSelection();
-            }
+        function setLastMoveHighlight(move) {
+            if (!move || move.length < 4) return;
+            const from = move.slice(0, 2), to = move.slice(2, 4);
+            const a = document.querySelector(`.sq[data-square="${from}"]`);
+            const b = document.querySelector(`.sq[data-square="${to}"]`);
+            a && a.classList.add('last');
+            b && b.classList.add('last');
         }
 
-        function menuDown() {
-            const menuItems = menuGetCurrentItems();
-            if (menuItems.length > 0) {
-                selectedIndex = (selectedIndex + 1) % menuItems.length;
-                menuUpdateSelection();
-            }
-        }
-
-
-        // Store pending color path for picker
-        let pendingColorPath = null;
-
-        function loadBoardSettings() {
-            console.log('Loading board settings');
-            loadingShow('Loading Settings');
-            fetch('/api/settings')
-                .then(response => response.json())
-                .then(data => {
-                    loadingHide();
-                    const boardSettingsView = document.getElementById('board-settings-view').querySelector('.menu');
-                    boardSettingsView.innerHTML = '';
-
-                    Object.entries(data.settings).forEach(([key, setting]) => {
-                        // key is the property name, setting is the value object
-                        const item = document.createElement('div');
-                        item.className = 'submenu-item';
-                        item.dataset.action = `set-board-setting`;
-                        item.dataset.settingKey = key;
-                        item.innerHTML = `
-                            <div>
-                                <h4>${key}</h4>
-                                <p>${setting.description}</p>
-                                <p>Current: ${setting.value}</p>
-                            </div>
-                        `;
-                        boardSettingsView.appendChild(item);
-                    });
-
-                    selectedIndex = 0;
-                    menuUpdateSelection();
-                })
-                .catch(error => {
-                    loadingHide();
-                    console.error('Error loading board settings:', error);
-                    showMessageView('Error', 'Error loading board settings' + (error.message ? ': ' + error.message : ''));
-                });
-        }
-
-        function showBoardSettingView(settingKey) {
-            console.log('Showing board setting for key:', settingKey);
-            loadingShow('Loading Setting');
-            fetch(`/api/settings/${encodeURIComponent(settingKey)}`)
-                .then(response => response.json())
-                .then(data => {
-                    loadingHide();
-                    const setting = data.setting;
-                    if (!setting) {
-                        showMessageView('Error', 'Setting not found');
-                        return;
-                    }
-
-                    if (setting.type === 'ColorSetting') {
-                        // Open color picker with current value
-                        // const rgb = setting.value.match(/\d+/g).map(Number);
-                        pendingColorPath = settingKey;
-                        openColorPicker(settingKey, setting.value);
+        function renderFEN(fen) {
+            state.fen = fen;
+            el.fen.textContent = fen;
+            clearHighlights();
+            document.querySelectorAll('.sq .piece').forEach(p => p.textContent = '');
+            const placement = fen.split(' ')[0];
+            const rows = placement.split('/');
+            for (let i = 0; i < 8; i++) {
+                const rank = 8 - i;
+                let fileIndex = 0;
+                for (const ch of rows[i]) {
+                    if (/\d/.test(ch)) {
+                        fileIndex += parseInt(ch, 10);
                     } else {
-                        showMessageView('Error', 'Unsupported setting type: ' + setting.type);
+                        const file = files[fileIndex];
+                        const sqEl = document.querySelector(`.sq[data-square="${file}${rank}"] .piece`);
+                        sqEl.textContent = PIECES[ch] || '';
+                        fileIndex++;
                     }
-                })
-                .catch(error => {
-                    loadingHide();
-                    console.error('Error fetching board setting:', error);
-                    showMessageView('Error', 'Error fetching board setting' + (error.message ? ': ' + error.message : ''));
+                }
+            }
+        }
+
+        function onSquareClick(e) {
+            const square = e.currentTarget.dataset.square;
+            if (!state.selectedFrom) {
+                state.selectedFrom = square;
+                document.querySelector(`.sq[data-square="${square}"]`)?.classList.add('selected');
+                el.moveUci.value = square;
+            } else {
+                const from = state.selectedFrom;
+                if (from === square) {
+                    state.selectedFrom = null;
+                    document.querySelector(`.sq[data-square="${square}"]`)?.classList.remove('selected');
+                    el.moveUci.value = '';
+                    return;
+                }
+                let uci = from + square;
+                // Basic promotion auto-prompt if pawn reaches last rank
+                const fromRank = parseInt(from[1], 10);
+                const toRank = parseInt(square[1], 10);
+                const maybePromotion = (fromRank === 7 && toRank === 8) || (fromRank === 2 && toRank === 1);
+                const promo = el.promotion.value;
+                if (maybePromotion && promo) uci += promo;
+                el.moveUci.value = uci;
+                state.selectedFrom = null;
+                document.querySelectorAll('.sq.selected').forEach(s => s.classList.remove('selected'));
+            }
+        }
+
+        async function refreshState() {
+            try {
+                const s = await fetchJSON(API.state);
+                if (s?.fen) renderFEN(s.fen);
+                if (s?.turn) el.turn.textContent = s.turn;
+                if (s?.last_move) { state.lastMove = s.last_move; setLastMoveHighlight(s.last_move); }
+                if (s?.leds?.length) applyLeds(s.leds);
+                setStatus('Online');
+            } catch {
+                setStatus('Offline');
+            }
+        }
+
+        function setStatus(text) {
+            el.status.textContent = text;
+        }
+
+        async function sendMove(uci) {
+            if (!uci || uci.length < 4) return;
+            try {
+                const res = await fetchJSON(API.move, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uci })
                 });
+                log(`Move sent: ${uci}`);
+                if (res?.fen) renderFEN(res.fen);
+                if (res?.last_move) { state.lastMove = res.last_move; setLastMoveHighlight(res.last_move); }
+                await refreshState();
+            } catch (e) { }
         }
 
-        function menuSelect() {
-            const menuItems = menuGetCurrentItems();
-            if (menuItems.length === 0) return;
+        function parseSquares(input) {
+            return (input || '')
+                .split(/[,\s]+/)
+                .map(s => s.trim().toLowerCase())
+                .filter(s => /^[a-h][1-8]$/.test(s));
+        }
 
-            const selectedItem = menuItems[selectedIndex];
-            const nextView = selectedItem.dataset.nextView;
-            const action = selectedItem.dataset.action;
-            const keyboardOutput = selectedItem.dataset.keyboardOutput;
-            const keyboardNumericOutput = selectedItem.dataset.keyboardNumericOutput;
-
-            // If the item has a next view, navigate directly
-            if (nextView) {
-                showView(nextView);
-            }
-
-            if (keyboardOutput || keyboardNumericOutput) {
-                const isNumeric = true;
-                const outputId = keyboardOutput || keyboardNumericOutput;
-                const keyboardTitle = selectedItem.dataset.keyboardTitle || 'Enter Text';
-                const callback = selectedItem.dataset.onKeyboardDone;
-                // This is a text input field
-                keyboardShow(keyboardTitle, document.getElementById(outputId).textContent, function (inputText) {
-                    document.getElementById(outputId).textContent = inputText;
-                    if (callback) {
-                        // Evaluate the callback function if provided
-                        eval(callback);
-                    }
-                }, isNumeric);
-            }
-
-
-            if (action) {
-                // Handle different actions (for items that do not have nextView)
-                switch (action) {
-                    case 'select-network':
-                        const ssid = selectedItem.dataset.ssid;
-                        keyboardShow(`Enter password for "${ssid}"`, '', function (inputPassword) {
-                            wifiConnect(ssid, inputPassword);
-                        });
-                        break;
-                    case 'connect-network':
-                        networkSSID = document.getElementById('ssid-input').textContent || '';
-                        networkPassword = document.getElementById('password-input').textContent || '';
-                        wifiConnect(networkSSID, networkPassword);
-                        break;
-                    case 'scan-networks':
-                        wifiScanNetworks();
-                        break;
-                    case 'current-network':
-                        wifiShowInfo();
-                        break;
-                    case 'board-settings':
-                        loadBoardSettings();
-                        break;
-                    case 'set-board-setting':
-                        showBoardSettingView(selectedItem.dataset.settingKey);
-                        break;
-                    case 'display-settings':
-                        // Add your display settings logic here
-                        break;
-                    case 'change-board-setting':
-                        loadBoardSettings();
-                        break;
-                    case 'about':
-                        // Add your about page logic here
-                        break;
-                    case 'set-opponent-human':
-                        document.getElementById('opponent-type').textContent = 'Human';
-                        setCookie('opponent', 'Human');
-                        menuGoBack();
-                        break;
-                    case 'set-opponent-computer':
-                        document.getElementById('opponent-type').textContent = 'Computer';
-                        setCookie('opponent', 'Computer');
-                        menuGoBack();
-                        break;
-                    case 'set-time':
-                        keyboardShow('Enter Minutes (blank=no limit)', '', function (inputText) {
-                            if (inputText && !isNaN(inputText) && Number(inputText) > 0) {
-                                document.getElementById('time-setting').textContent = inputText + ' min';
-                                setCookie('time', inputText + ' min');
-                            } else {
-                                document.getElementById('time-setting').textContent = 'No limit';
-                                setCookie('time', 'No limit');
-                            }
-                        }, true);
-                        break;
-                    case 'power-off':
-                        loadingShow('Powering Off');
-                        fetch('/api/board/system/shutdown', { method: 'POST' })
-                            .then(response => response.json())
-                            .then(data => {
-                                loadingHide();
-                                if (data.success) {
-                                    showMessageView('Power Off', 'The system is powering off.');
-                                } else {
-                                    showMessageView('Error', 'Failed to power off: ' + (data.error || 'Unknown error'));
-                                }
-                            })
-                            .catch(error => {
-                                loadingHide();
-                                console.error('Error powering off:', error);
-                                showMessageView('Error', 'Error powering off' + (error.message ? ': ' + error.message : ''));
-                            });
-                        break;
-                    default:
-                        console.error('Action not yet implemented:', action);
+        function applyLeds(items) {
+            clearLedClasses();
+            for (const it of items) {
+                const sq = typeof it === 'string' ? it : it.square;
+                const color = typeof it === 'string' ? null : it.color;
+                const elSq = document.querySelector(`.sq[data-square="${sq}"]`);
+                if (elSq) {
+                    elSq.classList.add('led');
+                    if (color) elSq.style.setProperty('--led', hexOrRgba(color));
                 }
             }
         }
 
-        // Update color preview box when inputs change
-        function updateColorPreview() {
-            const r = parseInt(document.getElementById('color-r').textContent || '0', 10) || 0;
-            const g = parseInt(document.getElementById('color-g').textContent || '0', 10) || 0;
-            const b = parseInt(document.getElementById('color-b').textContent || '0', 10) || 0;
-            const clamp = (x) => Math.max(0, Math.min(255, x));
-
-            const rr = clamp(r), gg = clamp(g), bb = clamp(b);
-
-            console.log('Color preview updated to:', rr, gg, bb);
-            sendEvent('SetSquareColorEvent', {
-                color_map: {
-                    27: [rr, gg, bb],
-                    28: [rr, gg, bb],
-                    35: [rr, gg, bb],
-                    36: [rr, gg, bb],
-                }
+        function clearLedClasses() {
+            document.querySelectorAll('.sq.led').forEach(sq => {
+                sq.classList.remove('led');
+                sq.style.setProperty('--led', '');
             });
         }
 
-        // Expose a function to open color picker with initial RGB and path
-        function openColorPicker(path, initialRGB) {
-            document.getElementById('color-r').textContent = (initialRGB && initialRGB[0] != null) ? initialRGB[0] : '0';
-            document.getElementById('color-g').textContent = (initialRGB && initialRGB[1] != null) ? initialRGB[1] : '0';
-            document.getElementById('color-b').textContent = (initialRGB && initialRGB[2] != null) ? initialRGB[2] : '0';
-            updateColorPreview();
-            showView('color-picker-view');
+        function hexOrRgba(color) {
+            if (!color) return 'rgba(31,111,235,.25)';
+            if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color)) return color + '40'; // add alpha if possible
+            return color;
         }
 
-        function menuReset() {
-            console.log('Menu reset pressed');
-            // Reset to main view
-            while (currentView !== 'main-view' && viewStack.length > 1) {
-                menuGoBack();
-            }
-        }
-
-        // --- Cookie helpers ---
-        function setCookie(name, value, days = 365) {
-            const d = new Date();
-            d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
-            const expires = 'expires=' + d.toUTCString();
-            document.cookie = name + '=' + encodeURIComponent(value) + ';' + expires + ';path=/';
-        }
-
-        function getCookie(name) {
-            const cname = name + '=';
-            const decodedCookie = decodeURIComponent(document.cookie);
-            const ca = decodedCookie.split(';');
-            for (let i = 0; i < ca.length; i++) {
-                let c = ca[i]; while (c.charAt(0) === ' ') c = c.substring(1); if (c.indexOf(cname) === 0)
-                    return c.substring(cname.length, c.length);
-            } return '';
-        }
-
-        // --- Load settings from cookies on page load ---
-        function loadSettingsFromCookies() {
-            const opponent = getCookie('opponent');
-            if (opponent) {
-                document.getElementById('opponent-type').textContent = opponent;
-            }
-            const time = getCookie('time');
-            if (time) {
-                document.getElementById('time-setting').textContent = time;
-            }
-        }
-
-        // Initialize on page load
-        menuUpdateSelection();
-        updateTime();
-        wifiFetchStatus();
-        loadSettingsFromCookies();
-        // updateNetworkInputs();
-        buttonsUpdate(menuButtonFunctions);
-
-        // Update time every second
-        setInterval(updateTime, 1000);
-
-        // Update WiFi status every 10 seconds
-        setInterval(wifiFetchStatus, 10000);
-
-        // --- Message View Helper ---
-        function showMessageView(title, message) {
-            document.getElementById('message-title').textContent = title;
-            document.getElementById('message-content').innerHTML = `<p style="font-size:12px; color:#fff;">${message}</p>`;
-            showView('message-view');
-        }
-
-        addBoardEventListener("PlayerNotifyEvent", (data) => {
-            showMessageView(data.title, data.message);
+        // Wire up controls
+        el.refresh.addEventListener('click', refreshState);
+        el.connect.addEventListener('click', async () => {
+            try { await fetchJSON(API.status); setStatus('Online'); log('Connected'); refreshState(); } catch { }
         });
+        el.calibrate.addEventListener('click', async () => {
+            try { await fetchJSON(API.calibrate, { method: 'POST' }); log('Calibrated'); } catch { }
+        });
+        el.scan.addEventListener('click', async () => {
+            try {
+                const s = await fetchJSON(API.sensors);
+                clearHighlights();
+                const squares = Array.isArray(s) ? s : s?.squares || [];
+                for (const sq of squares) {
+                    document.querySelector(`.sq[data-square="${sq}"]`)?.classList.add('sensor');
+                }
+                log(`Sensors: ${squares.join(', ') || 'none'}`);
+            } catch { }
+        });
+        el.reset.addEventListener('click', async () => {
+            try { await fetchJSON(API.reset, { method: 'POST' }); log('Reset'); refreshState(); } catch { }
+        });
+        el.flip.addEventListener('click', () => {
+            state.orientation = state.orientation === 'white' ? 'black' : 'white';
+            el.board.style.transform = state.orientation === 'white' ? 'none' : 'rotate(180deg)';
+        });
+        el.newGame.addEventListener('click', async () => {
+            try { await fetchJSON(API.game_new, { method: 'POST' }); log('New game'); refreshState(); } catch { }
+        });
+        el.stopGame.addEventListener('click', async () => {
+            try { await fetchJSON(API.game_stop, { method: 'POST' }); log('Game stopped'); } catch { }
+        });
+        el.sendMove.addEventListener('click', () => {
+            const base = el.moveUci.value.trim();
+            const promo = el.promotion.value;
+            const uci = base && promo && base.length === 4 ? base + promo : base;
+            sendMove(uci);
+        });
+        el.setLeds.addEventListener('click', async () => {
+            const squares = parseSquares(el.ledSquares.value);
+            const color = el.ledColor.value;
+            if (!squares.length) return;
+            try {
+                await fetchJSON(API.leds, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ squares, color })
+                });
+                applyLeds(squares.map(sq => ({ square: sq, color })));
+                log(`LEDs set on ${squares.join(', ')}`);
+            } catch { }
+        });
+        el.clearLeds.addEventListener('click', async () => {
+            try { await fetchJSON(API.clear_leds, { method: 'POST' }); clearLedClasses(); log('LEDs cleared'); } catch { }
+        });
+        el.engineStart.addEventListener('click', async () => {
+            try { const r = await fetchJSON(API.engine_start, { method: 'POST' }); el.engineInfo.textContent = r?.status || 'Engine started'; } catch { }
+        });
+        el.engineStop.addEventListener('click', async () => {
+            try { const r = await fetchJSON(API.engine_stop, { method: 'POST' }); el.engineInfo.textContent = r?.status || 'Engine stopped'; } catch { }
+        });
+        el.engineSuggest.addEventListener('click', async () => {
+            try {
+                const r = await fetchJSON(API.engine_suggest);
+                if (r?.uci) {
+                    el.engineInfo.textContent = `Suggest: ${r.uci}`;
+                    el.moveUci.value = r.uci;
+                    setLastMoveHighlight(r.uci);
+                } else {
+                    el.engineInfo.textContent = 'No suggestion';
+                }
+            } catch { }
+        });
+
+        // Init
+        buildBoard();
+        renderFEN(state.fen);
+        setStatus('Ready');
+        refreshState();
+        setInterval(refreshState, 3000);
     </script>
 </body>
 

@@ -5,17 +5,14 @@
     <meta charset="UTF-8" />
     <title>Chessboard Simulator</title>
 
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <!-- <script src="{{ url_for('static', filename='events.js')}}"></script> -->
-
+    <script src="{{ url_for('static', filename='chessboard.js')}}"></script>
+    <script src="{{ url_for('static', filename='socket.io.min.js')}}"></script>
+    <script src="{{ url_for('static', filename='events.js')}}"></script>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='chessboard.css')}}">
     <style>
         body {
             /* background: #4d4d4d; */
             background-color: #333;
-        }
-
-        .drop-target {
-            box-shadow: inset 0 0 0 4px #90caf9;
         }
 
         .container {
@@ -41,30 +38,6 @@
             background: #f5f5f5;
         }
 
-        .chess-board {
-            display: grid;
-            grid-template-columns: repeat(8, 75px);
-            grid-template-rows: repeat(8, 75px);
-            gap: 0;
-            /* border: 75px solid #000; */
-            width: 600px;
-            height: 600px;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-            background: #f0d9b5;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-        }
-
-        .border {
-            width: 750px;
-            height: 750px;
-            background: #000;
-            position: relative;
-        }
-
         .white-button {
             background-color: #f00;
             border: 1px solid #000;
@@ -86,49 +59,11 @@
             top: 0;
             right: 0;
         }
-
-        .chess-square {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 50px;
-            cursor: pointer;
-            background: #000;
-            user-select: none;
-            border: 1px solid #999;
-        }
-
-        .chess-piece {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 44px;
-            cursor: grab;
-            user-select: none;
-            text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff,
-                1px 1px 0 #fff;
-        }
     </style>
-</head>
-
-<body>
-    <div class="container">
-        <div class="border">
-            <div id="chessboard" class="chess-board"></div>
-            <div id="white-button" class="white-button"></div>
-            <div id="black-button" class="black-button"></div>
-        </div>
-        <div id="piece-storage" class="storage"></div>
-    </div>
     <script>
-        const pieceStorage = document.getElementById("piece-storage");
-
         // Helper to check if drop target is board or storage
         function isBoardOrStorage(target) {
+            let pieceStorage = document.getElementById("piece-storage");
             return (
                 target === board ||
                 target === pieceStorage ||
@@ -137,153 +72,12 @@
             );
         }
 
-        const pieces = [
-            ["♜", "♞", "♝", "♛", "♚", "♝", "♞", "♜"],
-            ["♟", "♟", "♟", "♟", "♟", "♟", "♟", "♟"],
-            ["", "", "", "", "", "", "", ""],
-            ["", "", "", "", "", "", "", ""],
-            ["", "", "", "", "", "", "", ""],
-            ["", "", "", "", "", "", "", ""],
-            ["♙", "♙", "♙", "♙", "♙", "♙", "♙", "♙"],
-            ["♖", "♘", "♗", "♕", "♔", "♗", "♘", "♖"],
-        ];
-
-        function get_color(piece) {
-            switch (piece) {
-                case "♔": // White King
-                case "♕": // White Queen
-                case "♖": // White Rook
-                case "♗": // White Bishop
-                case "♘": // White Knight
-                case "♙": // White Pawn
-                    return "white";
-                case "♚": // Black King
-                case "♛": // Black Queen
-                case "♜": // Black Rook
-                case "♝": // Black Bishop
-                case "♞": // Black Knight
-                case "♟": // Black Pawn
-                    return "black";
-                default:
-                    return "none";
-            }
-        }
-        const squares = [];
-        // Socket.IO client
-        const socket = io();
-
-        function sendEvent(eventType, eventData) {
-            console.log("Sending event:", eventType, eventData);
-            socket.emit("publish_event", {
-                event_type: eventType,
-                event_data: eventData,
-            });
-        }
-
         // Track lifted piece
         let liftedPiece = null;
         let liftedFrom = null;
-        let pieceStorageIndex = 1000; // Arbitrary high number for storage pieces
         let sensorVoltageWhite = -0.5;
         let sensorVoltageEmpty = 0.0;
         let sensorVoltageBlack = 0.5;
-
-
-        function dragoverHandler(e) {
-            e.preventDefault();
-            e.currentTarget.classList.add("drop-target");
-        }
-
-        function dragleaveHandler(e) {
-            e.currentTarget.classList.remove("drop-target");
-        }
-
-        function sendBoardState(updatedSquare) {
-            let colors = [];
-            for (let squareIndex = 0; squareIndex < 64; squareIndex++) {
-                const pieceDiv = document.querySelector(`[data-square_index='${squareIndex}'] .chess-piece`);
-                if (!pieceDiv) {
-                    colors[squareIndex] = "none";
-                    continue;
-                }
-
-                let dragging = pieceDiv.classList.contains("dragging");
-                if (dragging) {
-                    colors[squareIndex] = "none";
-                    continue;
-                }
-
-                colors[squareIndex] = get_color(pieceDiv.innerHTML);
-            }
-            sendEvent("SquarePieceStateChange", {
-                squares: [updatedSquare],
-                colors: colors
-            });
-        }
-
-        function dragstartHandler(e) {
-            const pieceDiv = e.target;
-            const fromSquare = pieceDiv.dataset.current_square_index;
-
-            pieceDiv.classList.add("dragging");
-
-            console.log("Drag start:", pieceDiv.innerHTML, "from square", fromSquare);
-
-            e.dataTransfer.setData("text/plain", pieceDiv.innerHTML);
-            e.dataTransfer.setData("from-square", fromSquare);
-
-            if (fromSquare != pieceStorageIndex) {
-                // sendEvent("PieceLiftedEvent", {
-                //     square: parseInt(fromSquare)
-                // });
-                sendBoardState(parseInt(fromSquare));
-            }
-        }
-
-        function dragendHandler(e) {
-            const targetSquare = document.querySelector('.drop-target');
-
-            document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
-
-            const pieceDiv = e.target;
-            const fromSquareIndex = pieceDiv.dataset.current_square_index;
-            pieceDiv.classList.remove("dragging");
-
-            if (!targetSquare) {
-                console.log("Drag end: dropped outside board, no action taken");
-                // sendEvent("PiecePlacedEvent", {
-                //     square: parseInt(fromSquareIndex),
-                //     color: get_color(pieceDiv.innerHTML),
-                // });
-                sendBoardState(parseInt(fromSquareIndex));
-                return;
-            }
-
-            const toSquareIndex = targetSquare.dataset.square_index;
-
-            console.log("Drag end: dropping", pieceDiv.innerHTML, "to square", toSquareIndex);
-
-            const fromSquareDiv = document.querySelector(`[data-square_index='${fromSquareIndex}']`);
-            const toSquareDiv = document.querySelector(`[data-square_index='${toSquareIndex}']`);
-
-
-            if (fromSquareDiv && toSquareDiv && pieceDiv) {
-                fromSquareDiv.innerHTML = "";
-                toSquareDiv.innerHTML = "";
-                toSquareDiv.appendChild(pieceDiv);
-                pieceDiv.dataset.current_square_index = toSquareIndex;
-                if (toSquareIndex != pieceStorageIndex) {
-                    // sendEvent("PiecePlacedEvent", {
-                    //     square: parseInt(toSquareIndex),
-                    //     color: get_color(pieceDiv.innerHTML),
-                    // });
-                    sendBoardState(parseInt(toSquareIndex));
-                }
-            }
-            else {
-                console.error("Error during dragend: could not find source or target square.);
-            }
-        }
 
         function timeButtonPress(color) {
             console.log("Time button pressed for color:", color);
@@ -295,167 +89,32 @@
         function whiteButtonHandler() {
             timeButtonPress("white");
         }
+
         function blackButtonHandler() {
             timeButtonPress("black");
         }
 
-        function scanBoard() {
-            console.log("Scan board requested");
-            for (let squareIndex = 0; squareIndex < 64; squareIndex++) {
-                const pieceDiv = document.querySelector(`[data-square_index='${squareIndex}'] .chess-piece`);
+        document.addEventListener("DOMContentLoaded", () => {
+            const boardDiv = document.getElementById("chessboard");
+            initializeBoard(boardDiv, 590);
 
-                const pieceSymbol = pieceDiv ? pieceDiv.innerHTML : "";
-
-                let voltage = sensorVoltageEmpty;
-                if (pieceDiv && pieceDiv.classList.contains("dragging")) {
-                    voltage = sensorVoltageEmpty;
-                }
-                else if (get_color(pieceSymbol) === "white") {
-                    voltage = sensorVoltageWhite;
-                }
-                else if (get_color(pieceSymbol) === "black") {
-                    voltage = sensorVoltageBlack;
-                }
-                sendEvent("HalSensorVoltageEvent", {
-                    square: squareIndex,
-                    voltage: voltage
-                });
-            }
-        }
-
-        function initializeBoard() {
-            const board = document.getElementById("chessboard");
-            const storage = document.getElementById("piece-storage");
-            const whiteButton = document.getElementById("white-button");
-            const blackButton = document.getElementById("black-button");
-            whiteButton.addEventListener("click", whiteButtonHandler);
-            blackButton.addEventListener("click", blackButtonHandler);
-            storage.addEventListener("dragover", dragoverHandler);
-            storage.addEventListener("dragleave", dragleaveHandler);
-            storage.dataset.square_index = pieceStorageIndex;
-
-            for (let row = 0; row < 8; row++) {
-                for (let col = 0; col < 8; col++) {
-                    let square_index = (7 - row) * 8 + col; // Number squares from 0 (a1) to 63 (h8)
-                    let square_div = document.createElement("div");
-                    square_div.className = "chess-square";
-                    square_div.dataset.row = row;
-                    square_div.dataset.col = col;
-                    square_div.dataset.square_index = square_index;
-                    square_div.addEventListener("dragover", dragoverHandler);
-                    square_div.addEventListener("dragleave", dragleaveHandler);
-
-                    board.appendChild(square_div);
-
-                    squares[square_index] = square_div;
-                }
-            }
-        }
-
-        function updateAllSquareColors() {
-            fetch("/api/board/square/colors")
-                .then(response => response.json())
-                .then(data => {
-                    console.log("Fetched LED data:", data);
-                    // data should be { squares: [indices], color: [r, g, b] }
-                    document.querySelectorAll('.chess-square').forEach(square => {
-                        square.style.background = ''; // Reset background
-                        square.style.boxShadow = '';
-                    });
-
-                    Object.entries(data.colors).forEach(([squareIndex, color]) => {
-                        const squareDiv = document.querySelector(`[data-square_index='${squareIndex}']`);
-                        if (squareDiv && Array.isArray(color)) {
-                            squareDiv.style.background = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
-                        }
-                        else {
-                            console.error("Could not find square for LED update:", squareIndex);
-                        }
-                    });
-
-                })
-                .catch(err => console.error("Failed to fetch LED data:", err));
-        }
-
-        function createPieceElement(pieceSymbol, squareIndex) {
-            let pieceDiv = document.createElement("div");
-            pieceDiv.className = "chess-piece";
-            pieceDiv.dataset.current_square_index = squareIndex;
-            pieceDiv.innerHTML = pieceSymbol;
-            pieceDiv.setAttribute("draggable", "true");
-
-            pieceDiv.addEventListener("dragstart", dragstartHandler);
-            pieceDiv.addEventListener("dragend", dragendHandler);
-
-            return pieceDiv;
-        }
-
-        function updatePieceMap() {
-            fetch("/api/board/square/pieces")
-                .then(response => response.json())
-                .then(data => {
-                    console.log("Fetched piece map data:", data);
-                    const pieceMap = data.board_state;
-
-                    // Clear all pieces from board and storage
-                    document.querySelectorAll('.chess-square').forEach(square => {
-                        square.innerHTML = '';
-                    });
-                    pieceStorage.innerHTML = '';
-
-                    // Place pieces according to pieceMap
-                    Object.entries(pieceMap).forEach(([squareIndex, pieceSymbol]) => {
-                        const squareDiv = document.querySelector(`[data-square_index='${squareIndex}']`);
-                        if (squareDiv) {
-                            const pieceDiv = createPieceElement(pieceSymbol, squareIndex);
-                            squareDiv.appendChild(pieceDiv);
-                        }
-                        else {
-                            console.error("Could not find square for piece placement:", squareIndex);
-                        }
-                    });
-                })
-                .catch(err => console.error("Failed to fetch piece map data:", err));
-        }
-
-        initializeBoard();
-        updateAllSquareColors();
-        updatePieceMap();
-        // setInterval(scanBoard, 100);
-
-        socket.onAny((event, ...args) => {
-            // if (event === "board_event.SetSquareColorEvent") return; // Disabled to not spam the console
-            // if (event == "board_event.HalSensorVoltageEvent") return;
-
-            console.log("Socket.IO event:", event, args);
+            let pieceStorageDiv = document.getElementById("piece-storage");
         });
 
-        socket.on("board_event.SetSquareColorEvent", function (data) {
-            console.log("LED Change Event data:", data);
-            const squareList = data.color_map;
-            for (const [squareIndex, color] of Object.entries(squareList)) {
-                const squareDiv = document.querySelector(`[data-square_index='${squareIndex}']`);
-                if (squareDiv && Array.isArray(color)) {
-                    squareDiv.style.background = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
-                    squareDiv.style.boxShadow = '';
-                } else {
-                    console.error("LED Change Event: could not find square", squareIndex);
-                }
-            }
-
-            // const color = data.color; // [r, g, b]
-            // squareList.forEach((squareIndex) => {
-            //     const squareDiv = document.querySelector(`[data-square_index='${squareIndex}']`);
-            //     if (squareDiv) {
-            //         squareDiv.style.background = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
-            //         squareDiv.style.boxShadow = '';
-            //     }
-            //     else {
-            //         console.error("LED Change Event: could not find square", squareIndex);
-            //     }
-            // });
-        });
     </script>
+</head>
+
+<body>
+    <div class="container">
+        <div class="border">
+            <div id="chessboard"></div>
+            <div id="white-button" class="white-button" onclick="whiteButtonHandler()"></div>
+            <div id="black-button" class="black-button" onclick="blackButtonHandler()"></div>
+        </div>
+
+        <div id="piece-storage" class="storage" data-square_index="1000" ondragover="_dragOverHandler(event)"
+            ondragleave="_dragLeaveHandler(event)"></div>
+    </div>
 </body>
 
 </html>

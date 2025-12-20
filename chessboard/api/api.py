@@ -24,8 +24,13 @@ socketio = SocketIO(app, async_mode="threading")
 
 
 @app.route('/')
-def home():
+def index():
     return render_template('index.html')
+
+
+@app.route('/display/240x320')
+def home():
+    return render_template('display-240x320.html')
 
 
 @app.route('/favicon.ico')

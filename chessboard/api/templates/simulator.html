@@ -59,19 +59,28 @@
             top: 0;
             right: 0;
         }
-    </style>
-    <script>
-        // Helper to check if drop target is board or storage
-        function isBoardOrStorage(target) {
-            let pieceStorage = document.getElementById("piece-storage");
-            return (
-                target === board ||
-                target === pieceStorage ||
-                (board && board.contains(target)) ||
-                (pieceStorage && pieceStorage.contains(target))
-            );
+
+        .display-panel {
+            width: 260px;
+            height: 340px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #222;
+            border: 2px solid #555;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.4);
         }
 
+        .display-panel iframe {
+            width: 240px;
+            height: 320px;
+            border: none;
+            background: #000;
+            border-radius: 4px;
+        }
+    </style>
+    <script>
         // Track lifted piece
         let liftedPiece = null;
         let liftedFrom = null;
@@ -114,6 +123,10 @@
 
         <div id="piece-storage" class="storage" data-square_index="1000" ondragover="_dragOverHandler(event)"
             ondragleave="_dragLeaveHandler(event)"></div>
+
+        <div class="display-panel">
+            <iframe src="{{ url_for('home') }}" title="240x320 Display"></iframe>
+        </div>
     </div>
 </body>
 

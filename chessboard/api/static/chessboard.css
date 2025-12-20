@@ -7,7 +7,6 @@
     grid-template-columns: repeat(8, 75px);
     grid-template-rows: repeat(8, 75px);
     gap: 0;
-    /* border: 75px solid #000; */
     width: 600px;
     height: 600px;
     border-radius: 8px;

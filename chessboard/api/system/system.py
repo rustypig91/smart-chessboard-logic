@@ -47,13 +47,16 @@ def info():
         'memory': {
             'total': memory.total,
             'used': memory.used,
-            'free': memory.available
+            'free': memory.available,
+            'percent_used': memory.percent,
+            'percent_free': 100 - memory.percent
         },
         'disk_usage': {
             'total': disk_usage.total,
             'used': disk_usage.used,
             'free': disk_usage.free,
-            'percent': disk_usage.percent
+            'percent_used': disk_usage.percent,
+            'percent_free': 100 - disk_usage.percent
         }
     })
 

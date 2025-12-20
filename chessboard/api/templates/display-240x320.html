@@ -12,7 +12,7 @@
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='events.js')}}"></script>
 
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='display-240x320.css')}}">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='display-240x320/style.css')}}">
 </head>
 
 <body>
@@ -167,11 +167,93 @@
                 </div>
             </div>
 
-            <!-- Settings-> Board Settings-->
+            <!-- Settings -> Board Settings-->
             <div id="board-settings-view" class="view">
                 <div class="view-header">Board Settings</div>
                 <div class="menu">
                     <!-- Board settings generated dynamically from /api/settings -->
+                </div>
+            </div>
+
+            <!-- New Game View -->
+            <div id="new-game-view" class="view">
+                <div class="view-header">New Game</div>
+                <div class="menu">
+                    <div class="menu-item selected" data-action="start-game" data-next-view="start-game-view">
+                        <div>
+                            <h3>Start Game</h3>
+                            <p>Begin a new chess match</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-next-view="select-opponent-view">
+                        <div>
+                            <h3>Opponent</h3>
+                            <p id="opponent-type">Human</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-action="set-time">
+                        <div>
+                            <h3>Time</h3>
+
+                            <p id="time-setting">No limit</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- New Game -> Select Opponent View -->
+            <div id="select-opponent-view" class="view">
+                <div class="view-header">Select Opponent</div>
+                <div class="menu">
+                    <div class="menu-item selected" data-action="set-opponent-human">
+                        <div>
+                            <h3>Human</h3>
+                            <p>Play against another person</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-next-view="display-computers-view">
+                        <div>
+                            <h3>Computer</h3>
+                            <p>Play against AI</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- New Game -> Select Opponent -> Computers View -->
+            <div id="display-computers-view" class="view">
+                <div class="view-header">Select Computer Opponent</div>
+                <div id="computers-menu" class="menu">
+                </div>
+            </div>
+            <script>
+                document.addEventListener("DOMContentLoaded", () => {
+                    apiCall('/api/game/bots', null, function (data) {
+                        const computersMenu = document.getElementById('computers-menu');
+                        data.bots.forEach((bot, index) => {
+                            const item = document.createElement('div');
+                            item.className = 'menu-item';
+                            if (index === 0) item.classList.add('selected');
+                            item.dataset.action = 'set-opponent-computer';
+                            item.dataset.computerLevel = bot;
+                            item.innerHTML = `
+                                    <div>
+                                        <h3>${bot}</h3>
+                                    </div>
+                                `;
+                            console.log('Adding computer opponent:', bot);
+                            computersMenu.appendChild(item);
+                        });
+                    });
+                });
+            </script>
+
+            <!-- New Game -> Start Game view -->
+            <div id="start-game-view" class="view">
+                <div class="view-header">Start Game</div>
+                <div class="menu">
+
                 </div>
             </div>
 
@@ -229,49 +311,6 @@
                     <div id="message-content"
                         style="background:none; border:none; color:#fff; font-size:13px; padding:0; margin:0;">
                         <!-- Message will be inserted here -->
-                    </div>
-                </div>
-            </div>
-
-            <div id="new-game-view" class="view">
-                <div class="view-header">New Game</div>
-                <div class="menu">
-                    <div class="menu-item selected" data-action="start-game">
-                        <div>
-                            <h3>Start Game</h3>
-                            <p>Begin a new chess match</p>
-                        </div>
-                    </div>
-                    <div class="menu-item" data-next-view="select-opponent-view">
-                        <div>
-                            <h3>Opponent</h3>
-                            <p id="opponent-type">Computer</p>
-                        </div>
-                    </div>
-                    <div class="menu-item" data-action="set-time">
-                        <div>
-                            <h3>Time</h3>
-
-                            <p id="time-setting">No limit</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div id="select-opponent-view" class="view">
-                <div class="view-header">Select Opponent</div>
-                <div class="menu">
-                    <div class="menu-item" data-action="set-opponent-computer">
-                        <div>
-                            <h3>Computer</h3>
-                            <p>Play against AI</p>
-                        </div>
-                    </div>
-                    <div class="menu-item selected" data-action="set-opponent-human">
-                        <div>
-                            <h3>Human</h3>
-                            <p>Play against another person</p>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -392,6 +431,29 @@
             }
         }
 
+        function apiCall(endpoint, post_data = null, callback = function (data) { }) {
+            const options = {
+                method: post_data ? 'POST' : 'GET',
+                headers: { 'Content-Type': 'application/json' },
+            };
+            if (post_data) {
+                options.body = JSON.stringify(post_data);
+            }
+
+            return fetch(endpoint, options)
+                .then(response => response.json())
+                .then(data => {
+                    loadingHide();
+                    console.log('API call success (' + endpoint + '):', data);
+                    callback(data);
+                    return data;
+                }).catch(error => {
+                    loadingHide();
+                    console.error('API call error:', error);
+                    showMessageView('Error', endpoint + ' call error: ' + (error.message || error));
+                });
+        }
+
         // Go back to previous view
         function menuGoBack() {
             if (viewStack.length > 1) {
@@ -492,115 +554,81 @@
         }
 
         // Fetch WiFi status from server
-        function wifiFetchStatus() {
-            fetch('/api/board/wifi/info')
-                .then(function (response) { return response.json(); })
-                .then(function (data) {
-                    wifiUpdateStatus(data.connected, data.ssid, data.signal);
-                })
-                .catch(function (error) {
-                    console.error('Error fetching WiFi status:', error);
-                    wifiUpdateStatus(false, 'Error', 'N/A');
-                });
-        }
+        function wifiUpdateIcon() {
+            apiCall('/api/system/wifi/info', null, function (data) {
+                const indicator = document.getElementById('status-indicator');
+                const wifiName = document.getElementById('wifi-name');
+                const wifiIcon = document.getElementById('wifi-icon');
 
-        // Update WiFi status dynamically
-        function wifiUpdateStatus(connected, name, signal) {
-            const indicator = document.getElementById('status-indicator');
-            const wifiName = document.getElementById('wifi-name');
-            const wifiIcon = document.getElementById('wifi-icon');
-
-            if (connected) {
-                indicator.classList.remove('disconnected');
-                wifiName.textContent = name || 'Connected';
-                wifiIcon.textContent = '';
-            } else {
-                indicator.classList.add('disconnected');
-                wifiName.textContent = 'No WiFi';
-                wifiIcon.textContent = '';
-            }
+                if (data.connected) {
+                    indicator.classList.remove('disconnected');
+                    wifiName.textContent = data.ssid || 'Connected';
+                    wifiIcon.textContent = '';
+                } else {
+                    indicator.classList.add('disconnected');
+                    wifiName.textContent = 'No WiFi';
+                    wifiIcon.textContent = '';
+                }
+            });
         }
 
         function wifiConnect(ssid, password) {
             loadingShow('Connecting');
-            fetch('/api/board/wifi/connect', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 'ssid': ssid, 'password': password })
-            })
-                .then(response => response.json())
-                .then(data => {
-                    loadingHide();
-                    if (data.success) {
-                        showMessageView('Success', 'Connected successfully!');
-                        wifiFetchStatus();
-                    } else {
-                        showMessageView('Failed', 'Connection failed: ' + (data.error || 'Unknown error'));
-                    }
-                })
-                .catch(error => {
-                    loadingHide();
-                    console.error('Error connecting to WiFi:', error);
-                    showMessageView('Error', 'Error connecting to WiFi' + (error.message ? ': ' + error.message : ''));
-
-                });
+            post_data = { 'ssid': ssid, 'password': password };
+            apiCall('/api/system/wifi/connect', post_data, function (data) {
+                if (data.success) {
+                    showMessageView('Success', 'Connected successfully!');
+                    wifiUpdateIcon();
+                } else {
+                    showMessageView('Failed', 'Connection failed: ' + (data.error || 'Unknown error'));
+                }
+            });
         }
 
         function wifiShowInfo() {
             loadingShow('Fetching Info');
-            fetch('/api/board/wifi/info')
-                .then(response => response.json())
-                .then(data => {
-                    loadingHide();
-                    const info = `
+            apiCall('/api/system/wifi/info', null, function (data) {
+                const info = `
                         <strong>Connected:</strong> ${data.connected ? 'Yes' : 'No'}<br>
                         <strong>SSID:</strong> ${data.ssid || 'N/A'}<br>
                         <strong>Signal:</strong> ${data.signal || 'N/A'}<br>
                         <strong>IP Address:</strong> ${data.ip || 'N/A'}<br>
                     `;
-                    showMessageView('Current Network Info', info);
-                })
-                .catch(error => {
-                    loadingHide();
-                    console.error('Error fetching WiFi info:', error);
-                    showMessageView('Error', 'Error fetching WiFi info' + (error.message ? ': ' + error.message : ''));
-                });
+                showMessageView('Current Network Info', info);
+            });
         }
 
         function wifiScanNetworks() {
             loadingShow('Scanning');
 
-            fetch('/api/board/wifi/scan')
-                .then(response => response.json())
-                .then(data => {
-                    loadingHide();
-                    console.log('Available networks:', data.networks);
-                    const networksList = document.getElementById('networks-list');
-                    networksList.innerHTML = '';
-                    if (Array.isArray(data.networks) && data.networks.length > 0) {
-                        data.networks.forEach((network, idx) => {
-                            const item = document.createElement('div');
-                            item.className = 'menu-item';
-                            item.dataset.action = 'select-network';
-                            item.dataset.ssid = network.ssid;
-                            item.innerHTML = `
+            apiCall('/api/system/wifi/scan', null, function (data) {
+                console.log('Available networks:', data.networks);
+                const networksList = document.getElementById('networks-list');
+                networksList.innerHTML = '';
+                if (Array.isArray(data.networks) && data.networks.length > 0) {
+                    data.networks.forEach((network, idx) => {
+                        const item = document.createElement('div');
+                        item.className = 'menu-item';
+                        item.dataset.action = 'select-network';
+                        item.dataset.ssid = network.ssid;
+                        item.innerHTML = `
                                 <div>
                                     <h3>${network.ssid || '(Hidden SSID)'}</h3>
                                     <p>Signal: ${network.signal || 'N/A'}${network.secure ? ' • 🔒' : ''}</p>
                                 </div>
                             `;
-                            networksList.appendChild(item);
-                        });
-                    } else {
-                        const empty = document.createElement('div');
-                        empty.className = 'menu-item';
-                        empty.innerHTML = '<div><h3>No networks found</h3></div>';
-                        networksList.appendChild(empty);
-                    }
-                    selectedIndex = 0;
-                    menuUpdateSelection();
-                    // You can update the UI to show available networks here
-                })
+                        networksList.appendChild(item);
+                    });
+                } else {
+                    const empty = document.createElement('div');
+                    empty.className = 'menu-item';
+                    empty.innerHTML = '<div><h3>No networks found</h3></div>';
+                    networksList.appendChild(empty);
+                }
+                selectedIndex = 0;
+                menuUpdateSelection();
+                // You can update the UI to show available networks here
+            })
                 .catch(error => {
                     loadingHide();
                     console.error('Error scanning networks:', error);
@@ -641,68 +669,75 @@
         let pendingColorPath = null;
 
         function loadBoardSettings() {
-            console.log('Loading board settings');
             loadingShow('Loading Settings');
-            fetch('/api/settings')
-                .then(response => response.json())
-                .then(data => {
-                    loadingHide();
-                    const boardSettingsView = document.getElementById('board-settings-view').querySelector('.menu');
-                    boardSettingsView.innerHTML = '';
+            apiCall('/api/settings', null, function (data) {
+                const boardSettingsView = document.getElementById('board-settings-view').querySelector('.menu');
+                boardSettingsView.innerHTML = '';
 
-                    Object.entries(data.settings).forEach(([key, setting]) => {
-                        // key is the property name, setting is the value object
-                        const item = document.createElement('div');
-                        item.className = 'submenu-item';
-                        item.dataset.action = `set-board-setting`;
-                        item.dataset.settingKey = key;
-                        item.innerHTML = `
+                Object.entries(data.settings).forEach(([key, setting]) => {
+                    // key is the property name, setting is the value object
+                    const item = document.createElement('div');
+                    item.className = 'submenu-item';
+                    item.dataset.action = `set-board-setting`;
+                    item.dataset.settingKey = key;
+                    item.innerHTML = `
                             <div>
                                 <h4>${key}</h4>
                                 <p>${setting.description}</p>
                                 <p>Current: ${setting.value}</p>
                             </div>
                         `;
-                        boardSettingsView.appendChild(item);
-                    });
-
-                    selectedIndex = 0;
-                    menuUpdateSelection();
-                })
-                .catch(error => {
-                    loadingHide();
-                    console.error('Error loading board settings:', error);
-                    showMessageView('Error', 'Error loading board settings' + (error.message ? ': ' + error.message : ''));
+                    boardSettingsView.appendChild(item);
                 });
+
+                selectedIndex = 0;
+                menuUpdateSelection();
+            });
         }
 
         function showBoardSettingView(settingKey) {
-            console.log('Showing board setting for key:', settingKey);
             loadingShow('Loading Setting');
-            fetch(`/api/settings/${encodeURIComponent(settingKey)}`)
-                .then(response => response.json())
-                .then(data => {
-                    loadingHide();
-                    const setting = data.setting;
-                    if (!setting) {
-                        showMessageView('Error', 'Setting not found');
-                        return;
-                    }
+            apiCall(`/api/settings/${encodeURIComponent(settingKey)}`, null, function (data) {
+                const setting = data.setting;
+                if (!setting) {
+                    showMessageView('Error', 'Setting not found');
+                    return;
+                }
 
-                    if (setting.type === 'ColorSetting') {
-                        // Open color picker with current value
-                        // const rgb = setting.value.match(/\d+/g).map(Number);
-                        pendingColorPath = settingKey;
-                        openColorPicker(settingKey, setting.value);
-                    } else {
-                        showMessageView('Error', 'Unsupported setting type: ' + setting.type);
-                    }
-                })
-                .catch(error => {
-                    loadingHide();
-                    console.error('Error fetching board setting:', error);
-                    showMessageView('Error', 'Error fetching board setting' + (error.message ? ': ' + error.message : ''));
-                });
+                if (setting.type === 'ColorSetting') {
+                    // Open color picker with current value
+                    // const rgb = setting.value.match(/\d+/g).map(Number);
+                    pendingColorPath = settingKey;
+                    openColorPicker(settingKey, setting.value);
+                } else {
+                    showMessageView('Error', 'Unsupported setting type: ' + setting.type);
+                }
+            });
+        }
+
+        function startNewGame() {
+            loadingShow('Starting Game');
+
+            let time_setting = document.getElementById('time-setting').textContent
+            const match = /([\d.]+)\s*min/i.exec(time_setting || '');
+
+            if (match) {
+                time_minutes = parseFloat(match[1]);
+            } else {
+                time_minutes = 0.0;
+            }
+
+            post_data = {
+                opponent: document.getElementById('opponent-type').textContent || 'Human',
+                start_time_seconds: time_minutes * 60.0,  // Convert minutes to seconds
+                increment_seconds: 0.0,
+            };
+
+            apiCall('/api/game/new', post_data, function (data) {
+                if (!data.success) {
+                    showMessageView('Error', 'Failed to start new game: ' + (data.error || 'Unknown error'));
+                }
+            });
         }
 
         function menuSelect() {
@@ -777,9 +812,10 @@
                         menuGoBack();
                         break;
                     case 'set-opponent-computer':
-                        document.getElementById('opponent-type').textContent = 'Computer';
-                        setCookie('opponent', 'Computer');
+                        document.getElementById('opponent-type').textContent = selectedItem.dataset.computerLevel;
+                        setCookie('opponent', selectedItem.dataset.computerLevel);
                         menuGoBack();
+                        menuGoBack(); // Go back to New Game view
                         break;
                     case 'set-time':
                         keyboardShow('Enter Minutes (blank=no limit)', '', function (inputText) {
@@ -794,21 +830,16 @@
                         break;
                     case 'power-off':
                         loadingShow('Powering Off');
-                        fetch('/api/board/system/shutdown', { method: 'POST' })
-                            .then(response => response.json())
-                            .then(data => {
-                                loadingHide();
-                                if (data.success) {
-                                    showMessageView('Power Off', 'The system is powering off.');
-                                } else {
-                                    showMessageView('Error', 'Failed to power off: ' + (data.error || 'Unknown error'));
-                                }
-                            })
-                            .catch(error => {
-                                loadingHide();
-                                console.error('Error powering off:', error);
-                                showMessageView('Error', 'Error powering off' + (error.message ? ': ' + error.message : ''));
-                            });
+                        apiCall('/api/system/shutdown', {}, function (data) {
+                            if (data.success) {
+                                showMessageView('Power Off', 'The system is powering off.');
+                            } else {
+                                showMessageView('Error', 'Failed to power off: ' + (data.error || 'Unknown error'));
+                            }
+                        });
+                        break;
+                    case 'start-game':
+                        startNewGame();
                         break;
                     default:
                         console.error('Action not yet implemented:', action);
@@ -886,7 +917,7 @@
         // Initialize on page load
         menuUpdateSelection();
         updateTime();
-        wifiFetchStatus();
+        wifiUpdateIcon();
         loadSettingsFromCookies();
         // updateNetworkInputs();
         buttonsUpdate(menuButtonFunctions);
@@ -895,7 +926,7 @@
         setInterval(updateTime, 1000);
 
         // Update WiFi status every 10 seconds
-        setInterval(wifiFetchStatus, 10000);
+        setInterval(wifiUpdateIcon, 10000);
 
         // --- Message View Helper ---
         function showMessageView(title, message) {

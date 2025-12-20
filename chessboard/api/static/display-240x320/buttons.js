@@ -16,11 +16,10 @@ function startButtonTimer(buttonIndex) {
     clearButtonTimer(buttonIndex);
     buttonTimers[buttonIndex] = setTimeout(() => {
         if (buttonFunctions[buttonIndex] && buttonFunctions[buttonIndex].long) {
-            console.log('Executing long press function for button', buttonIndex + 1);
             buttonFunctions[buttonIndex].long();
         }
         else {
-            console.log('No long press function defined for button', buttonIndex + 1);
+            console.warn('No long press function defined for button', buttonIndex + 1);
         }
         buttonTimers[buttonIndex] = null;
     }, LONG_PRESS_DURATION);
@@ -80,7 +79,6 @@ document.addEventListener('keydown', function (e) {
 
     buttonDown[index] = true;
 
-    console.log('Key down:', key);
     startButtonTimer(index);
 });
 
@@ -91,9 +89,7 @@ document.addEventListener('keyup', function (e) {
     if (index != null) {
         if (buttonTimers[index]) {
             // Timer still running: treat as short press
-            console.log('Key up:', key);
             clearButtonTimer(index);
-            console.log('Short press detected for button', index);
             if (buttonFunctions[index] && buttonFunctions[index].short) {
                 buttonFunctions[index].short();
             }

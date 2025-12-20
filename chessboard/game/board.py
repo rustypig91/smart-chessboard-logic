@@ -117,6 +117,11 @@ class Board:
 
         self._game.save()
         self.chess_clock.start()
+        log.info(
+            f"New game started\n"
+            f"  Time control: {start_time_seconds}+{increment_seconds} seconds\n"
+            f"  Engine: {engine_weight if engine_weight is not None else 'None'} as {'black' if engine_color == chess.BLACK else 'white'}"
+        )
 
     def start(self):
         """ Start the game """

@@ -8,8 +8,10 @@ from threading import Event
 from typing import Callable, Optional
 from random import choice
 
+default_weights_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../weights'))
+
 settings.register("engine.path", "lc0", "Path to the chess engine executable")
-settings.register("engine.weights_path", "/usr/share/chessboard-weights/",
+settings.register("engine.weights_path", default_weights_path,
                   "Path to the chess engine weights file (if applicable)")
 
 

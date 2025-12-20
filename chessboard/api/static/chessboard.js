@@ -1,6 +1,7 @@
 
 boardWidth = 600;
 
+
 function getPieceColor(piece) {
     switch (piece) {
         case "♔": // White King

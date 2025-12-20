@@ -250,7 +250,7 @@
             pieceDiv.classList.remove("dragging");
 
             if (!targetSquare) {
-                console.log("Drag end: dropped outside board, no action taken.");
+                console.log("Drag end: dropped outside board, no action taken");
                 // sendEvent("PiecePlacedEvent", {
                 //     square: parseInt(fromSquareIndex),
                 //     color: get_color(pieceDiv.innerHTML),
@@ -281,7 +281,7 @@
                 }
             }
             else {
-                console.error("Error during dragend: could not find source or target square.");
+                console.error("Error during dragend: could not find source or target square.);
             }
         }
 
@@ -300,7 +300,7 @@
         }
 
         function scanBoard() {
-            console.log("Scan board requested.");
+            console.log("Scan board requested");
             for (let squareIndex = 0; squareIndex < 64; squareIndex++) {
                 const pieceDiv = document.querySelector(`[data-square_index='${squareIndex}'] .chess-piece`);
 

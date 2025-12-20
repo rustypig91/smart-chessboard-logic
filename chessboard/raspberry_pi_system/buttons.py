@@ -48,7 +48,7 @@ if __name__ == '__main__':
     event_manager.subscribe(
         TimeButtonPressedEvent, on_time_button_pressed)
 
-    print("Listening for button presses. Press Ctrl+C to exit.")
+    print("Listening for button presses. Press Ctrl+C to exit")
     while True:
         # Just keep the program running while listening for button presses
         sleep(1)

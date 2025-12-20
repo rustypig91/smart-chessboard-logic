@@ -122,7 +122,7 @@ class _EventManager:
         self._event_loop = asyncio.new_event_loop()
         self._event_task = self._event_loop.create_task(self._main())
 
-        self._thread = threading.Thread(target=self.main)
+        self._thread = threading.Thread(target=self.main, daemon=True)
         self._thread.start()
 
         log.info("EventManager initialized")
@@ -180,11 +180,10 @@ class _EventManager:
     def stop(self):
         if self._event_loop.is_running():
             self._event_task.cancel()
-            self._event_loop.stop()
-            if self._thread is not None:
-                self._thread.join()
+            self._event_loop.call_soon_threadsafe(self._event_loop.stop)
+            if self._thread is not None and self._thread.is_alive():
+                self._thread.join(timeout=2)
                 self._thread = None
-
             log.info("EventManager stopped")
 
 

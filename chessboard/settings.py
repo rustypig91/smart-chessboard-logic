@@ -53,18 +53,18 @@ class _Settings:
         try:
             return self._settings[key]
         except KeyError as e:
-            raise KeyError(f"Setting '{key}' not found.") from e
+            raise KeyError(f"Setting '{key}' not found") from e
 
     def register(self, key: str, default: object, description: str = ""):
         if key in self._settings:
-            raise KeyError(f"Setting '{key}' is already registered.")
+            raise KeyError(f"Setting '{key}' is already registered")
 
         self._settings[key] = _Setting(key, default, description)
         log.info(f"Registered setting '{key}' with default '{default}'")
 
     def set(self, key: str, value: object):
         if key not in self._settings:
-            raise KeyError(f"Setting '{key}' not found.")
+            raise KeyError(f"Setting '{key}' not found")
 
         self._settings[key].value = value
         log.info(f"Set setting '{key}' to '{value}'")
@@ -85,7 +85,7 @@ class _Settings:
                 self._settings.update(json.load(f))
                 log.info(f"Loaded settings from {self._settings_file}")
         except FileNotFoundError:
-            log.info(f"Settings file {self._settings_file} not found. Using defaults.")
+            log.info(f"Settings file {self._settings_file} not found, using defaults")
 
 
 settings = _Settings()

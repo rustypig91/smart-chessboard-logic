@@ -30,4 +30,4 @@ console_handler.setLevel(logging.DEBUG)
 console_handler.setFormatter(log_format)
 
 log.addHandler(console_handler)
-print("Logger initialized.")
+print("Logger initialized")

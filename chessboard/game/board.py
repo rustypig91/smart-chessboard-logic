@@ -103,7 +103,7 @@ class Board:
         """ Get the current pieces on the board according to game state """
         return self.board.piece_map()
 
-    def new_game(self, start_time_seconds: int = 300,
+    def new_game(self, start_time_seconds: int = 0,
                  increment_seconds: int = 0,
                  engine_weight: str | None = None,
                  engine_color: chess.Color = chess.BLACK) -> None:

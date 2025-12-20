@@ -1,17 +1,19 @@
+from RPi import GPIO  # type: ignore
 import serial
 import serial.tools.list_ports
 import re
 from time import sleep, time
-from threading import Thread, Lock
-from typing import Callable
+from threading import Thread
 import chess
 
 from chessboard.settings import settings
 from chessboard.logger import log
 from chessboard.events import event_manager, HalSensorVoltageEvent, PieceLiftedEvent, PiecePlacedEvent, SquarePieceStateChange
-import os
+import subprocess
 
-from RPi import GPIO  # type: ignore
+import os
+import shutil
+import tempfile
 
 
 settings.register('hal_sensor.offset', 0.10, description="Voltage offset in volts")
@@ -19,7 +21,7 @@ settings.register('hal_sensor.piece_detection_consecutive', 2,
                   description="Number of consecutive readings to confirm piece detection")
 
 
-class _HalSensorsInterface:
+class _XiaoInterface:
     PROMPT = "chess:~$"
     BAUDRATE = 115200
     RESET_PIN = 21
@@ -29,7 +31,7 @@ class _HalSensorsInterface:
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, 'instance'):
-            cls.instance = super(_HalSensorsInterface, cls).__new__(cls)
+            cls.instance = super(_XiaoInterface, cls).__new__(cls)
             cls.instance._initialized = False
 
         return cls.instance
@@ -47,6 +49,10 @@ class _HalSensorsInterface:
 
         self._monitor_start()
 
+        GPIO.setwarnings(False)
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(self.RESET_PIN, GPIO.OUT)
+
     def __del__(self):
         self._monitor_stop()
         if self._port is not None:
@@ -60,12 +66,51 @@ class _HalSensorsInterface:
         if self._monitoring:
             self._monitor_stop()
 
+    def flash_firmware(self, firmware_path: str):
+        """Flash new firmware to the Xiao device using the bootloader.
+
+        Args:
+            firmware_path (str): Path to the .bin firmware file.
+        """
+
+        self._start_bootloader()
+
+        log.info(f"Flashing firmware {firmware_path} to Xiao device...")
+
+        storage_device = self._find_bootloader_storage_device()
+        if storage_device is None:
+            log.error("Xiao bootloader storage device not found, flashing aborted")
+            return
+
+        success = False
+        with tempfile.TemporaryDirectory() as mount_dir:
+            try:
+                subprocess.run(['mount', storage_device, mount_dir], check=True)
+                firmware_filename = os.path.basename(firmware_path)
+                target_path = os.path.join(mount_dir, firmware_filename)
+                shutil.copyfile(firmware_path, target_path)
+                success = True
+
+            except Exception as e:
+                log.error(f"Error flashing firmware: {e}")
+                raise
+            finally:
+                subprocess.run(['umount', mount_dir], check=True)
+
+        if success:
+            log.info("Firmware flashed successfully")
+        else:
+            log.error("Firmware flashing failed")
+
     @property
     def port(self):
         if self._port is None:
             self._reset_device()
 
         return self._port
+
+    def _set_reset_pin(self, value):
+        GPIO.output(self.RESET_PIN, value)
 
     def calibrate_sensors(self):
         """Calibrate the HAL sensors when no pieces are on the board.
@@ -88,6 +133,52 @@ class _HalSensorsInterface:
 
         return device
 
+    @staticmethod
+    def _find_bootloader_storage_device() -> str | None:
+        """ Find the device path corresponding to the Xiao bootloader. """
+
+        # Use lsblk to check if the device has a label or model indicating it's the Xiao bootloader
+        result = subprocess.run(['lsblk', '-no', 'PATH,LABEL'], capture_output=True, text=True)
+        for line in result.stdout.splitlines():
+            if 'Arduino' in line:
+                return line.split()[0]
+        return None
+
+    def _shutdown_device(self):
+        if self._monitoring:
+            self._monitor_stop()
+
+        if self._port is not None:
+            self._port.close()
+            self._port = None
+
+        self._set_reset_pin(GPIO.LOW)
+        sleep(0.1)
+
+        timeout = 5  # seconds
+        start = time()
+
+        tty_device = self._find_tty_device()
+
+        while tty_device is not None:
+            if time() - start > timeout:
+                raise TimeoutError(f"Timeout waiting for {tty_device} to become unavailable")
+            sleep(0.1)
+            tty_device = self._find_tty_device()
+
+    def _start_bootloader(self):
+        self._shutdown_device()
+
+        self._set_reset_pin(GPIO.LOW)
+        sleep(0.1)
+        self._set_reset_pin(GPIO.HIGH)
+        sleep(0.1)
+        self._set_reset_pin(GPIO.LOW)
+        sleep(0.1)
+        self._set_reset_pin(GPIO.HIGH)
+        sleep(1)
+        log.info("Xiao bootloader started")
+
     def _reset_device(self):
         if self._port is not None:
             self._port.close()
@@ -97,7 +188,7 @@ class _HalSensorsInterface:
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(self.RESET_PIN, GPIO.OUT)
 
-        log.info("Resetting HAL sensor device via GPIO pin.")
+        log.info("Resetting HAL sensor device via GPIO pin")
 
         GPIO.output(self.RESET_PIN, GPIO.LOW)
         sleep(0.1)
@@ -109,7 +200,7 @@ class _HalSensorsInterface:
 
         while tty_device is not None:
             if time() - start > timeout:
-                raise TimeoutError(f"Timeout waiting for {tty_device} to become unavailable.")
+                raise TimeoutError(f"Timeout waiting for {tty_device} to become unavailable")
             sleep(0.1)
             tty_device = self._find_tty_device()
 
@@ -120,7 +211,7 @@ class _HalSensorsInterface:
 
         while tty_device is None:
             if time() - start > timeout:
-                raise TimeoutError(f"Timeout waiting for {tty_device} to become available.")
+                raise TimeoutError(f"Timeout waiting for {tty_device} to become available")
             sleep(0.1)
             tty_device = self._find_tty_device()
 
@@ -132,7 +223,7 @@ class _HalSensorsInterface:
 
     def _monitor_start(self):
         if self._monitoring:
-            raise RuntimeError("Monitor is already running.")
+            raise RuntimeError("Monitor is already running")
 
         self._monitoring = True
         self._monitor_thread = Thread(target=self._monitor_thread_func)
@@ -215,7 +306,7 @@ class _HalSensorsInterface:
         start_time = time()
         while True:
             if time() - start_time > timeout:
-                raise TimeoutError("Timeout waiting for prompt from Xiao.")
+                raise TimeoutError("Timeout waiting for prompt from Xiao")
             if self.port.in_waiting:
                 response = self.port.read(
                     self.port.in_waiting).decode('utf-8')
@@ -240,4 +331,9 @@ class _HalSensorsInterface:
         return self._wait_for_prompt()
 
 
-hal_sensors = _HalSensorsInterface()
+xiao_interface = _XiaoInterface()
+
+if __name__ == "__main__":
+    print("Starting Xiao bootloader...")
+    xiao_interface._start_bootloader()
+    xiao_interface.stop()

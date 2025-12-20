@@ -257,6 +257,47 @@
                 </div>
             </div>
 
+            <!-- Game Overview View -->
+            <div id="game-overview-view" class="view">
+                <div class="view-header">Game Overview</div>
+                <div style="padding:6px; display:flex; flex-direction:column; align-items:center; gap:8px;">
+                    <div id="clock" style="width:100%; display:flex; flex-direction:column; gap:4px;">
+                        <div style="display:flex; justify-content:space-between;">
+                            <span style="font-size:11px; color:#f5f5f5;">White</span>
+                            <span id="clock-white" style="font-size:13px; color:#fff;">00:00</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between;">
+                            <span style="font-size:11px; color:#f5f5f5;">Black</span>
+                            <span id="clock-black" style="font-size:13px; color:#fff;">00:00</span>
+                        </div>
+                        <div style="text-align:center; font-size:10px; color:#ddd;" id="clock-turn">Turn: -</div>
+                        <div style="text-align:center; font-size:11px; color:#fff; margin-top:4px;" id="last-move">Last:
+                            -</div>
+                    </div>
+                </div>
+            </div>
+            <script>
+                document.addEventListener("DOMContentLoaded", () => {
+                    // Update clock display every second
+                    setInterval(() => {
+                        if (currentView !== 'game-overview-view') return;
+
+                        apiCall('/api/game/state', null, function (data) {
+                            let white_minutes = Math.floor((data.clocks.white_time_left || 0) / 60);
+                            let white_seconds = Math.round(((data.clocks.white_time_left || 0) % 60) * 10) / 10;
+
+                            let black_minutes = Math.floor((data.clocks.black_time_left || 0) / 60);
+                            let black_seconds = Math.round(((data.clocks.black_time_left || 0) % 60) * 10) / 10;
+
+                            document.getElementById('clock-white').textContent = `${white_minutes.toString().padStart(2, '0')}:${white_seconds.toString().padStart(2, '0')}`;
+                            document.getElementById('clock-black').textContent = `${black_minutes.toString().padStart(2, '0')}:${black_seconds.toString().padStart(2, '0')}`;
+                            document.getElementById('clock-turn').textContent = 'Turn: ' + (data.turn || '-');
+                            document.getElementById('last-move').textContent = 'Last: ' + (data.last_move || '-');
+                        });
+                    }, 100);
+                });
+            </script>
+
             <!-- Color Picker View -->
             <div id="color-picker-view" class="view">
                 <div class="view-header">Pick Color (RGB)</div>
@@ -737,6 +778,11 @@
                 if (!data.success) {
                     showMessageView('Error', 'Failed to start new game: ' + (data.error || 'Unknown error'));
                 }
+                else {
+                    showView('game-overview-view');
+                    const lm = document.getElementById('last-move');
+                    if (lm) lm.textContent = 'Last: -';
+                }
             });
         }
 
@@ -937,6 +983,33 @@
 
         addBoardEventListener("PlayerNotifyEvent", (data) => {
             showMessageView(data.title, data.message);
+        });
+
+        // --- Game Overview Clock & Move Updates ---
+        function formatClockTime(seconds) {
+            const s = Math.max(0, Math.floor(seconds || 0));
+            const m = Math.floor(s / 60);
+            const sec = s % 60;
+            return padLeft(m, 2, '0') + ':' + padLeft(sec, 2, '0');
+        }
+
+        addBoardEventListener("ClockTickEvent", (data) => {
+            const w = document.getElementById('clock-white');
+            const b = document.getElementById('clock-black');
+            const t = document.getElementById('clock-turn');
+            if (w) w.textContent = formatClockTime(data.white_time_left);
+            if (b) b.textContent = formatClockTime(data.black_time_left);
+            if (t) t.textContent = 'Turn: ' + (data.turn ? 'White' : 'Black');
+        });
+
+        addBoardEventListener("ChessMoveEvent", (data) => {
+            const lm = document.getElementById('last-move');
+            if (!lm) return;
+            const from = data.from_square || '';
+            const to = data.to_square || '';
+            const promo = data.promotion || '';
+            const uci = from + to + (promo || '');
+            lm.textContent = 'Last: ' + (uci || '-');
         });
     </script>
 </body>

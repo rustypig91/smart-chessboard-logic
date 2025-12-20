@@ -49,3 +49,37 @@ def start_new_game():
     # Here you would typically set up the game state with the engine
     # For this example, we'll just return success
     return jsonify({'success': True, 'message': f'Game started against {opponent} with {start_time_seconds}s per move'})
+
+
+@api.route('/clock', methods=['GET'])
+def get_clocks():
+    """API endpoint to set the chess clock times"""
+    return jsonify({
+        'success': True,
+        'white_time_left': board.chess_clock.white_time_left,
+        'black_time_left': board.chess_clock.black_time_left,
+        'white_time_elapsed': board.chess_clock.white_time_elapsed,
+        'black_time_elapsed': board.chess_clock.black_time_elapsed,
+        'running': board.chess_clock.running,
+        'current_player': 'white' if board.chess_clock.current_player == chess.WHITE else 'black'
+    })
+
+
+@api.route('/state', methods=['GET'])
+def get_game_state():
+    """API endpoint to get the current game state"""
+    return jsonify({
+        'success': True,
+        'fen': board.board.fen(),
+        'turn': 'white' if board.board.turn == chess.WHITE else 'black',
+        'is_check': board.board.is_check(),
+        'is_checkmate': board.board.is_checkmate(),
+        'is_stalemate': board.board.is_stalemate(),
+        'is_insufficient_material': board.board.is_insufficient_material(),
+        'is_game_over': board.board.is_game_over(),
+        'last_move': board.board.move_stack[-1].uci() if board.board.move_stack else None,
+        'clocks': {
+            'white_time_left': board.chess_clock.white_time_left,
+            'black_time_left': board.chess_clock.black_time_left,
+        }
+    })

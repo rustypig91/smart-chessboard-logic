@@ -6,9 +6,13 @@ import time
 import threading
 import traceback
 import atexit
+import inspect
 
 
 class Event:
+    def __init__(self):
+        self.sender = "Unknown"
+
     def _parse_color(self, color: chess.Color | str) -> chess.Color | None:
         if isinstance(color, str):
             if color.lower() == 'white':
@@ -98,6 +102,16 @@ class GameStartedEvent(Event):
         pass
 
 
+class GamePausedEvent(Event):
+    def __init__(self):
+        pass
+
+
+class GameResumedEvent(Event):
+    def __init__(self):
+        pass
+
+
 class _EventManager:
     def __init__(self):
         self._subscribers: dict[type[Event],
@@ -133,8 +147,8 @@ class _EventManager:
             self._subscribers[event_type].remove(callback)
 
     def publish(self, event: Event):
-        if isinstance(event, ChessMoveEvent):
-            x = 1
+        event.sender = inspect.stack()[1].frame.f_globals.get('__name__', 'Unknown')
+
         asyncio.run_coroutine_threadsafe(
             self._event_queue.put(event), self._event_loop)
 

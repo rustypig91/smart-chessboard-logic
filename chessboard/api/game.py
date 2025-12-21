@@ -48,6 +48,20 @@ def start_new_game():
     return jsonify({'success': True, 'message': f'Game started against {opponent} with {start_time_seconds}s per move'})
 
 
+@api.route('/pause', methods=['POST'])
+def pause_game():
+    """API endpoint to pause the current game"""
+    game_state.pause_game()
+    return jsonify({'success': True})
+
+
+@api.route('/resume', methods=['POST'])
+def resume_game():
+    """API endpoint to resume the current game"""
+    game_state.resume_game()
+    return jsonify({'success': True})
+
+
 @api.route('/clock', methods=['GET'])
 def get_clocks():
     """API endpoint to set the chess clock times"""

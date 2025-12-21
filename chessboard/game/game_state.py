@@ -34,13 +34,25 @@ class GameState:
 
     def pause_game(self):
         """ Pause the game """
-        self.chess_clock.pause()
-        log.info("Game paused")
+        if not self.is_game_started:
+            log.warning("Cannot pause a game that hasn't started")
+        elif self.is_game_paused:
+            log.warning("Game is already paused")
+        else:
+            self.chess_clock.pause()
+            log.info("Game paused")
+            events.event_manager.publish(events.GamePausedEvent())
 
-    def continue_game(self):
+    def resume_game(self):
         """ Continue a paused game """
-        self.chess_clock.start()
-        log.info("Game continued")
+        if not self.is_game_started:
+            log.warning("Cannot resume a game that hasn't started")
+        elif not self.is_game_paused:
+            log.warning("Game is not paused")
+        else:
+            self.chess_clock.start()
+            log.info("Game continued")
+            events.event_manager.publish(events.GameResumedEvent())
 
     def start_game(self):
         """ Start the game """

@@ -179,7 +179,7 @@
             <div id="new-game-view" class="view">
                 <div class="view-header">New Game</div>
                 <div class="menu">
-                    <div class="menu-item selected" data-action="start-game" data-next-view="start-game-view">
+                    <div class="menu-item selected" data-action="start-game" data-next-view="game-overview-view">
                         <div>
                             <h3>Start Game</h3>
                             <p>Begin a new chess match</p>
@@ -249,47 +249,41 @@
                 });
             </script>
 
-            <!-- New Game -> Start Game view -->
-            <div id="start-game-view" class="view">
-                <div class="view-header">Start Game</div>
-                <div class="menu">
-
-                </div>
-            </div>
-
-            <!-- Game Overview View -->
+            <!-- New Game -> Start Game -> Game Overview View -->
             <div id="game-overview-view" class="view">
                 <div class="view-header">Game Overview</div>
-                <div style="padding:6px; display:flex; flex-direction:column; align-items:center; gap:8px;">
-                    <div id="clock" style="width:100%; display:flex; flex-direction:column; gap:4px;">
-                        <div style="display:flex; justify-content:space-between;">
-                            <span style="font-size:11px; color:#f5f5f5;">White</span>
-                            <span id="clock-white" style="font-size:13px; color:#fff;">00:00</span>
+                <div style="padding:6px; display:flex; flex-direction:column; gap:8px;">
+                    <div id="black-panel"
+                        style="width:100%; background:#1a1a1a; border:0px solid #8b7355; border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:6px;">
+                        <h2 style="margin:0; font-size:16px; color:#f5f5f5;">Black</h2>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span id="black-name" style="font-size:12px; color:#f5f5f5;">Human</span>
+                            <span id="black-clock" style="font-size:26px; color:#fff; font-weight:600;">00:00</span>
                         </div>
-                        <div style="display:flex; justify-content:space-between;">
-                            <span style="font-size:11px; color:#f5f5f5;">Black</span>
-                            <span id="clock-black" style="font-size:13px; color:#fff;">00:00</span>
+                    </div>
+                    <div class="players-divider" style="height:1px; background:#444; margin:2px 0 2px 0;"></div>
+                    <div id="white-panel"
+                        style="width:100%; background:#1a1a1a; border:0px solid #8b7355; border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:6px;">
+                        <h2 style="margin:0; font-size:16px; color:#f5f5f5;">White</h2>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span id="white-name" style="font-size:12px; color:#f5f5f5;">Human-</span>
+                            <span id="white-clock" style="font-size:26px; color:#fff; font-weight:600;">00:00</span>
                         </div>
-                        <div style="text-align:center; font-size:10px; color:#ddd;" id="clock-turn">Turn: -</div>
-                        <div style="text-align:center; font-size:11px; color:#fff; margin-top:4px;" id="last-move">Last:
-                            -</div>
-                        <div style="text-align:center; font-size:11px; color:#fff; margin-top:4px;" id="white-player">
-                            White Player:
-                            -</div>
-                        <div style="text-align:center; font-size:11px; color:#fff; margin-top:4px;" id="black-player">
-                            Black Player:
-                            -</div>
+                    </div>
+
+                    <div style="text-align:center; font-size:12px; color:#fff; margin-top:2px;" id="last-move">Last: -
                     </div>
                 </div>
             </div>
             <script>
-                // Internal clock state updated locally and synced every 10s
                 let overviewClock = {
                     lastSyncedWhiteTimeLeft: 0,
                     lastSyncedBlackTimeLeft: 0,
                     lastUpdateTime: null,
                     turn: 'white',
                     running: false,
+                    white_player: '-',
+                    black_player: '-',
                 };
 
                 function syncGameState() {
@@ -299,11 +293,37 @@
                         overviewClock.lastUpdateTime = Date.now();
                         overviewClock.turn = data.turn;
                         overviewClock.running = data.clocks.running;
+                        overviewClock.white_player = data.white_player || '-';
+                        overviewClock.black_player = data.black_player || '-';
 
-                        const turnEl = document.getElementById('clock-turn');
-                        if (turnEl) turnEl.textContent = `Turn: ${data.turn.charAt(0).toUpperCase() + data.turn.slice(1)}`;
                         const lastMoveEl = document.getElementById('last-move');
                         if (lastMoveEl) lastMoveEl.textContent = `Last: ${data.last_move || '-'}`;
+
+                        const whiteNameEl = document.getElementById('white-name');
+                        const blackNameEl = document.getElementById('black-name');
+                        if (whiteNameEl) whiteNameEl.textContent = `${overviewClock.white_player}`;
+                        if (blackNameEl) blackNameEl.textContent = `${overviewClock.black_player}`;
+
+                        const whitePanel = document.getElementById('white-panel');
+                        const blackPanel = document.getElementById('black-panel');
+                        const blackClockEl = document.getElementById('black-clock');
+                        const whiteClockEl = document.getElementById('white-clock');
+
+                        if (whitePanel && blackPanel && blackClockEl && whiteClockEl) {
+                            const activeBorder = '#d4b88c';
+                            const inactiveBorder = '#8b7355';
+                            const activeBg = '#444';
+                            const inactiveBg = '#1a1a1a';
+                            const isWhiteTurn = overviewClock.turn === 'white';
+
+                            whiteClockEl.style.color = isWhiteTurn ? '#fff' : '#aaa';
+                            blackClockEl.style.color = isWhiteTurn ? '#aaa' : '#fff';
+
+                            whitePanel.style.borderColor = isWhiteTurn ? activeBorder : inactiveBorder;
+                            blackPanel.style.borderColor = isWhiteTurn ? inactiveBorder : activeBorder;
+                            whitePanel.style.background = isWhiteTurn ? activeBg : inactiveBg;
+                            blackPanel.style.background = isWhiteTurn ? inactiveBg : activeBg;
+                        }
 
                         if (currentView != 'game-overview-view' && data.started) {
                             showView('game-overview-view');
@@ -320,6 +340,27 @@
 
                 addBoardEventListener(
                     'GameStartedEvent',
+                    (event) => {
+                        syncGameState();
+                    }
+                )
+
+                addBoardEventListener(
+                    'SquarePieceStateChange',
+                    (event) => {
+                        syncGameState();
+                    }
+                )
+
+                addBoardEventListener(
+                    'GamePausedEvent',
+                    (event) => {
+                        syncGameState();
+                    }
+                )
+
+                addBoardEventListener(
+                    'GameResumedEvent',
                     (event) => {
                         syncGameState();
                     }
@@ -344,16 +385,11 @@
                         const bMin = Math.floor((blackTimeLeft || 0) / 60);
                         const bSec = ((blackTimeLeft || 0) % 60).toFixed(1);
 
-                        const wEl = document.getElementById('clock-white');
-                        const bEl = document.getElementById('clock-black');
+                        const wEl = document.getElementById('white-clock');
+                        const bEl = document.getElementById('black-clock');
 
                         if (wEl) wEl.textContent = `${String(wMin).padStart(2, '0')}:${String(wSec).padStart(2, '0')}`;
                         if (bEl) bEl.textContent = `${String(bMin).padStart(2, '0')}:${String(bSec).padStart(2, '0')}`;
-
-                        const whitePlayerEl = document.getElementById('white-player');
-                        const blackPlayerEl = document.getElementById('black-player');
-                        if (whitePlayerEl) whitePlayerEl.textContent = `White Player: ${data.white_player || '-'}`;
-                        if (blackPlayerEl) blackPlayerEl.textContent = `Black Player: ${data.black_player || '-'}`;
 
                     }, 100);
 
@@ -474,6 +510,14 @@
         let currentView = 'main-view';
         let selectedIndex = 0;
 
+        function gamePause() {
+            apiCall('/api/game/pause', {});
+        }
+
+        function gameResume() {
+            apiCall('/api/game/resume', {});
+        }
+
         let menuButtonFunctions = [
             { short: menuGoBack, shortHint: 'Back', long: menuReset, longHint: 'Reset' },
             { short: menuUp, shortHint: '↑', long: null, longHint: '' },
@@ -488,6 +532,13 @@
             { short: keyboardMoveRight, shortHint: '→', long: keyboardEnter, longHint: 'ENTER' },
         ];
 
+        let gameOverviewButtonFunctions = [
+            { short: menuGoBack, shortHint: 'Back', long: null, longHint: '' },
+            { short: null, shortHint: '', long: null, longHint: '' },
+            { short: null, shortHint: '', long: null, longHint: '' },
+            { short: gameResume, shortHint: 'Resume', long: gamePause, longHint: 'Pause' },
+        ];
+
         let messageButtonFunctions = [
             { short: menuGoBack, shortHint: 'Back', long: null, longHint: '' },
             { short: null, shortHint: '', long: null, longHint: '' },
@@ -498,6 +549,7 @@
         const viewButtonsConfig = {
             'keyboard-view': keyboardButtonFunctions,
             'message-view': messageButtonFunctions,
+            'game-overview-view': gameOverviewButtonFunctions,
         };
 
         // Get current menu items based on active view
@@ -1050,23 +1102,6 @@
 
         addBoardEventListener("PlayerNotifyEvent", (data) => {
             showMessageView(data.title, data.message);
-        });
-
-        // --- Game Overview Clock & Move Updates ---
-        function formatClockTime(seconds) {
-            const s = Math.max(0, Math.floor(seconds || 0));
-            const m = Math.floor(s / 60);
-            const sec = s % 60;
-            return padLeft(m, 2, '0') + ':' + padLeft(sec, 2, '0');
-        }
-
-        addBoardEventListener("ClockTickEvent", (data) => {
-            const w = document.getElementById('clock-white');
-            const b = document.getElementById('clock-black');
-            const t = document.getElementById('clock-turn');
-            if (w) w.textContent = formatClockTime(data.white_time_left);
-            if (b) b.textContent = formatClockTime(data.black_time_left);
-            if (t) t.textContent = 'Turn: ' + (data.turn ? 'White' : 'Black');
         });
 
         addBoardEventListener("ChessMoveEvent", (data) => {

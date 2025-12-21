@@ -26,6 +26,7 @@ class Engine:
 
         self.color = color
         self.time_limit = time_limit
+        self.name = weight
 
     @staticmethod
     def get_available_weights() -> list[str]:

@@ -39,23 +39,6 @@ class SetSquareColorEvent(Event):
         return f"LedChangeEvent(color_map={{ {', '.join(f'{chess.square_name(sq)}: {color}' for sq, color in self.color_map.items())} }})"
 
 
-class PieceLiftedEvent(Event):
-    def __init__(self, square: chess.Square):
-        self.square = square
-
-    def __repr__(self):
-        return f"PieceLiftedEvent(square={chess.square_name(self.square)})"
-
-
-class PiecePlacedEvent(Event):
-    def __init__(self, square: chess.Square, color: chess.Color | str):
-        self.square = square
-        self.color = self._parse_color(color)
-
-    def __repr__(self):
-        return f"PiecePlacedEvent(square={chess.square_name(self.square)}, color={self.color})"
-
-
 class SquarePieceStateChange(Event):
     def __init__(self, squares: list[chess.Square], colors: list[chess.Color | None | str]):
         self.squares = squares
@@ -110,6 +93,11 @@ class PlayerNotifyEvent(Event):
         self.message = message
 
 
+class GameStartedEvent(Event):
+    def __init__(self):
+        pass
+
+
 class _EventManager:
     def __init__(self):
         self._subscribers: dict[type[Event],
@@ -132,7 +120,8 @@ class _EventManager:
 
     def subscribe(self, event_type: type[Event], callback: Callable):
         if event_type not in self._subscribers:
-            self._subscribers[event_type] = []
+            raise ValueError(f"Unknown event type: {event_type}")
+
         self._subscribers[event_type].append(callback)
 
     def subscribe_all_events(self, callback: Callable[[Event], None]):
@@ -144,6 +133,8 @@ class _EventManager:
             self._subscribers[event_type].remove(callback)
 
     def publish(self, event: Event):
+        if isinstance(event, ChessMoveEvent):
+            x = 1
         asyncio.run_coroutine_threadsafe(
             self._event_queue.put(event), self._event_loop)
 
@@ -189,22 +180,3 @@ class _EventManager:
 
 event_manager = _EventManager()
 atexit.register(event_manager.stop)
-
-if __name__ == '__main__':
-    def on_led_change(event):
-        pass
-
-    def on_piece_lifted(event):
-        pass
-
-    event_manager.subscribe(PieceLiftedEvent, on_piece_lifted)
-
-    event_manager.publish(PieceLiftedEvent(square=chess.D2))
-
-    # Allow some time for the async event loop to process events
-    time.sleep(2.3)
-    event_manager.publish(PieceLiftedEvent(square=chess.D2))
-    time.sleep(2.1)
-
-    # Stop the event manager
-    event_manager.stop()

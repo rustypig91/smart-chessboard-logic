@@ -1,24 +1,10 @@
-import os
-import io
 import argparse
 
 import chess
-from chessboard.game.board import board
+from chessboard.game.board_state import board_state
 import chessboard.events as events
 import chessboard.api.api as api
-
-is_raspberrypi = False
-if os.name != 'posix':
-    is_raspberrypi = False
-try:
-    with io.open('/proc/cpuinfo', 'r') as cpuinfo:
-        for line in cpuinfo:
-            if line.startswith('Model') and 'Raspberry Pi' in line:
-                is_raspberrypi = True
-
-except Exception:
-    is_raspberrypi = False
-
+from chessboard import is_raspberrypi
 
 if is_raspberrypi:
     import chessboard.raspberry_pi_system
@@ -33,6 +19,6 @@ parser.add_argument('--engine-color', type=chess.Color, default=chess.BLACK,
 args = parser.parse_args()
 
 if args.new_game:
-    board.new_game(engine_weight=args.engine_weight, engine_color=args.engine_color)
+    board_state.new_game(engine_weight=args.engine_weight, engine_color=args.engine_color)
 
 api.socketio.run(api.app, debug=False, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)

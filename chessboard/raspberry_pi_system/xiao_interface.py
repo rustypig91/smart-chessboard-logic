@@ -8,7 +8,7 @@ import chess
 
 from chessboard.settings import settings
 from chessboard.logger import log
-from chessboard.events import event_manager, HalSensorVoltageEvent, PieceLiftedEvent, PiecePlacedEvent, SquarePieceStateChange
+from chessboard.events import event_manager, HalSensorVoltageEvent, SquarePieceStateChange
 import subprocess
 
 import os
@@ -97,10 +97,14 @@ class _XiaoInterface:
             finally:
                 subprocess.run(['umount', mount_dir], check=True)
 
+        sleep(1)  # Wait for the device to process the new firmware
+
         if success:
             log.info("Firmware flashed successfully")
         else:
             log.error("Firmware flashing failed")
+
+        self._monitor_start()
 
     @property
     def port(self):
@@ -124,7 +128,6 @@ class _XiaoInterface:
 
     def _find_tty_device(self) -> str | None:
         """ Find the TTY device corresponding to the HAL sensor device. """
-
         device = None
         for port in serial.tools.list_ports.comports():
             if self.DEVICE_DESC in port.description:
@@ -134,15 +137,23 @@ class _XiaoInterface:
         return device
 
     @staticmethod
-    def _find_bootloader_storage_device() -> str | None:
+    def _find_bootloader_storage_device(timeout: float = 5.0) -> str | None:
         """ Find the device path corresponding to the Xiao bootloader. """
 
         # Use lsblk to check if the device has a label or model indicating it's the Xiao bootloader
-        result = subprocess.run(['lsblk', '-no', 'PATH,LABEL'], capture_output=True, text=True)
-        for line in result.stdout.splitlines():
-            if 'Arduino' in line:
-                return line.split()[0]
-        return None
+        start = time()
+
+        while True:
+            if time() - start > timeout:
+                log.error("Timeout waiting for Xiao bootloader storage device")
+                return None
+
+            result = subprocess.run(['lsblk', '-no', 'PATH,LABEL'], capture_output=True, text=True)
+            for line in result.stdout.splitlines():
+                if 'Arduino' in line:
+                    return line.split()[0]
+
+            sleep(0.5)
 
     def _shutdown_device(self):
         if self._monitoring:

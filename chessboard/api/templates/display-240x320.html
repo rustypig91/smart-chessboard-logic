@@ -273,29 +273,93 @@
                         <div style="text-align:center; font-size:10px; color:#ddd;" id="clock-turn">Turn: -</div>
                         <div style="text-align:center; font-size:11px; color:#fff; margin-top:4px;" id="last-move">Last:
                             -</div>
+                        <div style="text-align:center; font-size:11px; color:#fff; margin-top:4px;" id="white-player">
+                            White Player:
+                            -</div>
+                        <div style="text-align:center; font-size:11px; color:#fff; margin-top:4px;" id="black-player">
+                            Black Player:
+                            -</div>
                     </div>
                 </div>
             </div>
             <script>
+                // Internal clock state updated locally and synced every 10s
+                let overviewClock = {
+                    lastSyncedWhiteTimeLeft: 0,
+                    lastSyncedBlackTimeLeft: 0,
+                    lastUpdateTime: null,
+                    turn: 'white',
+                    running: false,
+                };
+
+                function syncGameState() {
+                    apiCall('/api/game/state', null, function (data) {
+                        overviewClock.lastSyncedWhiteTimeLeft = data.clocks.white_time_left;
+                        overviewClock.lastSyncedBlackTimeLeft = data.clocks.black_time_left;
+                        overviewClock.lastUpdateTime = Date.now();
+                        overviewClock.turn = data.turn;
+                        overviewClock.running = data.clocks.running;
+
+                        const turnEl = document.getElementById('clock-turn');
+                        if (turnEl) turnEl.textContent = `Turn: ${data.turn.charAt(0).toUpperCase() + data.turn.slice(1)}`;
+                        const lastMoveEl = document.getElementById('last-move');
+                        if (lastMoveEl) lastMoveEl.textContent = `Last: ${data.last_move || '-'}`;
+
+                        if (currentView != 'game-overview-view' && data.started) {
+                            showView('game-overview-view');
+                        }
+                    });
+                }
+
+                addBoardEventListener(
+                    'ChessMoveEvent',
+                    (event) => {
+                        syncGameState();
+                    }
+                )
+
+                addBoardEventListener(
+                    'GameStartedEvent',
+                    (event) => {
+                        syncGameState();
+                    }
+                )
+
                 document.addEventListener("DOMContentLoaded", () => {
-                    // Update clock display every second
                     setInterval(() => {
                         if (currentView !== 'game-overview-view') return;
 
-                        apiCall('/api/game/state', null, function (data) {
-                            let white_minutes = Math.floor((data.clocks.white_time_left || 0) / 60);
-                            let white_seconds = Math.round(((data.clocks.white_time_left || 0) % 60) * 10) / 10;
+                        if (overviewClock.lastUpdateTime == null) {
+                            console.error("Clock update called before initialization");
+                            return;
+                        }
+                        const now = Date.now();
+                        const dt = (now - overviewClock.lastUpdateTime) / 1000.0;
 
-                            let black_minutes = Math.floor((data.clocks.black_time_left || 0) / 60);
-                            let black_seconds = Math.round(((data.clocks.black_time_left || 0) % 60) * 10) / 10;
+                        const whiteTimeLeft = Math.max(0, overviewClock.lastSyncedWhiteTimeLeft - (overviewClock.turn === 'white' && overviewClock.running ? dt : 0));
+                        const blackTimeLeft = Math.max(0, overviewClock.lastSyncedBlackTimeLeft - (overviewClock.turn === 'black' && overviewClock.running ? dt : 0));
 
-                            document.getElementById('clock-white').textContent = `${white_minutes.toString().padStart(2, '0')}:${white_seconds.toString().padStart(2, '0')}`;
-                            document.getElementById('clock-black').textContent = `${black_minutes.toString().padStart(2, '0')}:${black_seconds.toString().padStart(2, '0')}`;
-                            document.getElementById('clock-turn').textContent = 'Turn: ' + (data.turn || '-');
-                            document.getElementById('last-move').textContent = 'Last: ' + (data.last_move || '-');
-                        });
+                        const wMin = Math.floor((whiteTimeLeft || 0) / 60);
+                        const wSec = ((whiteTimeLeft || 0) % 60).toFixed(1);
+                        const bMin = Math.floor((blackTimeLeft || 0) / 60);
+                        const bSec = ((blackTimeLeft || 0) % 60).toFixed(1);
+
+                        const wEl = document.getElementById('clock-white');
+                        const bEl = document.getElementById('clock-black');
+
+                        if (wEl) wEl.textContent = `${String(wMin).padStart(2, '0')}:${String(wSec).padStart(2, '0')}`;
+                        if (bEl) bEl.textContent = `${String(bMin).padStart(2, '0')}:${String(bSec).padStart(2, '0')}`;
+
+                        const whitePlayerEl = document.getElementById('white-player');
+                        const blackPlayerEl = document.getElementById('black-player');
+                        if (whitePlayerEl) whitePlayerEl.textContent = `White Player: ${data.white_player || '-'}`;
+                        if (blackPlayerEl) blackPlayerEl.textContent = `Black Player: ${data.black_player || '-'}`;
+
                     }, 100);
+
+                    syncGameState();
                 });
+
             </script>
 
             <!-- Color Picker View -->
@@ -490,8 +554,8 @@
                     return data;
                 }).catch(error => {
                     loadingHide();
-                    console.error('API call error:', error);
                     showMessageView('Error', endpoint + ' call error: ' + (error.message || error));
+                    throw error;
                 });
         }
 
@@ -782,6 +846,9 @@
                     showView('game-overview-view');
                     const lm = document.getElementById('last-move');
                     if (lm) lm.textContent = 'Last: -';
+                    if (typeof syncOverviewClock === 'function') {
+                        syncOverviewClock();
+                    }
                 }
             });
         }

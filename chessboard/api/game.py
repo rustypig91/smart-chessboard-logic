@@ -1,7 +1,7 @@
 import chess
 from flask import Blueprint, jsonify, request
 from chessboard.game.engine import Engine
-from chessboard.game.board import board
+from chessboard.game.game_state import game_state
 
 
 api = Blueprint('api', __name__, template_folder='templates')
@@ -37,14 +37,11 @@ def start_new_game():
     if type(increment_seconds) not in (float, int) or increment_seconds < 0:
         return jsonify({'success': False, 'error': 'Invalid increment specified'}), 400
 
-    try:
-        board.new_game(
-            start_time_seconds=data.get('start_time_seconds', 0.0),
-            increment_seconds=data.get('increment_seconds', 0.0),
-            engine_weight=engine_weight,
-            engine_color=chess.BLACK)
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    game_state.new_game(
+        start_time_seconds=data.get('start_time_seconds', 0.0),
+        increment_seconds=data.get('increment_seconds', 0.0),
+        engine_weight=engine_weight,
+        engine_color=chess.BLACK)
 
     # Here you would typically set up the game state with the engine
     # For this example, we'll just return success
@@ -56,12 +53,12 @@ def get_clocks():
     """API endpoint to set the chess clock times"""
     return jsonify({
         'success': True,
-        'white_time_left': board.chess_clock.white_time_left,
-        'black_time_left': board.chess_clock.black_time_left,
-        'white_time_elapsed': board.chess_clock.white_time_elapsed,
-        'black_time_elapsed': board.chess_clock.black_time_elapsed,
-        'running': board.chess_clock.running,
-        'current_player': 'white' if board.chess_clock.current_player == chess.WHITE else 'black'
+        'white_time_left': game_state.chess_clock.white_time_left,
+        'black_time_left': game_state.chess_clock.black_time_left,
+        'white_time_elapsed': game_state.chess_clock.white_time_elapsed,
+        'black_time_elapsed': game_state.chess_clock.black_time_elapsed,
+        'running': game_state.chess_clock.running,
+        'current_player': 'white' if game_state.chess_clock.current_player == chess.WHITE else 'black'
     })
 
 
@@ -70,16 +67,21 @@ def get_game_state():
     """API endpoint to get the current game state"""
     return jsonify({
         'success': True,
-        'fen': board.board.fen(),
-        'turn': 'white' if board.board.turn == chess.WHITE else 'black',
-        'is_check': board.board.is_check(),
-        'is_checkmate': board.board.is_checkmate(),
-        'is_stalemate': board.board.is_stalemate(),
-        'is_insufficient_material': board.board.is_insufficient_material(),
-        'is_game_over': board.board.is_game_over(),
-        'last_move': board.board.move_stack[-1].uci() if board.board.move_stack else None,
+        'fen': game_state.board.fen(),
+        'turn': 'white' if game_state.board.turn == chess.WHITE else 'black',
+        'is_check': game_state.board.is_check(),
+        'is_checkmate': game_state.board.is_checkmate(),
+        'is_stalemate': game_state.board.is_stalemate(),
+        'is_insufficient_material': game_state.board.is_insufficient_material(),
+        'is_game_over': game_state.board.is_game_over(),
+        'last_move': game_state.board.move_stack[-1].uci() if game_state.board.move_stack else None,
+        'started': game_state.is_game_started,
+        'paused': game_state.is_game_paused,
         'clocks': {
-            'white_time_left': board.chess_clock.white_time_left,
-            'black_time_left': board.chess_clock.black_time_left,
-        }
+            'white_time_left': game_state.chess_clock.white_time_left if game_state.chess_clock.white_time_left != float('inf') else None,
+            'black_time_left': game_state.chess_clock.black_time_left if game_state.chess_clock.black_time_left != float('inf') else None,
+            'running': game_state.chess_clock.running,
+        },
+        'white_player': game_state.players[chess.WHITE],
+        'black_player': game_state.players[chess.BLACK],
     })

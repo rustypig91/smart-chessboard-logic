@@ -10,10 +10,10 @@ from chessboard.api.system.system import api as api_board_system
 from chessboard.api.board.board import api as api_board
 from chessboard.api.settings import api as api_settings
 from chessboard.api.game import api as api_game
+from chessboard import is_raspberrypi
 
 from chessboard.logger import log
 import traceback
-
 
 app = Flask(__name__, template_folder="templates", static_url_path='/static')
 app.register_blueprint(api_board_wifi, url_prefix='/api/system/wifi', name='wifi')
@@ -21,6 +21,10 @@ app.register_blueprint(api_board_system, url_prefix='/api/system', name='system'
 app.register_blueprint(api_board, url_prefix='/api/board', name='board')
 app.register_blueprint(api_settings, url_prefix='/api/settings', name='settings')
 app.register_blueprint(api_game, url_prefix='/api/game', name='game')
+
+if is_raspberrypi:
+    from chessboard.api.system.raspberry_pi import api as api_board_raspberry_pi
+    app.register_blueprint(api_board_raspberry_pi, url_prefix='/api/system', name='raspberry_pi')
 
 socketio = SocketIO(app, async_mode="threading")
 
@@ -51,6 +55,12 @@ def overview():
 def simulator():
     """API endpoint to get the board simulator page"""
     return render_template('simulator.html')
+
+
+@app.route('/firmware')
+def firmware_updater():
+    """Firmware updater page"""
+    return render_template('firmware_updater.html')
 
 
 @socketio.on('publish_event')

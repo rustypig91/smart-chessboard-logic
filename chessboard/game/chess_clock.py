@@ -1,6 +1,7 @@
 import time
 import chess
-from threading import Lock
+from threading import Lock, Thread, Event
+from typing import Callable
 
 
 class Stopwatch:
@@ -57,7 +58,20 @@ class Stopwatch:
 
 
 class ChessClock:
-    def __init__(self, initial_time_seconds: float = float('inf'), increment_seconds: float = 0.0):
+    def __init__(self, initial_time_seconds: float | tuple[float, float] = float('inf'), increment_seconds: float | tuple[float, float] = 0.0, timeout_callback: Callable[[chess.Color], None] | None = None):
+        """Chess clock with separate timers for white and black players.
+        initial_time_seconds: float or tuple(float, float)
+            Initial time for each player in seconds. If a single float is provided,
+            both players get the same initial time. If a tuple is provided, it should
+            be in the form (white_time, black_time).
+        increment_seconds: float or tuple(float, float)
+            Increment added to a player's clock after they make a move, in seconds.
+            If a single float is provided, both players get the same increment. If a
+            tuple is provided, it should be in the form (white_increment, black_increment).
+        timeout_callback: Callable[[chess.Color], None] | None
+            Optional callback invoked when a player's time runs out. The callback
+            receives the color of the player who ran out of time.
+        """
 
         self.clocks = {
             chess.WHITE: Stopwatch(),
@@ -65,8 +79,65 @@ class ChessClock:
         }
         self.current_player = chess.WHITE
 
-        self._initial_time_seconds = initial_time_seconds
-        self._increment_seconds = increment_seconds
+        self._initial_time_seconds = {
+            chess.WHITE: initial_time_seconds[0] if isinstance(initial_time_seconds, tuple) else initial_time_seconds,
+            chess.BLACK: initial_time_seconds[1] if isinstance(initial_time_seconds, tuple) else initial_time_seconds
+        }
+
+        if self._initial_time_seconds[chess.WHITE] <= 0 or self._initial_time_seconds[chess.BLACK] <= 0:
+            raise ValueError("Initial time for each player must be greater than zero.")
+
+        self._increment_seconds = {
+            chess.WHITE: increment_seconds[0] if isinstance(increment_seconds, tuple) else increment_seconds,
+            chess.BLACK: increment_seconds[1] if isinstance(increment_seconds, tuple) else increment_seconds
+        }
+
+        self._timeout_callback = timeout_callback
+
+        self._event = Event()
+        self._stop_monitor = False
+        self._thread = self._monitor_time()
+
+    def __del__(self):
+        self._stop_monitor = True
+        if self._thread is not None:
+            self._event.set()
+            self._thread.join()
+
+    def _monitor_time(self):
+        if self._timeout_callback is None or (self._initial_time_seconds[chess.WHITE] == float('inf') and self._initial_time_seconds[chess.BLACK] == float('inf')):
+            return
+
+        self._stop_monitor = False
+        self._event.clear()
+
+        def _worker():
+            white_time_left = self.get_time_left(chess.WHITE)
+            black_time_left = self.get_time_left(chess.BLACK)
+
+            while not self._stop_monitor:
+                white_time_left = self.get_time_left(chess.WHITE)
+                black_time_left = self.get_time_left(chess.BLACK)
+                min_time_left = min(white_time_left, black_time_left)
+
+                if min_time_left <= 0:
+                    break
+
+                self._event.wait(timeout=min_time_left)
+
+            if self._timeout_callback is not None and self._event.is_set() is False:
+                loser = chess.WHITE if white_time_left <= 0 else chess.BLACK
+                self._timeout_callback(loser)
+
+        thread = Thread(target=_worker, daemon=True)
+        thread.start()
+        return thread
+
+    def get_initial_time(self, color: chess.Color) -> float:
+        return self._initial_time_seconds[color]
+
+    def get_increment(self, color: chess.Color) -> float:
+        return self._increment_seconds[color]
 
     def start(self):
         self.clocks[self.current_player].run()
@@ -79,7 +150,6 @@ class ChessClock:
         self.clocks[chess.BLACK].reset()
 
         self.current_player = chess.WHITE
-        self.clocks[chess.WHITE].run()
 
     def set_player(self, color: chess.Color):
         if self.current_player == color:
@@ -87,14 +157,14 @@ class ChessClock:
 
         current_player = self.clocks[self.current_player]
         current_player.pause()
-        current_player.increment(self._increment_seconds)
+        current_player.increment(self.get_increment(self.current_player))
 
         self.current_player = color
         next_player = self.clocks[self.current_player]
         next_player.run()
 
     def get_time_left(self, color: chess.Color) -> float:
-        return max(0.0, self._initial_time_seconds - self.clocks[color].elapsed)
+        return max(0.0, self.get_initial_time(color) - self.clocks[color].elapsed)
 
     @property
     def white_time_left(self) -> float:

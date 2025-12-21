@@ -1,7 +1,7 @@
 import chess
-from chessboard.events import event_manager, PieceLiftedEvent, PiecePlacedEvent
 from flask import Blueprint, jsonify, request, render_template
-from chessboard.game.board import board
+from chessboard.game.board_state import board_state
+from chessboard.game.game_state import game_state
 
 
 api = Blueprint('api', __name__, template_folder='templates')
@@ -13,7 +13,7 @@ def get_led_status():
 
     colors = {}
     for square in chess.SQUARES:
-        colors[square] = board.square_colors.get(square, None)
+        colors[square] = board_state.square_colors.get(square, None)
 
     return jsonify({'success': True, 'colors': colors})
 
@@ -23,7 +23,7 @@ def get_board_state():
     """API endpoint to get the current board state"""
 
     pieces = {}
-    for square, piece in board.pieces.items():
+    for square, piece in game_state.board.piece_map().items():
         pieces[square] = piece.unicode_symbol()
 
     return jsonify({'success': True, 'board_state': pieces})
@@ -32,7 +32,7 @@ def get_board_state():
 @api.route('/game/reset', methods=['POST'])
 def reset_game():
     """API endpoint to reset the game"""
-    board.reset()
+    board_state.reset()
     return jsonify({'success': True})
 
 
@@ -43,6 +43,6 @@ def start_game():
     start_time = data.get('start_time', None)
     increment = data.get('increment', None)
 
-    board.new_game(start_time_seconds=start_time, increment_seconds=increment)
+    board_state.new_game(start_time_seconds=start_time, increment_seconds=increment)
 
     return jsonify({'success': True})

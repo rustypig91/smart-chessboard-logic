@@ -64,7 +64,8 @@ class BoardState:
 
     def _handle_time_button_pressed(self, event: events.TimeButtonPressedEvent):
         if event.color != game_state.board.turn:
-            log.warning(f"Time button pressed for {'white' if event.color == chess.WHITE else 'black'} out of turn")
+            log.warning(
+                f"Time button pressed for {'white' if event.color == chess.WHITE else 'black'} out of turn ({event.color}, expected {game_state.board.turn}), ignoring")
             return
 
         if game_state.engine is not None and game_state.engine.color == event.color:

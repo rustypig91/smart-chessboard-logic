@@ -67,3 +67,12 @@ function getKey(e) {
         default: return String.fromCharCode(e.keyCode || e.which);
     }
 }
+
+
+function padStart(str, targetLength, padString) {
+    str = String(str);
+    while (str.length < targetLength) {
+        str = padString + str;
+    }
+    return str;
+}

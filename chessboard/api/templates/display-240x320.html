@@ -43,7 +43,13 @@
             <!-- Main Menu View -->
             <div id="main-view" class="view active">
                 <div class="menu">
-                    <div class="menu-item selected" data-next-view="new-game-view">
+                    <div class="menu-item selected" data-next-view="game-overview-view">
+                        <div>
+                            <h3>Resume Game</h3>
+                            <p>Continue current game</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-next-view="new-game-view">
                         <div>
                             <h3>New Game</h3>
                             <p>Start a new chess game</p>
@@ -182,7 +188,7 @@
                     <div class="menu-item selected" data-action="start-game" data-next-view="game-overview-view">
                         <div>
                             <h3>Start Game</h3>
-                            <p>Begin a new chess match</p>
+                            <p>Begin a new chess game</p>
                         </div>
                     </div>
                     <div class="menu-item" data-next-view="select-opponent-view">
@@ -252,7 +258,11 @@
             <!-- New Game -> Start Game -> Game Overview View -->
             <div id="game-overview-view" class="view">
                 <div class="view-header">Game Overview</div>
-                <div style="padding:6px; display:flex; flex-direction:column; gap:8px;">
+                <div style="padding:6px; display:flex; flex-direction:column; gap:8px; position:relative;">
+                    <div id="pause-overlay"
+                        style="display:none; position:absolute; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.45); z-index:10; align-items:center; justify-content:center;">
+                        <div style="font-size:48px; color:#fff; line-height:1;">⏸</div>
+                    </div>
                     <div id="black-panel"
                         style="width:100%; background:#1a1a1a; border:0px solid #8b7355; border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:6px;">
                         <h2 style="margin:0; font-size:16px; color:#f5f5f5;">Black</h2>
@@ -276,124 +286,98 @@
                 </div>
             </div>
             <script>
-                let overviewClock = {
-                    lastSyncedWhiteTimeLeft: 0,
-                    lastSyncedBlackTimeLeft: 0,
-                    lastUpdateTime: null,
-                    turn: 'white',
-                    running: false,
-                    white_player: '-',
-                    black_player: '-',
-                };
+                let lastGameState = null;
+                let lastGameStateReceivedTime = null;
 
-                function syncGameState() {
-                    apiCall('/api/game/state', null, function (data) {
-                        overviewClock.lastSyncedWhiteTimeLeft = data.clocks.white_time_left;
-                        overviewClock.lastSyncedBlackTimeLeft = data.clocks.black_time_left;
-                        overviewClock.lastUpdateTime = Date.now();
-                        overviewClock.turn = data.turn;
-                        overviewClock.running = data.clocks.running;
-                        overviewClock.white_player = data.white_player || '-';
-                        overviewClock.black_player = data.black_player || '-';
+                function handleGameStateEvent(data) {
+                    console.log("Received GameStateEvent:", data);
 
-                        const lastMoveEl = document.getElementById('last-move');
-                        if (lastMoveEl) lastMoveEl.textContent = `Last: ${data.last_move || '-'}`;
+                    lastGameState = data;
+                    lastGameStateReceivedTime = Date.now();
 
-                        const whiteNameEl = document.getElementById('white-name');
-                        const blackNameEl = document.getElementById('black-name');
-                        if (whiteNameEl) whiteNameEl.textContent = `${overviewClock.white_player}`;
-                        if (blackNameEl) blackNameEl.textContent = `${overviewClock.black_player}`;
+                    const pauseOverlay = document.getElementById('pause-overlay');
+                    if (pauseOverlay) {
+                        pauseOverlay.style.display = data.clock_paused ? 'flex' : 'none';
+                    }
 
-                        const whitePanel = document.getElementById('white-panel');
-                        const blackPanel = document.getElementById('black-panel');
-                        const blackClockEl = document.getElementById('black-clock');
-                        const whiteClockEl = document.getElementById('white-clock');
+                    const lastMoveEl = document.getElementById('last-move');
+                    if (lastMoveEl) lastMoveEl.textContent = `Last: ${data.last_move || '-'}`;
 
-                        if (whitePanel && blackPanel && blackClockEl && whiteClockEl) {
-                            const activeBorder = '#d4b88c';
-                            const inactiveBorder = '#8b7355';
-                            const activeBg = '#444';
-                            const inactiveBg = '#1a1a1a';
-                            const isWhiteTurn = overviewClock.turn === 'white';
+                    const whiteNameEl = document.getElementById('white-name');
+                    const blackNameEl = document.getElementById('black-name');
+                    if (whiteNameEl) whiteNameEl.textContent = `${data.white_player}`;
+                    if (blackNameEl) blackNameEl.textContent = `${data.black_player}`;
 
-                            whiteClockEl.style.color = isWhiteTurn ? '#fff' : '#aaa';
-                            blackClockEl.style.color = isWhiteTurn ? '#aaa' : '#fff';
+                    const whitePanel = document.getElementById('white-panel');
+                    const blackPanel = document.getElementById('black-panel');
+                    const blackClockEl = document.getElementById('black-clock');
+                    const whiteClockEl = document.getElementById('white-clock');
 
-                            whitePanel.style.borderColor = isWhiteTurn ? activeBorder : inactiveBorder;
-                            blackPanel.style.borderColor = isWhiteTurn ? inactiveBorder : activeBorder;
-                            whitePanel.style.background = isWhiteTurn ? activeBg : inactiveBg;
-                            blackPanel.style.background = isWhiteTurn ? inactiveBg : activeBg;
-                        }
+                    if (whitePanel && blackPanel && blackClockEl && whiteClockEl) {
+                        const activeBorder = '#d4b88c';
+                        const inactiveBorder = '#8b7355';
+                        const activeBg = '#444';
+                        const inactiveBg = '#1a1a1a';
+                        const isWhiteTurn = data.turn === 'white';
 
-                        if (currentView != 'game-overview-view' && data.started) {
-                            showView('game-overview-view');
-                        }
-                    });
+                        whiteClockEl.style.color = isWhiteTurn ? '#fff' : '#aaa';
+                        blackClockEl.style.color = isWhiteTurn ? '#aaa' : '#fff';
+
+                        whitePanel.style.borderColor = isWhiteTurn ? activeBorder : inactiveBorder;
+                        blackPanel.style.borderColor = isWhiteTurn ? inactiveBorder : activeBorder;
+                        whitePanel.style.background = isWhiteTurn ? activeBg : inactiveBg;
+                        blackPanel.style.background = isWhiteTurn ? inactiveBg : activeBg;
+                    }
+
+                    if (data.is_game_started && !data.is_game_paused) {
+                        showView('game-overview-view');
+                    }
                 }
 
-                addBoardEventListener(
-                    'ChessMoveEvent',
-                    (event) => {
-                        syncGameState();
-                    }
-                )
-
-                addBoardEventListener(
-                    'GameStartedEvent',
-                    (event) => {
-                        syncGameState();
-                    }
-                )
-
-                addBoardEventListener(
-                    'SquarePieceStateChange',
-                    (event) => {
-                        syncGameState();
-                    }
-                )
-
-                addBoardEventListener(
-                    'GamePausedEvent',
-                    (event) => {
-                        syncGameState();
-                    }
-                )
-
-                addBoardEventListener(
-                    'GameResumedEvent',
-                    (event) => {
-                        syncGameState();
-                    }
-                )
+                addBoardEventListener('GameStateChangedEvent', handleGameStateEvent)
 
                 document.addEventListener("DOMContentLoaded", () => {
                     setInterval(() => {
                         if (currentView !== 'game-overview-view') return;
 
-                        if (overviewClock.lastUpdateTime == null) {
-                            console.error("Clock update called before initialization");
+                        if (lastGameStateReceivedTime == null) {
+                            console.warn("Clock update called before initialization");
                             return;
                         }
                         const now = Date.now();
-                        const dt = (now - overviewClock.lastUpdateTime) / 1000.0;
+                        const dt = (now - lastGameStateReceivedTime) / 1000.0;
 
-                        const whiteTimeLeft = Math.max(0, overviewClock.lastSyncedWhiteTimeLeft - (overviewClock.turn === 'white' && overviewClock.running ? dt : 0));
-                        const blackTimeLeft = Math.max(0, overviewClock.lastSyncedBlackTimeLeft - (overviewClock.turn === 'black' && overviewClock.running ? dt : 0));
 
-                        const wMin = Math.floor((whiteTimeLeft || 0) / 60);
-                        const wSec = ((whiteTimeLeft || 0) % 60).toFixed(1);
-                        const bMin = Math.floor((blackTimeLeft || 0) / 60);
-                        const bSec = ((blackTimeLeft || 0) % 60).toFixed(1);
+                        let whiteTime;
+                        if (lastGameState.white_time_left != 'inf') {
+                            // Both players have unlimited time; no need to update clocks
+                            whiteTime = Math.max(0.0, lastGameState.white_time_left - (lastGameState.turn === 'white' && !lastGameState.clock_paused ? dt : 0));
+                        } else {
+                            whiteTime = lastGameState.white_time_elapsed + (dt * (lastGameState.turn === 'white' && !lastGameState.clock_paused ? 1 : 0));
+                        }
+
+                        let blackTime;
+                        if (lastGameState.black_time_left != 'inf') {
+                            // Both players have unlimited time; no need to update clocks
+                            blackTime = Math.max(0.0, lastGameState.black_time_left - (lastGameState.turn === 'black' && !lastGameState.clock_paused ? dt : 0));
+                        } else {
+                            blackTime = lastGameState.black_time_elapsed + (dt * (lastGameState.turn === 'black' && !lastGameState.clock_paused ? 1 : 0));
+                        }
+
+                        const wMin = Math.floor((whiteTime || 0) / 60);
+                        const wSec = ((whiteTime || 0) % 60).toFixed(1);
+                        const bMin = Math.floor((blackTime || 0) / 60);
+                        const bSec = ((blackTime || 0) % 60).toFixed(1);
 
                         const wEl = document.getElementById('white-clock');
                         const bEl = document.getElementById('black-clock');
 
-                        if (wEl) wEl.textContent = `${String(wMin).padStart(2, '0')}:${String(wSec).padStart(2, '0')}`;
-                        if (bEl) bEl.textContent = `${String(bMin).padStart(2, '0')}:${String(bSec).padStart(2, '0')}`;
+                        if (wEl) wEl.textContent = `${padStart(String(wMin), 2, '0')}:${padStart(String(wSec), 2, '0')}`;
+                        if (bEl) bEl.textContent = `${padStart(String(bMin), 2, '0')}:${padStart(String(bSec), 2, '0')}`;
 
                     }, 100);
 
-                    syncGameState();
+                    socket.emit("request_last_event", { event_type: "GameStateChangedEvent" })
                 });
 
             </script>
@@ -518,6 +502,14 @@
             apiCall('/api/game/resume', {});
         }
 
+        function regretLastMove() {
+            apiCall('/api/game/regret_last_move', {});
+        }
+
+        function resignGame() {
+            apiCall('/api/game/resign', {});
+        }
+
         let menuButtonFunctions = [
             { short: menuGoBack, shortHint: 'Back', long: menuReset, longHint: 'Reset' },
             { short: menuUp, shortHint: '↑', long: null, longHint: '' },
@@ -534,9 +526,9 @@
 
         let gameOverviewButtonFunctions = [
             { short: menuGoBack, shortHint: 'Back', long: null, longHint: '' },
-            { short: null, shortHint: '', long: null, longHint: '' },
-            { short: null, shortHint: '', long: null, longHint: '' },
-            { short: gameResume, shortHint: 'Resume', long: gamePause, longHint: 'Pause' },
+            { short: null, shortHint: '-', long: regretLastMove, longHint: 'Regret' },
+            { short: null, shortHint: '-', long: resignGame, longHint: 'Resign' },
+            { short: gameResume, shortHint: '▶', long: gamePause, longHint: '⏸' },
         ];
 
         let messageButtonFunctions = [
@@ -567,6 +559,10 @@
 
         function showView(viewId) {
             // Save current selectedIndex before leaving
+            if (currentView == viewId) {
+                return; // Already in requested view
+            }
+
             if (currentView) {
                 viewSelectedIndices[currentView] = selectedIndex;
             }
@@ -893,14 +889,8 @@
             apiCall('/api/game/new', post_data, function (data) {
                 if (!data.success) {
                     showMessageView('Error', 'Failed to start new game: ' + (data.error || 'Unknown error'));
-                }
-                else {
+                } else {
                     showView('game-overview-view');
-                    const lm = document.getElementById('last-move');
-                    if (lm) lm.textContent = 'Last: -';
-                    if (typeof syncOverviewClock === 'function') {
-                        syncOverviewClock();
-                    }
                 }
             });
         }

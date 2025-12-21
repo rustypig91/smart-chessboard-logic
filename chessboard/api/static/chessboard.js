@@ -28,13 +28,13 @@ function _sendBoardState(updatedSquare) {
     for (let squareIndex = 0; squareIndex < 64; squareIndex++) {
         const pieceDiv = document.querySelector(`[data-square_index='${squareIndex}'] .chess-piece`);
         if (!pieceDiv) {
-            colors[squareIndex] = "none";
+            colors[squareIndex] = null;
             continue;
         }
 
         let dragging = pieceDiv.classList.contains("dragging");
         if (dragging) {
-            colors[squareIndex] = "none";
+            colors[squareIndex] = null;
             continue;
         }
 

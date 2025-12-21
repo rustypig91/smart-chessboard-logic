@@ -8,7 +8,7 @@ import chess
 
 from chessboard.settings import settings
 from chessboard.logger import log
-from chessboard.events import event_manager, HalSensorVoltageEvent, SquarePieceStateChange
+from chessboard.events import event_manager, SquarePieceStateChange
 import subprocess
 
 import os
@@ -17,8 +17,6 @@ import tempfile
 
 
 settings.register('hal_sensor.offset', 0.10, description="Voltage offset in volts")
-settings.register('hal_sensor.piece_detection_consecutive', 2,
-                  description="Number of consecutive readings to confirm piece detection")
 
 
 class _XiaoInterface:
@@ -28,6 +26,7 @@ class _XiaoInterface:
     DEVICE_DESC = 'Chessboard console'
 
     DEFAULT_SENSOR_PIECE_OFFSET_MV = 100
+    CONSECUTIVE_READINGS_REQUIRED = 2
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, 'instance'):
@@ -278,9 +277,6 @@ class _XiaoInterface:
                     square = chess.square(file_index, rank_index)
                     voltage = value_mv * 1e-3
 
-                    event_manager.publish(
-                        HalSensorVoltageEvent(square, voltage))
-
                     # Require both current and previous voltage to exceed offset
                     if voltage >= settings['hal_sensor.offset']:
                         new_color = chess.BLACK
@@ -296,13 +292,13 @@ class _XiaoInterface:
                         self._board_piece_colors[square] = new_color
                         self._board_piece_consecutive_counts[square] = 1
 
-                    if self._board_piece_consecutive_counts[square] == settings['hal_sensor.piece_detection_consecutive']:
+                    if self._board_piece_consecutive_counts[square] == self.CONSECUTIVE_READINGS_REQUIRED:
                         changed_squares.append(square)
 
                 if first_scan_completed:
                     if len(changed_squares) > 0:
                         event_manager.publish(SquarePieceStateChange(changed_squares, self._board_piece_colors))
-                elif not first_scan_completed and all(count >= settings['hal_sensor.piece_detection_consecutive'] for count in self._board_piece_consecutive_counts):
+                elif not first_scan_completed and all(count >= self.CONSECUTIVE_READINGS_REQUIRED for count in self._board_piece_consecutive_counts):
                     first_scan_completed = True
                     event_manager.publish(SquarePieceStateChange(chess.SQUARES, self._board_piece_colors))
 

@@ -7,13 +7,30 @@ import threading
 import traceback
 import atexit
 import inspect
+import enum
+
+from json import JSONEncoder
+
+
+class ChessColor(enum.Enum):
+    WHITE = chess.WHITE
+    BLACK = chess.BLACK
+
+    def __str__(self):
+        return 'white' if self == ChessColor.WHITE else 'black'
+
+    def __repr__(self):
+        return f"ChessColor.{self.name}"
+
+    def __json__(self):
+        return str(self)
 
 
 class Event:
     def __init__(self):
         self.sender = "Unknown"
 
-    def _parse_color(self, color: chess.Color | str) -> chess.Color | None:
+    def _parse_color(self, color: chess.Color | str | None) -> chess.Color | None:
         if isinstance(color, str):
             if color.lower() == 'white':
                 return chess.WHITE
@@ -23,11 +40,23 @@ class Event:
                 return None
             else:
                 raise ValueError(f"Invalid color string: {color}")
-        else:
+        elif isinstance(color, chess.Color) or color is None:
             return color
+        else:
+            raise ValueError(f"Invalid color type: {type(color)}")
+
+    def _color_to_str(self, color: chess.Color | None) -> str | None:
+        if color is None:
+            return None
+        return 'white' if color == chess.WHITE else 'black'
 
     def to_json(self) -> dict:
-        return self.__dict__
+        items = self.__dict__.copy()
+        for key, value in items.items():
+            if isinstance(value, float) and value == float('inf'):
+                items[key] = 'inf'
+
+        return items
 
 
 class SetSquareColorEvent(Event):
@@ -46,10 +75,15 @@ class SetSquareColorEvent(Event):
 class SquarePieceStateChange(Event):
     def __init__(self, squares: list[chess.Square], colors: list[chess.Color | None | str]):
         self.squares = squares
-        self.colors = [self._parse_color(color) if color is not None else None for color in colors]
+        self.colors = [self._parse_color(color) for color in colors]
 
     def __repr__(self):
         return f"SquarePieceStateChange(square={self.squares}, color={self.colors})"
+
+    def to_json(self):
+        items = super().to_json()
+        items['colors'] = [self._color_to_str(color) for color in self.colors]
+        return items
 
 
 class TimeButtonPressedEvent(Event):
@@ -59,11 +93,10 @@ class TimeButtonPressedEvent(Event):
     def __repr__(self):
         return f"TimeButtonPressedEvent(color={'white' if self.color == chess.WHITE else 'black'})"
 
-
-class HalSensorVoltageEvent(Event):
-    def __init__(self, square: chess.Square, voltage: float):
-        self.square = square
-        self.voltage = voltage
+    def to_json(self):
+        items = super().to_json()
+        items['color'] = self._color_to_str(self.color)
+        return items
 
 
 class ChessMoveEvent(Event):
@@ -78,16 +111,9 @@ class ChessMoveEvent(Event):
         }
 
 
-class ClockTickEvent(Event):
-    def __init__(self, white_time_left: float, black_time_left: float, turn: chess.Color):
-        self.white_time_left = white_time_left
-        self.black_time_left = black_time_left
-        self.turn = turn
-
-
 class GameOverEvent(Event):
-    def __init__(self, winner: chess.Color | None, reason: str):
-        self.winner = winner
+    def __init__(self, winner: chess.Color | None | str, reason: str):
+        self.winner = self._parse_color(winner)
         self.reason = reason
 
 
@@ -112,6 +138,82 @@ class GameResumedEvent(Event):
         pass
 
 
+class NewGameEvent(Event):
+    def __init__(self, white_player: str, black_player: str, start_time_seconds: tuple[float, float], increment_seconds: tuple[float, float]):
+        self.white_player = white_player
+        self.black_player = black_player
+        self.start_time_seconds = start_time_seconds
+        self.increment_seconds = increment_seconds
+
+
+class ChessClockStateChangedEvent(Event):
+    def __init__(
+        self,
+        paused: bool,
+        current_player: chess.Color | None | str,
+        white_time_left: float,
+        black_time_left: float
+    ):
+        self.paused = paused
+        self.current_player = self._parse_color(current_player)
+        self.white_time_left = white_time_left
+        self.black_time_left = black_time_left
+
+    def to_json(self) -> dict:
+        items = super().to_json()
+        items['current_player'] = self._color_to_str(self.current_player)
+        return items
+
+
+class GameStateChangedEvent(Event):
+    def __init__(
+        self,
+        board: chess.Board,
+        clock_paused: bool,
+        white_time_left: float,
+        black_time_left: float,
+        white_time_elapsed: float,
+        black_time_elapsed: float,
+        white_start_time: float,
+        black_start_time: float,
+        white_player: str,
+        black_player: str,
+        winner: chess.Color | None | str,
+        is_game_started: bool = False,
+        is_game_paused: bool = False,
+    ):
+        self.fen = board.fen()
+
+        self.last_move = board.move_stack[-1].uci() if board.move_stack else None
+        self.is_check = board.is_check()
+
+        self.clock_paused = clock_paused
+        self.turn = self._parse_color(board.turn)
+
+        self.white_time_left = white_time_left
+        self.black_time_left = black_time_left
+
+        self.white_time_elapsed = white_time_elapsed
+        self.black_time_elapsed = black_time_elapsed
+
+        self.white_start_time = white_start_time
+        self.black_start_time = black_start_time
+
+        self.white_player = white_player
+        self.black_player = black_player
+
+        self.winner = self._parse_color(winner)
+
+        self.is_game_started = is_game_started
+        self.is_game_paused = is_game_paused
+
+    def to_json(self) -> dict:
+        items = super().to_json()
+        items['turn'] = self._color_to_str(self.turn)
+        items['winner'] = self._color_to_str(self.winner)
+        return items
+
+
 class _EventManager:
     def __init__(self):
         self._subscribers: dict[type[Event],
@@ -128,6 +230,7 @@ class _EventManager:
         self._thread.start()
 
         log.info("EventManager initialized")
+        self._latest_events: dict[type[Event], Event] = {}
 
     def __del__(self):
         self.stop()
@@ -152,6 +255,8 @@ class _EventManager:
         asyncio.run_coroutine_threadsafe(
             self._event_queue.put(event), self._event_loop)
 
+        self._latest_events[type(event)] = event
+
     def _handle_event(self, event: Event):
         event_type = type(event)
         if event_type in self._subscribers:
@@ -171,9 +276,9 @@ class _EventManager:
             except asyncio.CancelledError:
                 break
 
-            if not isinstance(event, HalSensorVoltageEvent):
-                # Skip logging for high-frequency events
-                log.debug(f"{type(event).__name__}: {event.to_json()}")
+            # if not isinstance(event, HalSensorVoltageEvent):
+            #     # Skip logging for high-frequency events
+            log.debug(f"{type(event).__name__}: {event.to_json()}")
 
             self._handle_event(event)
             self._event_queue.task_done()
@@ -190,6 +295,9 @@ class _EventManager:
                 self._thread.join(timeout=2)
                 self._thread = None
             log.info("EventManager stopped")
+
+    def get_last_event(self, event_type: type[Event]) -> Event | None:
+        return self._latest_events.get(event_type, None)
 
 
 event_manager = _EventManager()

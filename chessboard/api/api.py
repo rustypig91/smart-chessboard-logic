@@ -87,10 +87,36 @@ def handle_publish_event(data):
         return
 
 
+@socketio.on('request_last_event')
+def handle_request_last_event(data):
+    """
+    Handle client request for the last event of a specific type.
+    Expects 'event_type' in data.
+    """
+    event_type = data.get('event_type')
+    if not event_type:
+        log.error("request_last_event missing 'event_type'")
+        return
+
+    try:
+        event_class = getattr(chessboard.events, event_type)
+        last_event = chessboard.events.event_manager.get_last_event(event_class)
+        if last_event:
+            log.debug(f"request_last_event: {event_type}; {last_event.to_json()}")
+            socketio.emit(f'board_event.{event_type}', last_event.to_json(), to=request.sid)
+
+        else:
+            log.debug(f"request_last_event: {event_type}; no last event found")
+    except Exception as e:
+        traceback_lines = "\n    ".join(traceback.format_exc().splitlines())
+        log.error(f"Error handling request_last_event: {e}: \n    {traceback_lines}")
+        return
+
+
 chessboard.events.event_manager.subscribe_all_events(lambda event: emit_event(event))
 
 
-def emit_event(event):
+def emit_event(event: chessboard.events.Event):
     socketio.emit(f'board_event.{type(event).__name__}', event.to_json())
 
 

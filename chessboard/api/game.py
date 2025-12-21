@@ -21,7 +21,7 @@ def start_new_game():
     """API endpoint to start a new game against a computer opponent"""
     data = request.get_json()
     opponent = data.get('opponent', 'Human')
-    start_time_seconds = data.get('start_time_seconds', 0.0)  # Default to 5 seconds per move
+    start_time_seconds = data.get('start_time_seconds', float('inf'))
     increment_seconds = data.get('increment_seconds', 0.0)
 
     engine_weight = None
@@ -37,9 +37,12 @@ def start_new_game():
     if type(increment_seconds) not in (float, int) or increment_seconds < 0:
         return jsonify({'success': False, 'error': 'Invalid increment specified'}), 400
 
+    if start_time_seconds == 0.0:
+        start_time_seconds = float('inf')  # Represent unlimited time
+
     game_state.new_game(
-        start_time_seconds=data.get('start_time_seconds', 0.0),
-        increment_seconds=data.get('increment_seconds', 0.0),
+        start_time_seconds=start_time_seconds,
+        increment_seconds=increment_seconds,
         engine_weight=engine_weight,
         engine_color=chess.BLACK)
 
@@ -62,18 +65,18 @@ def resume_game():
     return jsonify({'success': True})
 
 
-@api.route('/clock', methods=['GET'])
-def get_clocks():
-    """API endpoint to set the chess clock times"""
-    return jsonify({
-        'success': True,
-        'white_time_left': game_state.chess_clock.white_time_left,
-        'black_time_left': game_state.chess_clock.black_time_left,
-        'white_time_elapsed': game_state.chess_clock.white_time_elapsed,
-        'black_time_elapsed': game_state.chess_clock.black_time_elapsed,
-        'running': game_state.chess_clock.running,
-        'current_player': 'white' if game_state.chess_clock.current_player == chess.WHITE else 'black'
-    })
+@api.route('/resign', methods=['POST'])
+def resign_game():
+    """API endpoint to resign the current game"""
+    game_state.resign_game()
+    return jsonify({'success': True})
+
+
+@api.route('/regret_last_move', methods=['POST'])
+def regret_last_move():
+    """API endpoint to regret the last move"""
+    game_state.regret_last_move()
+    return jsonify({'success': True})
 
 
 @api.route('/state', methods=['GET'])
@@ -94,7 +97,7 @@ def get_game_state():
         'clocks': {
             'white_time_left': game_state.chess_clock.white_time_left if game_state.chess_clock.white_time_left != float('inf') else None,
             'black_time_left': game_state.chess_clock.black_time_left if game_state.chess_clock.black_time_left != float('inf') else None,
-            'running': game_state.chess_clock.running,
+            'paused': game_state.chess_clock.paused
         },
         'white_player': game_state.players[chess.WHITE],
         'black_player': game_state.players[chess.BLACK],

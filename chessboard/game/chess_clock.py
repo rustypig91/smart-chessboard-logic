@@ -2,6 +2,7 @@ import time
 import chess
 from threading import Lock, Thread, Event
 from typing import Callable
+import chessboard.events as events
 
 
 class Stopwatch:
@@ -10,18 +11,16 @@ class Stopwatch:
         self._last_start: float | None = None
         self._lock = Lock()
 
-    def __getstate__(self):
-        return (self._elapsed, self._last_start)
-
-    def __setstate__(self, state):
-        self._elapsed, self._last_start = state
-        self._lock = Lock()
-
     @property
     def elapsed(self):
         with self._lock:
             last_interval = time.time() - self._last_start if self._last_start is not None else 0.0
             return self._elapsed + last_interval
+
+    @elapsed.setter
+    def elapsed(self, value: float):
+        with self._lock:
+            self._elapsed = value
 
     def reset(self):
         with self._lock:
@@ -52,9 +51,9 @@ class Stopwatch:
                 self._elapsed = 0.0
 
     @property
-    def running(self) -> bool:
+    def paused(self) -> bool:
         with self._lock:
-            return self._last_start is not None
+            return self._last_start is None
 
 
 class ChessClock:
@@ -142,14 +141,26 @@ class ChessClock:
     def start(self):
         self.clocks[self.current_player].run()
 
+    def _send_update_event(self):
+        events.event_manager.publish(
+            events.ChessClockStateChangedEvent(
+                paused=self.paused,
+                current_player=self.current_player,
+                white_time_left=self.white_time_left,
+                black_time_left=self.black_time_left
+            )
+        )
+
     def pause(self):
         self.clocks[self.current_player].pause()
+        self._send_update_event()
 
     def reset(self):
         self.clocks[chess.WHITE].reset()
         self.clocks[chess.BLACK].reset()
 
         self.current_player = chess.WHITE
+        self._send_update_event()
 
     def set_player(self, color: chess.Color):
         if self.current_player == color:
@@ -162,6 +173,7 @@ class ChessClock:
         self.current_player = color
         next_player = self.clocks[self.current_player]
         next_player.run()
+        self._send_update_event()
 
     def get_time_left(self, color: chess.Color) -> float:
         return max(0.0, self.get_initial_time(color) - self.clocks[color].elapsed)
@@ -178,13 +190,33 @@ class ChessClock:
     def white_time_elapsed(self) -> float:
         return self.clocks[chess.WHITE].elapsed
 
+    @white_time_elapsed.setter
+    def white_time_elapsed(self, value: float):
+        self.clocks[chess.WHITE].elapsed = value
+
     @property
     def black_time_elapsed(self) -> float:
         return self.clocks[chess.BLACK].elapsed
 
+    @black_time_elapsed.setter
+    def black_time_elapsed(self, value: float):
+        self.clocks[chess.BLACK].elapsed = value
+
     @property
-    def running(self) -> bool:
-        return self.clocks[self.current_player].running
+    def paused(self) -> bool:
+        return self.clocks[self.current_player].paused
+
+    @property
+    def started(self) -> bool:
+        return self.clocks[chess.WHITE].elapsed > 0.0 or self.clocks[chess.BLACK].elapsed > 0.0
+
+    @property
+    def white_start_time(self) -> float:
+        return self._initial_time_seconds[chess.WHITE]
+
+    @property
+    def black_start_time(self) -> float:
+        return self._initial_time_seconds[chess.BLACK]
 
 
 if __name__ == "__main__":

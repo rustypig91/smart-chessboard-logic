@@ -7,7 +7,7 @@ from threading import Thread
 from typing import Callable
 from random import choice
 
-default_weights_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../weights'))
+default_weights_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../maia-chess/maia_weights'))
 
 settings.register("engine.path", "lc0", "Path to the chess engine executable")
 settings.register("engine.weights_path", default_weights_path,

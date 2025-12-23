@@ -43,6 +43,8 @@ class Event:
                 continue
             elif isinstance(value, float) and value == float('inf'):
                 json_items[key] = 'inf'
+            elif isinstance(value, chess.Board):
+                json_items[key] = value.fen()
             else:
                 json_items[key] = value
 
@@ -53,7 +55,7 @@ class SetSquareColorEvent(Event):
     """ Requests setting the color chess squares to specific RGB values. """
 
     def __init__(self, color_map: dict[chess.Square, tuple[int, int, int] | None]):
-        """        
+        """
         color_map: A dictionary mapping squares to RGB color tuples or None to not change the led
         """
         self.color_map = color_map
@@ -177,7 +179,7 @@ class GameStateChangedEvent(Event):
         is_game_started: bool = False,
         is_game_paused: bool = False,
     ):
-        self.fen = board.fen()
+        self.board = board
 
         self.last_move = board.move_stack[-1].uci() if board.move_stack else None
         self.is_check = board.is_check()

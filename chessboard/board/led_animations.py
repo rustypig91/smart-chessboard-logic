@@ -1,4 +1,5 @@
 from typing import Callable
+import math
 import chess
 from chessboard.settings import settings
 import threading
@@ -119,6 +120,67 @@ class AnimationChangeSide(Animation):
         self._frame_idx += 1
 
         return AnimationFrame(duration=self._duration / len(self._steps), colors=color_map)
+
+
+class AnimationWaveAround(Animation):
+    def __init__(self, center_square: chess.Square, color: tuple[int, int, int] | None = None, duration: float = 1.2, frames: int = 20, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+        self._center = center_square
+        try:
+            self._color = color or settings['game.colors.white_max']
+        except KeyError:
+            self._color = color or (0, 255, 50)
+        self._duration = duration
+        self._frames = max(1, frames)
+
+        r0 = chess.square_rank(self._center)
+        f0 = chess.square_file(self._center)
+        # Max Euclidean radius to any corner for smooth circular wave
+        corners = [(0, 0), (0, 7), (7, 0), (7, 7)]
+        self._max_radius = max(math.sqrt((r0 - r)**2 + (f0 - f)**2) for r, f in corners)
+
+        self._frame_idx = 0
+
+        # Wave parameters: narrow ring (sigma) and damping
+        self._sigma = 0.55  # ring thickness
+        self._damp = 0.12   # amplitude decay per radius unit
+
+    def next_frame(self) -> AnimationFrame | None:
+        if self._frame_idx >= self._frames:
+            return None
+
+        t = self._frame_idx / (self._frames - 1) if self._frames > 1 else 1.0
+        radius = t * self._max_radius
+
+        r0 = chess.square_rank(self._center)
+        f0 = chess.square_file(self._center)
+
+        colors: dict[chess.Square, tuple[int, int, int] | None] = {}
+
+        # Expanding circular ripple with gaussian profile around the wavefront
+        for sq in chess.SQUARES:
+            r = chess.square_rank(sq)
+            f = chess.square_file(sq)
+            dist = math.sqrt((r - r0)**2 + (f - f0)**2)
+            # Gaussian window around the wavefront radius for a thin ring
+            gauss = math.exp(-((dist - radius)**2) / (2 * self._sigma**2))
+            # Damping with distance to emulate energy loss in water
+            amplitude = gauss * math.exp(-self._damp * radius)
+            if amplitude > 0.06:  # visibility threshold
+                col = (
+                    int(self._color[0] * amplitude),
+                    int(self._color[1] * amplitude),
+                    int(self._color[2] * amplitude),
+                )
+                colors[sq] = col
+
+        # Highlight the center at the start
+        if self._frame_idx == 0:
+            colors[self._center] = self._color
+
+        self._frame_idx += 1
+        return AnimationFrame(duration=self._duration / self._frames, colors=colors)
 
 
 if __name__ == "__main__":

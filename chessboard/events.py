@@ -212,6 +212,23 @@ class GameStateChangedEvent(Event):
         return items
 
 
+class EventSuppressor:
+    def __init__(self, event_manager: '_EventManager', event_type: type[Event], mod: ModuleType):
+        self._event_manager = event_manager
+        self._event_type = event_type
+        self._mod = mod
+
+    def __enter__(self):
+        if self._event_type in self._event_manager._suppressers:
+            raise ValueError(
+                f"Event type {self._event_type} is already being supressed by {self._event_manager._suppressers[self._event_type]}")
+        self._event_manager._suppressers[self._event_type] = self._mod
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self._mod == self._event_manager._suppressers.get(self._event_type, None):
+            del self._event_manager._suppressers[self._event_type]
+
+
 class _EventManager:
     def __init__(self):
         self._subscribers: dict[type[Event],
@@ -316,34 +333,14 @@ class _EventManager:
     def get_last_event(self, event_type: type[Event]) -> Event | None:
         return self._latest_events.get(event_type, None)
 
-    def supress_other_publishers(self, event_type: type[Event]):
+    def supress_other_publishers(self, event_type: type[Event]) -> EventSuppressor:
         """ Suppresses publishing events of the given type with the provided callbacks. """
         mod = inspect.getmodule(inspect.stack()[1].frame)
         log.debug(f"Suppressing event {event_type} from module {mod}")
         if mod is None:
             raise ValueError("Could not determine module for suppressing event")
 
-        if event_type in self._suppressers:
-            raise ValueError(f"Event type {event_type} is already being supressed by {self._suppressers[event_type]}")
-
-        self._suppressers[event_type] = mod
-
-    def unsupress_other_publishers(self, event_type: type[Event]):
-        """ Removes suppression of publishing events of the given type. """
-        mod = inspect.getmodule(inspect.stack()[1].frame)
-        log.debug(f"Unsuppressing event {event_type} from module {mod}")
-        if mod is None:
-            raise ValueError("Could not determine module for unsuppressing event")
-
-        if event_type not in self._suppressers:
-            log.warning(f"Event type {event_type} is not being supressed")
-            return
-
-        if self._suppressers[event_type] != mod:
-            raise ValueError(
-                f"Event type {event_type} is being supressed by {self._suppressers[event_type]}, not {mod}")
-
-        del self._suppressers[event_type]
+        return EventSuppressor(self, event_type, mod)
 
 
 event_manager = _EventManager()

@@ -44,6 +44,7 @@ class BoardState:
         events.event_manager.subscribe(events.TimeButtonPressedEvent, self._handle_time_button_pressed)
         events.event_manager.subscribe(events.NewGameEvent, self._handle_new_game_event)
         events.event_manager.subscribe(events.ChessMoveEvent, self._handle_move)
+        events.event_manager.subscribe(events.GameOverEvent, self._handle_game_over)
 
         self._board_square_color_map: dict[chess.Square, tuple[int, int, int]] = {}
 
@@ -105,10 +106,17 @@ class BoardState:
             event.move.from_square: settings['game.colors.previous_move'],
             event.move.to_square: settings['game.colors.previous_move']
         }
-        animation = animations.AnimationChangeSide(current_side=not game_state.board.turn,
-                                                   callback=self._scan_board,
-                                                   overlay_colors=overlay_colors)
+        # animation = animations.AnimationChangeSide(current_side=not game_state.board.turn,
+        #                                            callback=self._scan_board,
+        #                                            overlay_colors=overlay_colors)
+
+        animation = animations.AnimationRainbow(start_colors=self._board_square_color_map,
+                                                callback=self._scan_board, loop=True)
         animation.start()
+
+    def _handle_game_over(self, event: events.GameOverEvent):
+        # Build a stable base to restore after the celebration
+        pass
 
     def _apply_color_map(self, color_map: dict[chess.Square, tuple[int, int, int] | None]):
         for square, color in color_map.items():

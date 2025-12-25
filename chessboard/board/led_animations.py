@@ -123,16 +123,21 @@ class AnimationChangeSide(Animation):
 
 
 class AnimationWaveAround(Animation):
-    def __init__(self, center_square: chess.Square, color: tuple[int, int, int] | None = None, duration: float = 1.2, frames: int = 20, *args, **kwargs) -> None:
+    def __init__(self,
+                 center_square: chess.Square,
+                 duration: float = 1.0,
+                 frames: int = 50,
+                 base_frame: dict[chess.Square, tuple[int, int, int]] | None = None,
+                 *args,
+                 **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
         self._center = center_square
-        try:
-            self._color = color or settings['game.colors.white_max']
-        except KeyError:
-            self._color = color or (0, 255, 50)
         self._duration = duration
         self._frames = max(1, frames)
+
+        # Base frame to modulate (default frame)
+        self._base_colors: dict[chess.Square, tuple[int, int, int]] = base_frame or {}
 
         r0 = chess.square_rank(self._center)
         f0 = chess.square_file(self._center)
@@ -143,8 +148,9 @@ class AnimationWaveAround(Animation):
         self._frame_idx = 0
 
         # Wave parameters: narrow ring (sigma) and damping
-        self._sigma = 0.55  # ring thickness
+        self._sigma = 0.75  # ring thickness
         self._damp = 0.12   # amplitude decay per radius unit
+        self._boost = 0.9   # overall brightness boost at wavefront
 
     def next_frame(self) -> AnimationFrame | None:
         if self._frame_idx >= self._frames:
@@ -158,7 +164,7 @@ class AnimationWaveAround(Animation):
 
         colors: dict[chess.Square, tuple[int, int, int] | None] = {}
 
-        # Expanding circular ripple with gaussian profile around the wavefront
+        # Expanding circular ripple: modulate the provided base frame intensities
         for sq in chess.SQUARES:
             r = chess.square_rank(sq)
             f = chess.square_file(sq)
@@ -166,18 +172,30 @@ class AnimationWaveAround(Animation):
             # Gaussian window around the wavefront radius for a thin ring
             gauss = math.exp(-((dist - radius)**2) / (2 * self._sigma**2))
             # Damping with distance to emulate energy loss in water
-            amplitude = gauss * math.exp(-self._damp * radius)
-            if amplitude > 0.06:  # visibility threshold
-                col = (
-                    int(self._color[0] * amplitude),
-                    int(self._color[1] * amplitude),
-                    int(self._color[2] * amplitude),
-                )
-                colors[sq] = col
+            amplitude = gauss * math.exp(-self._damp * radius) * self._boost
 
-        # Highlight the center at the start
-        if self._frame_idx == 0:
-            colors[self._center] = self._color
+            base = self._base_colors.get(sq, None)
+            if base is None:
+                # No base color known for this square; skip modulation
+                continue
+
+            # Scale base color upwards (brighten) at the wavefront
+            scale = 1.0 + amplitude
+            rC = min(255, int(base[0] * scale))
+            gC = min(255, int(base[1] * scale))
+            bC = min(255, int(base[2] * scale))
+            # Only publish if it changes noticeably
+            if (rC, gC, bC) != base:
+                colors[sq] = (rC, gC, bC)
+
+        # Highlight the center at the start by boosting base color
+        if self._frame_idx == 0 and self._center in self._base_colors and self._base_colors[self._center] is not None:
+            base = self._base_colors[self._center]
+            scale = 1.5
+            boosted = (min(255, int(base[0] * scale)),
+                       min(255, int(base[1] * scale)),
+                       min(255, int(base[2] * scale)))
+            colors[self._center] = boosted
 
         self._frame_idx += 1
         return AnimationFrame(duration=self._duration / self._frames, colors=colors)

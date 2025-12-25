@@ -61,21 +61,19 @@ class BoardState:
         return self._board_square_color_map
 
     def _handle_piece_state_change(self, event: events.SquarePieceStateChangeEvent):
-        prev_colors = self._board_piece_color_map.copy()
         self._board_piece_color_map = event.colors
         self._scan_board()
 
         # Trigger a ripple around newly dropped friendly pieces (None -> turn)
         try:
-            dropped_squares = [
-                sq for sq in chess.SQUARES
-                if prev_colors[sq] is None
-                and self._board_piece_color_map[sq] is not None
-                and self._board_piece_color_map[sq] == game_state.board.turn
-            ]
+            dropped_squares = [sq for sq in event.squares if event.colors[sq] is not None]
 
             for sq in dropped_squares:
-                anim = animations.AnimationWaveAround(center_square=sq, callback=self._scan_board)
+                anim = animations.AnimationWaveAround(
+                    center_square=sq,
+                    base_frame=self._board_square_color_map,
+                    start_colors=self._board_square_color_map,
+                    callback=self._scan_board)
                 anim.start()
         except Exception as e:
             log.error(f"Error starting wave animation: {e}")

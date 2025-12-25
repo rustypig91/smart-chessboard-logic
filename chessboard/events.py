@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Callable
+from types import ModuleType
 import chess
 from chessboard.logger import log
 import threading
@@ -229,6 +230,8 @@ class _EventManager:
         log.info("EventManager initialized")
         self._latest_events: dict[type[Event], Event] = {}
 
+        self._suppressers: dict[type[Event], ModuleType] = {}
+
     def __del__(self):
         self.stop()
 
@@ -312,6 +315,35 @@ class _EventManager:
 
     def get_last_event(self, event_type: type[Event]) -> Event | None:
         return self._latest_events.get(event_type, None)
+
+    def supress_other_publishers(self, event_type: type[Event]):
+        """ Suppresses publishing events of the given type with the provided callbacks. """
+        mod = inspect.getmodule(inspect.stack()[1].frame)
+        log.debug(f"Suppressing event {event_type} from module {mod}")
+        if mod is None:
+            raise ValueError("Could not determine module for suppressing event")
+
+        if event_type in self._suppressers:
+            raise ValueError(f"Event type {event_type} is already being supressed by {self._suppressers[event_type]}")
+
+        self._suppressers[event_type] = mod
+
+    def unsupress_other_publishers(self, event_type: type[Event]):
+        """ Removes suppression of publishing events of the given type. """
+        mod = inspect.getmodule(inspect.stack()[1].frame)
+        log.debug(f"Unsuppressing event {event_type} from module {mod}")
+        if mod is None:
+            raise ValueError("Could not determine module for unsuppressing event")
+
+        if event_type not in self._suppressers:
+            log.warning(f"Event type {event_type} is not being supressed")
+            return
+
+        if self._suppressers[event_type] != mod:
+            raise ValueError(
+                f"Event type {event_type} is being supressed by {self._suppressers[event_type]}, not {mod}")
+
+        del self._suppressers[event_type]
 
 
 event_manager = _EventManager()

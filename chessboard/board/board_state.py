@@ -8,6 +8,7 @@ import chessboard.events as events
 from chessboard.logger import log
 from chessboard.settings import settings, ColorSetting
 from chessboard.game.game_state import game_state
+import chessboard.board.led_animations as animations
 
 
 settings.register("game.colors.invalid_piece_placement",
@@ -83,12 +84,17 @@ class BoardState:
 
         log.info(f"Time button pressed, registering move: {move.uci()}")
 
-        self._reset_color(chess.SQUARES)
-
         events.event_manager.publish(events.ChessMoveEvent(move=move))
 
     def _handle_move(self, event: events.ChessMoveEvent):
-        self._scan_board()
+        overlay_colors = {
+            event.move.from_square: settings['game.colors.previous_move'],
+            event.move.to_square: settings['game.colors.previous_move']
+        }
+        animation = animations.AnimationChangeSide(current_side=not game_state.board.turn,
+                                                   callback=self._scan_board,
+                                                   overlay_colors=overlay_colors)
+        animation.start()
 
     def _apply_color_map(self, color_map: dict[chess.Square, tuple[int, int, int] | None]):
         for square, color in color_map.items():

@@ -1,6 +1,6 @@
 import chess
 from flask import Blueprint, jsonify, request, render_template
-from chessboard.game.board_state import board_state
+from chessboard.board.board_state import board_state
 from chessboard.game.game_state import game_state
 
 

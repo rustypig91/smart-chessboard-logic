@@ -57,6 +57,8 @@ class BoardState:
         self._reset_color(chess.SQUARES)
         log.info("BoardState initialized")
 
+        self._ongoing_animation: animations.Animation | None = None
+
     @property
     def square_colors(self) -> dict[chess.Square, tuple[int, int, int]]:
         return self._board_square_color_map
@@ -78,9 +80,6 @@ class BoardState:
                 anim.start()
         except Exception as e:
             log.error(f"Error starting wave animation: {e}")
-
-    def _handle_new_game_event(self, event: events.NewGameEvent):
-        self._scan_board()
 
     def _handle_time_button_pressed(self, event: events.TimeButtonPressedEvent):
         if event.color != game_state.board.turn:
@@ -106,17 +105,24 @@ class BoardState:
             event.move.from_square: settings['game.colors.previous_move'],
             event.move.to_square: settings['game.colors.previous_move']
         }
-        # animation = animations.AnimationChangeSide(current_side=not game_state.board.turn,
-        #                                            callback=self._scan_board,
-        #                                            overlay_colors=overlay_colors)
+        animation = animations.AnimationChangeSide(current_side=not game_state.board.turn,
+                                                   callback=self._scan_board,
+                                                   overlay_colors=overlay_colors)
 
-        animation = animations.AnimationRainbow(start_colors=self._board_square_color_map,
-                                                callback=self._scan_board, loop=True)
         animation.start()
 
     def _handle_game_over(self, event: events.GameOverEvent):
         # Build a stable base to restore after the celebration
-        pass
+        self._ongoing_animation = animations.AnimationRainbow(start_colors=self._board_square_color_map,
+                                                              callback=self._scan_board, loop=True)
+        self._ongoing_animation.start()
+
+    def _handle_new_game_event(self, event: events.NewGameEvent):
+        if self._ongoing_animation is not None:
+            self._ongoing_animation.stop()
+            self._ongoing_animation = None
+
+        self._scan_board()
 
     def _apply_color_map(self, color_map: dict[chess.Square, tuple[int, int, int]]):
         for square, color in color_map.items():

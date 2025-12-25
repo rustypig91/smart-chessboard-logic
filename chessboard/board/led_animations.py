@@ -68,6 +68,8 @@ class Animation:
                     elapsed = time() - start_time
                     if elapsed < frame.duration:
                         self._stop.wait(frame.duration - elapsed)
+                        if self._stop.is_set():
+                            break
                     elif elapsed > frame.duration:
                         log.warning(
                             f"Animation frame took longer ({elapsed:.3f}s) than its duration ({frame.duration:.3f}s)")
@@ -225,10 +227,8 @@ class AnimationRainbow(Animation):
 
         try:
             self._black_color = settings['game.colors.black']
-            self._white_min = settings['game.colors.white_min']
         except KeyError:
             self._black_color = (0, 0, 0)
-            self._white_min = (70, 70, 70)
 
         # Static noise offsets per square for shimmering (stable over time)
         random.seed(42)
@@ -288,40 +288,36 @@ class AnimationRainbow(Animation):
 
 if __name__ == "__main__":
     import tkinter as tk
-    # Example usage
-    root = tk.Tk()
-    root.title("8x8 Chessboard")
 
-    square_size = 40
-    canvas = tk.Canvas(root, width=8*square_size, height=8*square_size)
-    canvas.pack()
+    class TKInterBoard:
+        def __init__(self):
+            self.root = tk.Tk()
+            self.root.title("8x8 Chessboard")
 
-    rects = {}
-    for row in range(8):
-        for col in range(8):
-            x1 = col * square_size
-            y1 = row * square_size
-            x2 = x1 + square_size
-            y2 = y1 + square_size
-            rect = canvas.create_rectangle(x1, y1, x2, y2, fill="white", outline="black")
-            rects[chess.square(col, 7 - row)] = rect  # Map chess square to rectangle
+            square_size = 80
+            self.canvas = tk.Canvas(self.root, width=8*square_size, height=8*square_size)
+            self.canvas.pack()
 
-    anim = AnimationRainbow(loop=True)
+            self.rects = {}
+            for row in range(8):
+                for col in range(8):
+                    x1 = col * square_size
+                    y1 = row * square_size
+                    x2 = x1 + square_size
+                    y2 = y1 + square_size
+                    rect = self.canvas.create_rectangle(x1, y1, x2, y2, fill="white", outline="black")
+                    self.rects[chess.square(col, 7 - row)] = rect  # Map chess square to rectangle
 
-    def rgb_to_hex(rgb):
-        return "#%02x%02x%02x" % rgb
+            events.event_manager.subscribe(events.SetSquareColorEvent, self._handle_set_square_color_event)
 
-    index = 0
+        def _handle_set_square_color_event(self, event: events.SetSquareColorEvent):
+            for square, color in event.color_map.items():
+                hex_color = "#%02x%02x%02x" % color
+                self.canvas.itemconfig(self.rects[square], fill=hex_color)
 
-    def play_animation():
-        global index
-        frame = anim.get_frame(index)
-        index += 1
-        if frame is None:
-            return
-        for square, color in frame.colors.items():
-            canvas.itemconfig(rects[square], fill=rgb_to_hex(color))
-        root.after(int(frame.duration * 1000), play_animation)
+        def run(self):
+            self.root.mainloop()
 
-    play_animation()
-    root.mainloop()
+    board = TKInterBoard()
+    board.root.after(100, lambda: AnimationRainbow(loop=True).start())
+    board.run()

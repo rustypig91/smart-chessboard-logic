@@ -11,7 +11,7 @@ from time import time
 
 
 class AnimationFrame:
-    def __init__(self, duration: float, colors: dict[chess.Square, tuple[int, int, int] | None]) -> None:
+    def __init__(self, duration: float, colors: dict[chess.Square, tuple[int, int, int]]) -> None:
         self.duration = duration
         self.colors = colors
 
@@ -24,8 +24,8 @@ class AnimationFrame:
 class Animation:
     def __init__(self,
                  callback: Callable[[], None] | None = None,
-                 start_colors: dict[chess.Square, tuple[int, int, int] | None] | None = None,
-                 overlay_colors: dict[chess.Square, tuple[int, int, int] | None] | None = None,
+                 start_colors: dict[chess.Square, tuple[int, int, int]] | None = None,
+                 overlay_colors: dict[chess.Square, tuple[int, int, int]] | None = None,
                  loop: bool = False) -> None:
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._animate_thread)
@@ -163,7 +163,7 @@ class AnimationWaveAround(Animation):
         r0 = chess.square_rank(self._center)
         f0 = chess.square_file(self._center)
 
-        colors: dict[chess.Square, tuple[int, int, int] | None] = {}
+        colors: dict[chess.Square, tuple[int, int, int]] = {}
 
         # Expanding circular ripple: modulate the provided base frame intensities
         for sq in chess.SQUARES:
@@ -306,13 +306,17 @@ if __name__ == "__main__":
             rect = canvas.create_rectangle(x1, y1, x2, y2, fill="white", outline="black")
             rects[chess.square(col, 7 - row)] = rect  # Map chess square to rectangle
 
-    anim = AnimationChangeSide(chess.WHITE, duration=1.0)
+    anim = AnimationRainbow(loop=True)
 
     def rgb_to_hex(rgb):
         return "#%02x%02x%02x" % rgb
 
+    index = 0
+
     def play_animation():
-        frame = anim.next_frame()
+        global index
+        frame = anim.get_frame(index)
+        index += 1
         if frame is None:
             return
         for square, color in frame.colors.items():

@@ -32,7 +32,7 @@ def get_board_state():
 @api.route('/game/reset', methods=['POST'])
 def reset_game():
     """API endpoint to reset the game"""
-    board_state.reset()
+    game_state.reset()
     return jsonify({'success': True})
 
 
@@ -43,6 +43,6 @@ def start_game():
     start_time = data.get('start_time', None)
     increment = data.get('increment', None)
 
-    board_state.new_game(start_time_seconds=start_time, increment_seconds=increment)
+    game_state.new_game(start_time_seconds=start_time, increment_seconds=increment)
 
     return jsonify({'success': True})

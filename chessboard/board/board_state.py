@@ -118,7 +118,7 @@ class BoardState:
         # Build a stable base to restore after the celebration
         pass
 
-    def _apply_color_map(self, color_map: dict[chess.Square, tuple[int, int, int] | None]):
+    def _apply_color_map(self, color_map: dict[chess.Square, tuple[int, int, int]]):
         for square, color in color_map.items():
             if color is not None:
                 self._board_square_color_map[square] = color

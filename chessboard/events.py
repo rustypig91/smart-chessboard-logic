@@ -55,7 +55,7 @@ class Event:
 class SetSquareColorEvent(Event):
     """ Requests setting the color chess squares to specific RGB values. """
 
-    def __init__(self, color_map: dict[chess.Square, tuple[int, int, int] | None]):
+    def __init__(self, color_map: dict[chess.Square, tuple[int, int, int]]):
         """
         color_map: A dictionary mapping squares to RGB color tuples or None to not change the led
         """

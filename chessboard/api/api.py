@@ -103,7 +103,7 @@ def handle_request_last_event(data):
         last_event = chessboard.events.event_manager.get_last_event(event_class)
         if last_event:
             log.debug(f"request_last_event: {event_type}; {last_event.to_json()}")
-            socketio.emit(f'board_event.{event_type}', last_event.to_json(), to=request.sid)
+            socketio.emit(f'board_event.{event_type}', last_event.to_json(), to=request.sid)  # type: ignore
 
         else:
             log.debug(f"request_last_event: {event_type}; no last event found")

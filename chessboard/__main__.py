@@ -1,7 +1,7 @@
 import argparse
 
 import chess
-from chessboard.game.board_state import board_state
+from chessboard.game.game_state import game_state
 import chessboard.events as events
 import chessboard.api.api as api
 from chessboard import is_raspberrypi
@@ -16,9 +16,12 @@ parser.add_argument('--engine-weight', type=str, default=None,
                     help='Engine weight file to use for the engine (if applicable)')
 parser.add_argument('--engine-color', type=chess.Color, default=chess.BLACK,
                     help='Engine color to use for the engine (if applicable)')
+parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+parser.add_argument('--port', type=int, default=5000, help='Port to run the web server on')
+
 args = parser.parse_args()
 
 if args.new_game:
-    board_state.new_game(engine_weight=args.engine_weight, engine_color=args.engine_color)
+    game_state.new_game(engine_weight=args.engine_weight, engine_color=args.engine_color)
 
-api.socketio.run(api.app, debug=False, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+api.socketio.run(api.app, debug=args.debug, host='0.0.0.0', port=args.port, allow_unsafe_werkzeug=True)

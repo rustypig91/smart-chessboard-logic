@@ -110,6 +110,27 @@
             let pieceStorageDiv = document.getElementById("piece-storage");
         });
 
+        function populateStorage() {
+            let pieceStorageDiv = document.getElementById("piece-storage");
+            pieceStorageDiv.innerHTML = '';
+
+            let missingPieces = getMissingPieces();
+
+            let squareIndex = 100;
+            for (const [piece, count] of Object.entries(missingPieces)) {
+                for (let i = 0; i < count; i++) {
+                    const pieceDiv = createPieceDiv(piece, squareIndex++);
+                    pieceStorageDiv.appendChild(pieceDiv);
+                }
+            }
+        }
+        addEventListener("GameStateChangedEvent", populateStorage);
+
+        function storageDragEndHandler(event) {
+            liftedPiece = null;
+            liftedFrom = null;
+        }
+
     </script>
 </head>
 
@@ -128,6 +149,7 @@
             <iframe src="{{ url_for('home') }}" title="240x320 Display"></iframe>
         </div>
     </div>
+
 </body>
 
 </html>

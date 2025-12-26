@@ -8,6 +8,8 @@ import threading
 import chessboard.events as events
 from chessboard.logger import log
 from time import time
+from chessboard.thread_safe_variable import ThreadSafeVariable
+import chessboard.board.led_manager as leds
 
 
 class AnimationFrame:
@@ -23,126 +25,139 @@ class AnimationFrame:
 
 class Animation:
     def __init__(self,
-                 callback: Callable[[], None] | None = None,
-                 start_colors: dict[chess.Square, tuple[int, int, int]] | None = None,
-                 overlay_colors: dict[chess.Square, tuple[int, int, int]] | None = None,
+                 fps: float,
+                 duration: float,
                  loop: bool = False) -> None:
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._animate_thread)
-        self._animation_done_callback = callback
-        self._start_colors = start_colors
-        self._overlay_colors = overlay_colors or {}
-        self._loop = loop
 
-    def get_frame(self, index: int) -> AnimationFrame | None:
-        """
-        Returns the next frame of the animation as a list of tuples containing
-        (time the frame should be displayed in seconds, square, color). If the animation is complete, returns None.
-        """
+        if fps <= 0:
+            raise ValueError("FPS must be greater than 0")
+
+        self._stop = threading.Event()
+        self._thread = None
+        self._loop = loop
+        self._frame_index = ThreadSafeVariable(0)
+
+        self._fps = fps
+        self._duration = duration
+        self._total_frames = max(1, int(self._fps * self._duration))
+
+        self._led_layer = leds.LedLayer()
+        leds.led_manager.add_layer(self._led_layer)
+
+        self.start_time = 0.0
+
+    def __del__(self):
+        x = 1
+
+    @property
+    def total_frames(self) -> int:
+        return self._total_frames
+
+    @property
+    def frame_index(self) -> int:
+        return self._frame_index.get()
+
+    def update(self) -> bool:
+        """ Update the animation state. Returns True if the animation is complete. """
         raise NotImplementedError()
 
     def start(self):
+        if self._thread is not None:
+            raise RuntimeError("Animation is already running")
+
         self._stop.clear()
+        self._thread = threading.Thread(target=self._animate_thread)
         self._thread.start()
 
     def stop(self):
+        if self._thread is None:
+            return
         self._stop.set()
         self._thread.join()
+        self._thread = None
+
+    def restart(self):
+        self.stop()
+        self.start()
 
     def _animate_thread(self):
-        with events.event_manager.supress_other_publishers(events.SetSquareColorEvent):
-            idx = 0
-            start_time = None
-            while not self._stop.is_set():
-                frame = self.get_frame(idx)
-                idx += 1
+        index = self.frame_index
+        start_time = None
+        is_complete = False
 
-                if frame is None:
-                    if not self._loop:
+        frame_time = 1.0 / self._fps
+        self._frame_index.set(0)
+        self.start_time = time()
+
+        while not self._stop.is_set() and not is_complete:
+            if start_time is not None:
+                elapsed = time() - start_time
+                if elapsed < frame_time:
+                    self._stop.wait(frame_time - elapsed)
+                    if self._stop.is_set():
                         break
-                    idx = 0
-                    continue
+                elif elapsed > frame_time:
+                    log.warning(
+                        f"Animation frame took longer ({elapsed:.3f}s) than its duration ({frame_time:.3f}s)")
 
-                event = events.SetSquareColorEvent(frame.colors)
-                if start_time is not None:
-                    elapsed = time() - start_time
-                    if elapsed < frame.duration:
-                        self._stop.wait(frame.duration - elapsed)
-                        if self._stop.is_set():
-                            break
-                    elif elapsed > frame.duration:
-                        log.warning(
-                            f"Animation frame took longer ({elapsed:.3f}s) than its duration ({frame.duration:.3f}s)")
+            is_complete = self.update()
+            self._led_layer.commit()
+            start_time = time()
+            index += 1
+            self._frame_index.set(index)
 
-                frame.colors.update(self._overlay_colors)
-                events.event_manager.publish(event, block=True)
-                start_time = time()
-
-            if self._start_colors:
-                event = events.SetSquareColorEvent(self._start_colors)
-                events.event_manager.publish(event)
-
-        if self._animation_done_callback:
-            self._animation_done_callback()
+            if is_complete:
+                if not self._loop:
+                    break
+                self._frame_index.set(0)
+                self.start_time = time()
+                is_complete = False
+                index = 0
 
 
 class AnimationChangeSide(Animation):
-    def __init__(self, current_side: chess.Color, duration: float = 0.2, *args, **kwargs) -> None:
+    def __init__(self, new_side: chess.Color, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
-        self._current_side = current_side
-        self._duration = duration
+        self._change_to = new_side
 
-        self._white_max_rank = 0 if current_side == chess.WHITE else 7
+        self._current_position = 7.0 / 2.0  # Start in the middle
 
-        self._steps = range(71)
+        self._movement_per_frame = 7.0 / self.total_frames
 
-    def get_frame(self, index: int) -> AnimationFrame | None:
-        if index >= len(self._steps):
-            return None
+    def set_side(self, new_side: chess.Color) -> None:
+        self._change_to = new_side
+        self.restart()
 
-        white_min = settings['game.colors.white_min']
-        white_max = settings['game.colors.white_max']
+    def update(self) -> bool:
+        intensity_max = 1.0
+        intensity_min = 0.5
 
-        white_squares = [sq for sq in chess.SQUARES if (chess.square_rank(sq) + chess.square_file(sq)) % 2 == 1]
-        black_squares = [sq for sq in chess.SQUARES if (chess.square_rank(sq) + chess.square_file(sq)) % 2 == 0]
+        if self._change_to == chess.WHITE:
+            self._current_position -= self._movement_per_frame
+        else:
+            self._current_position += self._movement_per_frame
 
-        color_map = {}
-        color_map.update({sq: settings['game.colors.black'] for sq in black_squares})
+        self._current_position = max(0.0, min(7.0, self._current_position))
 
         for rank in range(8):
-            current_max_position = self._steps[index] / 10.0
-            if self._current_side == chess.WHITE:
-                length_from_max = abs(rank - current_max_position)
-            else:
-                length_from_max = abs((7 - rank) - current_max_position)
+            length_from_max = abs(rank - self._current_position)
+            interpolation = intensity_max - (length_from_max * (intensity_max - intensity_min) / 7.0)
+            self._led_layer.intensity.update({sq: interpolation for sq in
+                                             [s for s in chess.SQUARES if chess.square_rank(s) == rank]})
 
-            interpolation = [0, 0, 0]
-            for i in range(3):
-                interpolation[i] = white_max[i] - (length_from_max * (white_max[i] - white_min[i]) / 7.0)
-
-            color_map.update({sq: tuple(int(c) for c in interpolation)
-                             for sq in white_squares if chess.square_rank(sq) == rank})
-
-        return AnimationFrame(duration=self._duration / len(self._steps), colors=color_map)
+        done = self._current_position <= 0.0 or self._current_position >= 7.0
+        return done
 
 
 class AnimationWaveAround(Animation):
     def __init__(self,
                  center_square: chess.Square,
-                 duration: float = 1.0,
-                 frames: int = 50,
-                 base_frame: dict[chess.Square, tuple[int, int, int]] | None = None,
                  *args,
                  **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
         self._center = center_square
-        self._duration = duration
-        self._frames = max(1, frames)
-
-        # Base frame to modulate (default frame)
-        self._base_colors: dict[chess.Square, tuple[int, int, int]] = base_frame or {}
 
         r0 = chess.square_rank(self._center)
         f0 = chess.square_file(self._center)
@@ -153,19 +168,16 @@ class AnimationWaveAround(Animation):
         # Wave parameters: narrow ring (sigma) and damping
         self._sigma = 0.75  # ring thickness
         self._damp = 0.12   # amplitude decay per radius unit
-        self._boost = 0.9   # overall brightness boost at wavefront
+        self._boost = 1.0   # overall brightness boost at wavefront
 
-    def get_frame(self, index: int) -> AnimationFrame | None:
-        if index >= self._frames:
-            return None
+    def update(self) -> bool:
+        index = self.frame_index
 
-        t = index / (self._frames - 1) if self._frames > 1 else 1.0
+        t = index / (self.total_frames - 1) if self.total_frames > 1 else 1.0
         radius = t * self._max_radius
 
         r0 = chess.square_rank(self._center)
         f0 = chess.square_file(self._center)
-
-        colors: dict[chess.Square, tuple[int, int, int]] = {}
 
         # Expanding circular ripple: modulate the provided base frame intensities
         for sq in chess.SQUARES:
@@ -177,30 +189,20 @@ class AnimationWaveAround(Animation):
             # Damping with distance to emulate energy loss in water
             amplitude = gauss * math.exp(-self._damp * radius) * self._boost
 
-            base = self._base_colors.get(sq, None)
-            if base is None:
-                # No base color known for this square; skip modulation
-                continue
-
             # Scale base color upwards (brighten) at the wavefront
             scale = 1.0 + amplitude
-            rC = min(255, int(base[0] * scale))
-            gC = min(255, int(base[1] * scale))
-            bC = min(255, int(base[2] * scale))
-            # Only publish if it changes noticeably
-            if (rC, gC, bC) != base:
-                colors[sq] = (rC, gC, bC)
+            self._led_layer.intensity.update({sq: scale})
 
         # Highlight the center at the start by boosting base color
-        if index == 0 and self._center in self._base_colors and self._base_colors[self._center] is not None:
-            base = self._base_colors[self._center]
-            scale = 1.5
-            boosted = (min(255, int(base[0] * scale)),
-                       min(255, int(base[1] * scale)),
-                       min(255, int(base[2] * scale)))
-            colors[self._center] = boosted
+        # if index == 0 and self._center in self._base_colors and self._base_colors[self._center] is not None:
+        #     base = self._base_colors[self._center]
+        #     scale = 1.5
+        #     boosted = (min(255, int(base[0] * scale)),
+        #                min(255, int(base[1] * scale)),
+        #                min(255, int(base[2] * scale)))
+        #     colors[self._center] = boosted
 
-        return AnimationFrame(duration=self._duration / self._frames, colors=colors)
+        return index >= self.total_frames
 
 
 class AnimationRainbow(Animation):
@@ -286,6 +288,44 @@ class AnimationRainbow(Animation):
         return AnimationFrame(duration=self._duration / self._frames, colors=colors)
 
 
+class AnimationPulse(Animation):
+    """ Simple pulse animation on one square
+    """
+
+    def __init__(self,
+                 pulsating_square: chess.Square,
+                 pulsating_color: tuple[int, int, int],
+                 duration: float = 1.6,
+                 fps: float = 15.0,
+                 pulses: int = 2,
+                 *args,
+                 **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+        self._pulsating_square = pulsating_square
+        self._duration = duration
+        # 5 fps
+        self._frames = max(1, int(self._duration * fps))
+        self._pulses = max(1, pulses)
+        self._pulsating_color = pulsating_color
+
+    def get_frame(self, index: int) -> AnimationFrame | None:
+        if index >= self._frames:
+            return None
+
+        time_progress = index / self._frames
+
+        colors: dict[chess.Square, tuple[int, int, int]] = {}
+
+        k_pulse = 0.6 + 0.4 * (0.5 + 0.5 * math.sin(2 * math.pi * (time_progress * (2 + self._pulses))))
+        kR = min(255, int(self._pulsating_color[0] * k_pulse))
+        kG = min(255, int(self._pulsating_color[1] * k_pulse))
+        kB = min(255, int(self._pulsating_color[2] * k_pulse))
+        colors[self._pulsating_square] = (kR, kG, kB)
+
+        return AnimationFrame(duration=self._duration / self._frames, colors=colors)
+
+
 if __name__ == "__main__":
     import tkinter as tk
 
@@ -319,5 +359,6 @@ if __name__ == "__main__":
             self.root.mainloop()
 
     board = TKInterBoard()
-    board.root.after(100, lambda: AnimationRainbow(loop=True).start())
+    # board.root.after(100, lambda: AnimationRainbow(loop=True).start())
+    board.root.after(100, lambda: AnimationPulse(chess.E4, pulsating_color=(255, 0, 0), loop=True).start())
     board.run()

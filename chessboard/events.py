@@ -11,7 +11,7 @@ import inspect
 
 class Event:
     def __init__(self):
-        self.sender = "Unknown"
+        self.sender: ModuleType | None = None
         # Used for blocking publish
         self._sync_event: threading.Event | None = None
 
@@ -46,6 +46,8 @@ class Event:
                 json_items[key] = 'inf'
             elif isinstance(value, chess.Board):
                 json_items[key] = value.fen()
+            elif isinstance(value, ModuleType):
+                json_items[key] = value.__name__
             else:
                 json_items[key] = value
 
@@ -59,6 +61,7 @@ class SetSquareColorEvent(Event):
         """
         color_map: A dictionary mapping squares to RGB color tuples or None to not change the led
         """
+        super().__init__()
         self.color_map = color_map
 
     def __repr__(self):
@@ -67,6 +70,7 @@ class SetSquareColorEvent(Event):
 
 class SquarePieceStateChangeEvent(Event):
     def __init__(self, squares: list[chess.Square], colors: list[chess.Color | None | str]):
+        super().__init__()
         self.squares = squares
         self.colors = [self._parse_color(color) for color in colors]
 
@@ -81,6 +85,7 @@ class SquarePieceStateChangeEvent(Event):
 
 class TimeButtonPressedEvent(Event):
     def __init__(self, color: chess.Color | str):
+        super().__init__()
         self.color = self._parse_color(color)
 
     def __repr__(self):
@@ -94,6 +99,7 @@ class TimeButtonPressedEvent(Event):
 
 class ChessMoveEvent(Event):
     def __init__(self, move: chess.Move):
+        super().__init__()
         self.move = move
 
     def to_json(self):
@@ -106,38 +112,45 @@ class ChessMoveEvent(Event):
 
 class GameOverEvent(Event):
     def __init__(self, winner: chess.Color | None | str, reason: str):
+        super().__init__()
         self.winner = self._parse_color(winner)
         self.reason = reason
 
 
 class PlayerNotifyEvent(Event):
     def __init__(self, title: str, message: str):
+        super().__init__()
         self.title = title
         self.message = message
 
 
 class GameStartedEvent(Event):
     def __init__(self):
+        super().__init__()
         pass
 
 
 class GamePausedEvent(Event):
     def __init__(self):
+        super().__init__()
         pass
 
 
 class GameResumedEvent(Event):
     def __init__(self):
+        super().__init__()
         pass
 
 
 class SystemShutdownEvent(Event):
     def __init__(self):
+        super().__init__()
         pass
 
 
 class NewGameEvent(Event):
     def __init__(self, white_player: str, black_player: str, start_time_seconds: tuple[float, float], increment_seconds: tuple[float, float]):
+        super().__init__()
         self.white_player = white_player
         self.black_player = black_player
         self.start_time_seconds = start_time_seconds
@@ -152,6 +165,7 @@ class ChessClockStateChangedEvent(Event):
         white_time_left: float,
         black_time_left: float
     ):
+        super().__init__()
         self.paused = paused
         self.current_player = self._parse_color(current_player)
         self.white_time_left = white_time_left
@@ -180,6 +194,8 @@ class GameStateChangedEvent(Event):
         is_game_started: bool = False,
         is_game_paused: bool = False,
     ):
+        super().__init__()
+
         self.board = board
 
         self.last_move = board.move_stack[-1].uci() if board.move_stack else None
@@ -212,21 +228,33 @@ class GameStateChangedEvent(Event):
         return items
 
 
-class EventSuppressor:
-    def __init__(self, event_manager: '_EventManager', event_type: type[Event], mod: ModuleType):
+class EventModifier:
+    def __init__(self,
+                 event_manager: '_EventManager',
+                 event_type: type[Event],
+                 modifier: Callable[[Event], Event | None]):
+        """ Modifies or suppresses events of a specific type.
+
+        event_manager: The event manager instance.
+        event_type: The type of event to modify.
+        modifier: A callable that takes an event instance and returns a modified event or None to suppress it.
+        """
         self._event_manager = event_manager
         self._event_type = event_type
-        self._mod = mod
+        self._modifier = modifier
+
+    @property
+    def event_type(self) -> type[Event]:
+        return self._event_type
 
     def __enter__(self):
-        if self._event_type in self._event_manager._suppressers:
-            raise ValueError(
-                f"Event type {self._event_type} is already being supressed by {self._event_manager._suppressers[self._event_type]}")
-        self._event_manager._suppressers[self._event_type] = self._mod
+        if self._event_type not in self._event_manager._modifiers:
+            self._event_manager._modifiers[self._event_type] = []
+
+        self._event_manager._modifiers[self._event_type].insert(0, self)
 
     def __exit__(self, exc_type, exc_value, traceback):
-        if self._mod == self._event_manager._suppressers.get(self._event_type, None):
-            del self._event_manager._suppressers[self._event_type]
+        self._event_manager._modifiers[self._event_type].remove(self)
 
 
 class _EventManager:
@@ -241,13 +269,13 @@ class _EventManager:
         self._event_loop = asyncio.new_event_loop()
         self._event_task = self._event_loop.create_task(self._main())
 
+        self._latest_events: dict[type[Event], Event] = {}
+        self._modifiers: dict[type[Event], list[EventModifier]] = {}
+
         self._thread = threading.Thread(target=self.main, daemon=True)
         self._thread.start()
 
         log.info("EventManager initialized")
-        self._latest_events: dict[type[Event], Event] = {}
-
-        self._suppressers: dict[type[Event], ModuleType] = {}
 
     def __del__(self):
         self.stop()
@@ -273,7 +301,7 @@ class _EventManager:
         block: If True, waits until the event has been handled by all subscribers.
         timeout: Maximum time to wait if blocking is enabled.
         """
-        event.sender = inspect.stack()[1].frame.f_globals.get('__name__', 'Unknown')
+        event.sender = inspect.getmodule(inspect.stack()[1].frame)
 
         sync_event = None
         if block:
@@ -290,6 +318,14 @@ class _EventManager:
 
     def _handle_event(self, event: Event):
         event_type = type(event)
+        modifiers = self._modifiers.get(event_type, [])
+        for modifier in modifiers:
+            log.debug(f"Modifying event {event_type.__name__} using {modifier._modifier}")
+            new_event = modifier._modifier(event)
+            if new_event is None:
+                return
+            event = new_event
+
         if event_type in self._subscribers:
             for callback in self._subscribers[event_type]:
                 try:
@@ -333,14 +369,9 @@ class _EventManager:
     def get_last_event(self, event_type: type[Event]) -> Event | None:
         return self._latest_events.get(event_type, None)
 
-    def supress_other_publishers(self, event_type: type[Event]) -> EventSuppressor:
+    def modifier(self, event_type: type[Event], modifier: Callable[[Event], Event | None]) -> EventModifier:
         """ Suppresses publishing events of the given type with the provided callbacks. """
-        mod = inspect.getmodule(inspect.stack()[1].frame)
-        log.debug(f"Suppressing event {event_type} from module {mod}")
-        if mod is None:
-            raise ValueError("Could not determine module for suppressing event")
-
-        return EventSuppressor(self, event_type, mod)
+        return EventModifier(self, event_type, modifier)
 
 
 event_manager = _EventManager()

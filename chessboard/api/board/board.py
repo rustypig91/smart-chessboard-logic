@@ -2,7 +2,7 @@ import chess
 from flask import Blueprint, jsonify, request, render_template
 from chessboard.board.board_state import board_state
 from chessboard.game.game_state import game_state
-
+from chessboard.board.led_manager import led_manager
 
 api = Blueprint('api', __name__, template_folder='templates')
 
@@ -10,12 +10,7 @@ api = Blueprint('api', __name__, template_folder='templates')
 @api.route('/square/colors', methods=['GET'])
 def get_led_status():
     """API endpoint to get the current LED status of the board"""
-
-    colors = {}
-    for square in chess.SQUARES:
-        colors[square] = board_state.square_colors.get(square, None)
-
-    return jsonify({'success': True, 'colors': colors})
+    return jsonify({'success': True, 'colors': led_manager.colors})
 
 
 @api.route('/square/pieces', methods=['GET'])

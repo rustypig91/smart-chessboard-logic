@@ -9,7 +9,7 @@ from chessboard.logger import log
 from chessboard.settings import settings, ColorSetting
 from chessboard.game.game_state import game_state
 import chessboard.board.led_animations as animations
-
+import chessboard.board.led_manager as leds
 
 settings.register("game.colors.invalid_piece_placement",
                   ColorSetting(255, 0, 0),
@@ -39,14 +39,14 @@ settings.register('game.colors.previous_move',
 
 class BoardState:
     def __init__(self) -> None:
-
         events.event_manager.subscribe(events.SquarePieceStateChangeEvent, self._handle_piece_state_change)
         events.event_manager.subscribe(events.TimeButtonPressedEvent, self._handle_time_button_pressed)
         events.event_manager.subscribe(events.NewGameEvent, self._handle_new_game_event)
         events.event_manager.subscribe(events.ChessMoveEvent, self._handle_move)
         events.event_manager.subscribe(events.GameOverEvent, self._handle_game_over)
+        events.event_manager.subscribe(events.GameStateChangedEvent, self._handle_game_state_changed)
 
-        self._board_square_color_map: dict[chess.Square, tuple[int, int, int]] = {}
+        self._was_check = False
 
         # Current realtime state of pieces on board
         self._board_piece_color_map: list[chess.Color | None] = [None] * 64
@@ -54,14 +54,17 @@ class BoardState:
             # Start of assuming board matches game state
             self._board_piece_color_map[square] = game_state.board.color_at(square)
 
-        self._reset_color(chess.SQUARES)
+        self._led_layer = leds.LedLayer()
+        leds.led_manager.add_layer(self._led_layer)
+
+        self._change_side_animation = animations.AnimationChangeSide(
+            fps=15.0,
+            new_side=game_state.board.turn,
+            duration=0.5,
+        )
+        self._change_side_animation.start()
+
         log.info("BoardState initialized")
-
-        self._ongoing_animation: animations.Animation | None = None
-
-    @property
-    def square_colors(self) -> dict[chess.Square, tuple[int, int, int]]:
-        return self._board_square_color_map
 
     def _handle_piece_state_change(self, event: events.SquarePieceStateChangeEvent):
         self._board_piece_color_map = event.colors
@@ -73,10 +76,9 @@ class BoardState:
 
             for sq in dropped_squares:
                 anim = animations.AnimationWaveAround(
-                    center_square=sq,
-                    base_frame=self._board_square_color_map,
-                    start_colors=self._board_square_color_map,
-                    callback=self._scan_board)
+                    fps=15.0,
+                    duration=1.0,
+                    center_square=sq)
                 anim.start()
         except Exception as e:
             log.error(f"Error starting wave animation: {e}")
@@ -101,80 +103,90 @@ class BoardState:
         events.event_manager.publish(events.ChessMoveEvent(move=move))
 
     def _handle_move(self, event: events.ChessMoveEvent):
-        overlay_colors = {
-            event.move.from_square: settings['game.colors.previous_move'],
-            event.move.to_square: settings['game.colors.previous_move']
-        }
-        animation = animations.AnimationChangeSide(current_side=not game_state.board.turn,
-                                                   callback=self._scan_board,
-                                                   overlay_colors=overlay_colors)
+        self._change_side_animation.set_side(game_state.board.turn)
+        # animation = animations.AnimationChangeSide(
+        #     fps=15.0,
+        #     duration=2.0,
+        #     current_side=not game_state.board.turn)
 
-        animation.start()
+        # animation.start()
+        self._scan_board()
 
     def _handle_game_over(self, event: events.GameOverEvent):
         # Build a stable base to restore after the celebration
-        self._ongoing_animation = animations.AnimationRainbow(start_colors=self._board_square_color_map,
-                                                              callback=self._scan_board, loop=True)
-        self._ongoing_animation.start()
+        # self._ongoing_animation = animations.AnimationRainbow(start_colors=self._board_square_color_map,
+        #                                                       callback=self._scan_board, loop=True)
+        # self._ongoing_animation.start()
+        pass
 
-    def _handle_new_game_event(self, event: events.NewGameEvent):
-        if self._ongoing_animation is not None:
-            self._ongoing_animation.stop()
-            self._ongoing_animation = None
+    def _handle_game_state_changed(self, event: events.GameStateChangedEvent):
+        # Trigger check animation only on transition into check
+
+        # if is_check and not self._was_check:
+        #     base_map = self._get_reset_color_map(chess.SQUARES)
+        #     board = game_state.board
+        #     king_square = board.king(board.turn)
+        #     checkers = list(board.checkers())
+        #     overlay = {}
+        #     if king_square is not None:
+        #         overlay[king_square] = settings['game.colors.invalid_piece_placement']
+        #     for sq in checkers:
+        #         overlay[sq] = settings['game.colors.capture']
+
+        # anim = animations.AnimationKingCheck(
+        #     king_square=king_square if king_square is not None else chess.E4,
+        #     base_frame=base_map,
+        #     start_colors=base_map,
+        #     overlay_colors=overlay,
+        #     callback=self._scan_board,
+        # )
+        # anim.start()
 
         self._scan_board()
 
-    def _apply_color_map(self, color_map: dict[chess.Square, tuple[int, int, int]]):
-        for square, color in color_map.items():
-            if color is not None:
-                self._board_square_color_map[square] = color
+    def _handle_new_game_event(self, event: events.NewGameEvent):
+        self._scan_board()
 
-        events.event_manager.publish(events.SetSquareColorEvent(color_map))
+    def _reset_led_layer(self):
+        # white_squares = [sq for sq in squares if (chess.square_rank(sq) + chess.square_file(sq)) % 2 == 1]
+        # black_squares = [sq for sq in squares if (chess.square_rank(sq) + chess.square_file(sq)) % 2 == 0]
 
-    def _get_reset_color_map(self, squares: iterable[chess.Square]):
-        white_squares = [sq for sq in squares if (chess.square_rank(sq) + chess.square_file(sq)) % 2 == 1]
-        black_squares = [sq for sq in squares if (chess.square_rank(sq) + chess.square_file(sq)) % 2 == 0]
+        # # Add gradient to white squares: brighter closer to the player whose turn it is
+        # white_min = settings['game.colors.white_min']
+        # white_max = settings['game.colors.white_max']
 
-        # Add gradient to white squares: brighter closer to the player whose turn it is
-        white_min = settings['game.colors.white_min']
-        white_max = settings['game.colors.white_max']
+        # color_map = {}
 
-        color_map = {}
+        # for rank in range(8):
+        #     squares_in_rank = [sq for sq in white_squares if chess.square_rank(sq) == rank]
+        #     gradient = rank / 7 if game_state.board.turn == chess.BLACK else (7 - rank) / 7
+        #     color = (
+        #         int(white_min[0] + (white_max[0] - white_min[0]) * gradient),
+        #         int(white_min[1] + (white_max[1] - white_min[1]) * gradient),
+        #         int(white_min[2] + (white_max[2] - white_min[2]) * gradient),
+        #     )
 
-        for rank in range(8):
-            squares_in_rank = [sq for sq in white_squares if chess.square_rank(sq) == rank]
-            gradient = rank / 7 if game_state.board.turn == chess.BLACK else (7 - rank) / 7
-            color = (
-                int(white_min[0] + (white_max[0] - white_min[0]) * gradient),
-                int(white_min[1] + (white_max[1] - white_min[1]) * gradient),
-                int(white_min[2] + (white_max[2] - white_min[2]) * gradient),
-            )
+        #     for sq in squares_in_rank:
+        #         color_map[sq] = color
 
-            for sq in squares_in_rank:
-                color_map[sq] = color
-
-        for sq in black_squares:
-            color_map[sq] = settings['game.colors.black']
+        # for sq in black_squares:
+        #     color_map[sq] = settings['game.colors.black']
 
         # Light up the last move if available
+        self._led_layer.reset()
+
         if game_state.board.move_stack:
             last_move = game_state.board.peek()
             for sq in [last_move.from_square, last_move.to_square]:
-                color_map[sq] = settings['game.colors.previous_move']
+                self._led_layer.colors[sq] = settings['game.colors.previous_move']
 
         # Light up check
         checkers = game_state.board.checkers()
         king_square = game_state.board.king(game_state.board.turn)
         if checkers and king_square is not None:
-            color_map[king_square] = settings['game.colors.invalid_piece_placement']
+            self._led_layer.colors[king_square] = settings['game.colors.invalid_piece_placement']
             for sq in checkers:
-                color_map[sq] = settings['game.colors.capture']
-
-        return color_map
-
-    def _reset_color(self, squares: iterable[chess.Square]):
-        color_map = self._get_reset_color_map(squares)
-        self._apply_color_map(color_map)
+                self._led_layer.colors[sq] = settings['game.colors.capture']
 
     def _scan_board(self) -> chess.Move | None:
         """Scan the board for piece changes and determine if a legal move has been made.
@@ -183,7 +195,7 @@ class BoardState:
 
         returns: The detected legal move, or None if no legal move is detected.
         """
-        color_map = self._get_reset_color_map(chess.SQUARES)
+        self._reset_led_layer()
 
         log.debug("Scanning board for piece changes...")
 
@@ -193,6 +205,8 @@ class BoardState:
 
         extra_friendly_pieces = []
         extra_opponent_pieces = []
+
+        color_map = self._led_layer.colors
 
         for square in chess.SQUARES:
             color_board = self._board_piece_color_map[square]
@@ -223,7 +237,7 @@ class BoardState:
             color_map.update({sq: settings['game.colors.invalid_piece_placement']
                               for sq in missing_friendly_pieces + extra_friendly_pieces + missing_opponent_pieces + extra_opponent_pieces})
 
-            self._apply_color_map(color_map)
+            self._led_layer.commit()
             return None
 
         log.debug(f"Missing friendly pieces at {[chess.square_name(sq) for sq in missing_friendly_pieces]}")
@@ -309,7 +323,7 @@ class BoardState:
             else:
                 color_map.update({sq: settings['game.colors.move_to'] for sq in extra_friendly_pieces})
 
-        self._apply_color_map(color_map)
+        self._led_layer.commit()
 
         if legal_move is not None:
             log.info(f"Detected legal move: {legal_move.uci()}")

@@ -35,7 +35,6 @@ class AnimationPulse(Animation):
             self._led_layer.colors[square] = self._color
 
     def update(self) -> bool:
-
         amplitude = abs(- 0.5 * math.cos(2 * math.pi * self._frequency_hz * self.elapsed_time) + 0.5)
         amplitude = min(1.0, max(0.0, amplitude))
 

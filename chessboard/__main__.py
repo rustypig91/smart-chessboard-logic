@@ -1,4 +1,5 @@
 import argparse
+import logging
 
 import chess
 from chessboard.game.game_state import game_state
@@ -6,7 +7,7 @@ import chessboard.events as events
 import chessboard.api.api as api
 from chessboard import is_raspberrypi
 import chessboard.animations
-
+from chessboard.logger import log
 
 if is_raspberrypi:
     import chessboard.raspberry_pi_system
@@ -22,6 +23,9 @@ parser.add_argument('--debug', action='store_true', help='Enable debug mode')
 parser.add_argument('--port', type=int, default=5000, help='Port to run the web server on')
 
 args = parser.parse_args()
+
+if args.debug:
+    log.setLevel(logging.DEBUG)
 
 if args.new_game:
     game_state.new_game(engine_weight=args.engine_weight, engine_color=args.engine_color)

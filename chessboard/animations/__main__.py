@@ -38,12 +38,19 @@ class TKInterBoard:
 
 
 board = TKInterBoard()
-# board.root.after(100, lambda: AnimationRainbow(loop=True).start())
-animation = AnimationRainbow(
+# animation = AnimationRainbow(
+#     fps=15.0,
+#     speed=0.05,
+#     loop=True,
+# )
+
+animation = AnimationPulse(
+    pulsating_squares=[chess.E4, chess.D4, chess.E5, chess.D5],
+    frequency_hz=1.0,
+    pulsating_color=(0, 255, 0),
     fps=15.0,
-    speed=0.05,
-    duration=2.0,
-    loop=False,
+    pulses=10,
+    priority=500,
 )
 
 board.root.after(100, animation.start)

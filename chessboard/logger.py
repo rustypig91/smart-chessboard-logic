@@ -19,7 +19,7 @@ class ColoredFormatter(logging.Formatter):
 
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.WARNING)
 
 log_format = ColoredFormatter(
     '%(asctime)s %(levelname)s (%(threadName)s): %(message)s'

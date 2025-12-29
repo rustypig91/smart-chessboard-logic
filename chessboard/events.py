@@ -310,6 +310,10 @@ class _EventManager:
         block: If True, waits until the event has been handled by all subscribers.
         timeout: Maximum time to wait if blocking is enabled.
         """
+        if not self._event_loop.is_running():
+            log.warning(f"Event loop is not running. Cannot publish event: {type(event).__name__}")
+            return
+
         event.sender = inspect.getmodule(inspect.stack()[1].frame)
 
         sync_event = None

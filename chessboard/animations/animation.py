@@ -54,7 +54,6 @@ class Animation:
 
         self._stop.clear()
 
-        self._led_layer.reset()
         leds.led_manager.add_layer(self._led_layer)
 
         self._thread = threading.Thread(target=self._animate_thread, daemon=False)

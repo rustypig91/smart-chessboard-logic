@@ -294,7 +294,7 @@ class GameState:
             log.error("Engine did not return a valid move")
             return
 
-        events.event_manager.publish(events.ChessMoveEvent(move=result.move))
+        events.event_manager.publish(events.ChessMoveEvent(move=result.move, side=self.engine.color))
 
     def _handle_move(self, event: events.ChessMoveEvent):
         log.info(f"Handling move event: {event.move.uci()}")

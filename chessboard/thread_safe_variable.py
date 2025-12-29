@@ -20,3 +20,11 @@ class ThreadSafeVariable(Generic[T]):
     def set(self, new_value: T) -> None:
         with self._lock:
             self._value = new_value
+
+    @property
+    def value(self) -> T:
+        return self.get()
+
+    @value.setter
+    def value(self, new_value: T) -> None:
+        self.set(new_value)

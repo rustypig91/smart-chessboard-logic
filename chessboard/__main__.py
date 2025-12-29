@@ -5,6 +5,8 @@ from chessboard.game.game_state import game_state
 import chessboard.events as events
 import chessboard.api.api as api
 from chessboard import is_raspberrypi
+import chessboard.animations
+
 
 if is_raspberrypi:
     import chessboard.raspberry_pi_system

@@ -8,7 +8,6 @@ import chessboard.events as events
 from chessboard.logger import log
 from chessboard.settings import settings, ColorSetting
 from chessboard.game.game_state import game_state
-import chessboard.board.led_animations as animations
 import chessboard.board.led_manager as leds
 
 settings.register("game.colors.invalid_piece_placement",
@@ -54,34 +53,14 @@ class BoardState:
             # Start of assuming board matches game state
             self._board_piece_color_map[square] = game_state.board.color_at(square)
 
-        self._led_layer = leds.LedLayer()
+        self._led_layer = leds.LedLayer(priority=0)
         leds.led_manager.add_layer(self._led_layer)
-
-        self._change_side_animation = animations.AnimationChangeSide(
-            fps=15.0,
-            new_side=game_state.board.turn,
-            duration=0.5,
-        )
-        self._change_side_animation.start()
 
         log.info("BoardState initialized")
 
     def _handle_piece_state_change(self, event: events.SquarePieceStateChangeEvent):
         self._board_piece_color_map = event.colors
         self._scan_board()
-
-        # Trigger a ripple around newly dropped friendly pieces (None -> turn)
-        try:
-            dropped_squares = [sq for sq in event.squares if event.colors[sq] is not None]
-
-            for sq in dropped_squares:
-                anim = animations.AnimationWaveAround(
-                    fps=15.0,
-                    duration=1.0,
-                    center_square=sq)
-                anim.start()
-        except Exception as e:
-            log.error(f"Error starting wave animation: {e}")
 
     def _handle_time_button_pressed(self, event: events.TimeButtonPressedEvent):
         if event.color != game_state.board.turn:
@@ -100,16 +79,9 @@ class BoardState:
 
         log.info(f"Time button pressed, registering move: {move.uci()}")
 
-        events.event_manager.publish(events.ChessMoveEvent(move=move))
+        events.event_manager.publish(events.ChessMoveEvent(move=move, side=event.color))
 
     def _handle_move(self, event: events.ChessMoveEvent):
-        self._change_side_animation.set_side(game_state.board.turn)
-        # animation = animations.AnimationChangeSide(
-        #     fps=15.0,
-        #     duration=2.0,
-        #     current_side=not game_state.board.turn)
-
-        # animation.start()
         self._scan_board()
 
     def _handle_game_over(self, event: events.GameOverEvent):

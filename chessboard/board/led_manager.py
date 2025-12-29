@@ -12,7 +12,8 @@ settings.register('led.colo.black_square', (0, 0, 0), "Base color for black squa
 
 
 class LedLayer:
-    def __init__(self) -> None:
+    def __init__(self, priority) -> None:
+        self.priority = priority
         self.colors: dict[int, tuple[int, int, int]] = {}
 
         # Change intensity per square if needed i.e. make square more bright or dim 1.0 is default, no change
@@ -109,6 +110,7 @@ class _LedManager:
 
         # Track layers weakly so they auto-remove when destroyed
         self._layers: weakref.WeakSet[LedLayer] = weakref.WeakSet()
+        self._lock = Lock()
 
         self.apply_layers()
 
@@ -117,33 +119,32 @@ class _LedManager:
         """ Get the current colors after applying all layers. """
         final_colors = self.base_colors.copy()
 
-        for layer in list(self._layers):
-            layer.apply_layer(final_colors)
+        with self._lock:
+            for layer in list(self._layers):
+                layer.apply_layer(final_colors)
 
         return final_colors
 
     def apply_layers(self) -> None:
         """ Apply the LED layers and return the final colors for each square. """
-        final_colors = self.base_colors.copy()
-
-        for layer in list(self._layers):
-            layer.apply_layer(final_colors)
-
-        events.event_manager.publish(events.SetSquareColorEvent(final_colors))
+        events.event_manager.publish(events.SetSquareColorEvent(self.colors))
 
     def add_layer(self, layer: LedLayer) -> None:
-        if layer in self._layers:
-            raise ValueError("Layer already added to LED manager")
+        with self._lock:
+            if layer in self._layers:
+                raise ValueError("Layer already added to LED manager")
 
-        self._layers.add(layer)
+            self._layers.add(layer)
+            self._layers = weakref.WeakSet(sorted(list(self._layers), key=lambda l: l.priority))
 
     def remove_layer(self, layer: LedLayer) -> None:
         """Explicitly remove a layer if present."""
-        try:
-            self._layers.discard(layer)
-        except Exception:
-            # WeakSet.discard does not raise if not present; keep silent
-            pass
+        with self._lock:
+            try:
+                self._layers.discard(layer)
+            except Exception:
+                # WeakSet.discard does not raise if not present; keep silent
+                pass
 
 
 led_manager = _LedManager()

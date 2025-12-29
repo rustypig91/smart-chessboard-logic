@@ -86,7 +86,12 @@ class SquarePieceStateChangeEvent(Event):
 class TimeButtonPressedEvent(Event):
     def __init__(self, color: chess.Color | str):
         super().__init__()
-        self.color = self._parse_color(color)
+
+        parsed_color = self._parse_color(color)
+        if parsed_color is None:
+            raise ValueError("Color cannot be None for TimeButtonPressedEvent")
+
+        self.color: chess.Color = parsed_color
 
     def __repr__(self):
         return f"TimeButtonPressedEvent(color={'white' if self.color == chess.WHITE else 'black'})"
@@ -98,9 +103,13 @@ class TimeButtonPressedEvent(Event):
 
 
 class ChessMoveEvent(Event):
-    def __init__(self, move: chess.Move):
+    def __init__(self, move: chess.Move, side: chess.Color | str):
         super().__init__()
         self.move = move
+        _side = self._parse_color(side)
+        if _side is None:
+            raise ValueError("Side cannot be None for ChessMoveEvent")
+        self.side = _side
 
     def to_json(self):
         return {

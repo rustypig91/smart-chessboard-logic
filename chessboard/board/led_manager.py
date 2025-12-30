@@ -2,18 +2,20 @@ import chess
 from enum import IntEnum
 import weakref
 import chessboard.events as events
-from chessboard.settings import settings
+from chessboard.settings import settings, ColorSetting
 from chessboard.thread_safe_variable import ThreadSafeVariable
 from threading import Lock
 
 
-settings.register('led.color.white_square', (150, 150, 150), "Base color for white squares on the chessboard LEDs")
-settings.register('led.colo.black_square', (0, 0, 0), "Base color for black squares on the chessboard LEDs")
+settings.register('led.color.white_square', ColorSetting(150, 150, 150),
+                  "Base color for white squares on the chessboard LEDs")
+settings.register('led.color.black_square', ColorSetting(0, 0, 0),
+                  "Base color for black squares on the chessboard LEDs")
 
 
 class LedLayer:
-    def __init__(self, priority) -> None:
-        self.priority = priority
+    def __init__(self, priority: int) -> None:
+        self.priority: int = priority
         self.colors: dict[int, tuple[int, int, int]] = {}
 
         # Change intensity per square if needed i.e. make square more bright or dim 1.0 is default, no change
@@ -106,7 +108,7 @@ class _LedManager:
         for square in white_squares:
             self.base_colors[square] = settings['led.color.white_square']
         for square in black_squares:
-            self.base_colors[square] = settings['led.colo.black_square']
+            self.base_colors[square] = settings['led.color.black_square']
 
         # Track layers weakly so they auto-remove when destroyed
         self._layers: weakref.WeakSet[LedLayer] = weakref.WeakSet()
@@ -145,6 +147,10 @@ class _LedManager:
             except Exception:
                 # WeakSet.discard does not raise if not present; keep silent
                 pass
+
+    def has_layer(self, layer: LedLayer) -> bool:
+        with self._lock:
+            return layer in self._layers
 
 
 led_manager = _LedManager()

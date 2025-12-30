@@ -383,7 +383,7 @@
             </script>
 
             <!-- Color Picker View -->
-            <div id="color-picker-view" class="view">
+            <div id="color-picker-view" class="view" data-on-view-exit="clearColorPreview()">
                 <div class="view-header">Pick Color (RGB)</div>
                 <div class="menu" id="color-picker-menu">
                     <div class="submenu-item selected" data-keyboard-numeric-output="color-r"
@@ -394,14 +394,14 @@
                         </div>
                     </div>
                     <div class=" submenu-item" data-keyboard-numeric-output="color-g"
-                        data-keyboard-title="Enter G (0-255)">
+                        data-keyboard-title="Enter G (0-255)" data-on-keyboard-done="updateColorPreview()">
                         <div style="display: flex; align-items: center;">
                             <h4 style="margin: 0;">Green</h4>
                             <div class="input-field" id="color-g" style="margin-left: 10px;"></div>
                         </div>
                     </div>
                     <div class=" submenu-item" data-keyboard-numeric-output="color-b"
-                        data-keyboard-title="Enter B (0-255)">
+                        data-keyboard-title="Enter B (0-255)" data-on-keyboard-done="updateColorPreview()">
                         <div style="display: flex; align-items: center;">
                             <h4 style="margin: 0;">Blue</h4>
                             <div class="input-field" id="color-b" style="margin-left: 10px;"></div>
@@ -613,6 +613,15 @@
                 if (currentView) {
                     viewSelectedIndices[currentView] = null;
                 }
+
+                const menuEl = document.getElementById(currentView);
+                console.log('Going back from:', currentView, menuEl);
+
+                if (menuEl && menuEl.dataset.onViewExit) {
+                    eval(menuEl.dataset.onViewExit);
+                    console.log('Called onViewExit for', currentView);
+                }
+
                 // Remove current view
                 viewStack.pop();
 
@@ -1002,6 +1011,18 @@
             }
         }
 
+        function clearColorPreview() {
+            console.log('Clearing color preview');
+            fetch(`/api/board/square/color_preview`, {
+                method: 'DELETE',
+            }).then(response => response.json())
+                .then(data => {
+                    console.log('Color preview cleared response:', data);
+                }).catch(error => {
+                    console.error('Error clearing color preview:', error);
+                });
+        }
+
         // Update color preview box when inputs change
         function updateColorPreview() {
             const r = parseInt(document.getElementById('color-r').textContent || '0', 10) || 0;
@@ -1012,14 +1033,16 @@
             const rr = clamp(r), gg = clamp(g), bb = clamp(b);
 
             console.log('Color preview updated to:', rr, gg, bb);
-            sendEvent('SetSquareColorEvent', {
-                color_map: {
-                    27: [rr, gg, bb],
-                    28: [rr, gg, bb],
-                    35: [rr, gg, bb],
-                    36: [rr, gg, bb],
-                }
-            });
+            fetch(`/api/board/square/color_preview`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ color: [rr, gg, bb] }),
+            }).then(response => response.json())
+                .then(data => {
+                    console.log('Color preview set response:', data);
+                }).catch(error => {
+                    console.error('Error setting color preview:', error);
+                });
         }
 
         // Expose a function to open color picker with initial RGB and path

@@ -19,15 +19,6 @@ settings.register("game.colors.move_to",
 settings.register("game.colors.move_from",
                   ColorSetting(20, 50, 255),
                   "Color to indicate the piece being moved")
-settings.register("game.colors.white_max",
-                  ColorSetting(150, 150, 150),
-                  "Maximum brightness for white squares")
-settings.register("game.colors.white_min",
-                  ColorSetting(70, 70, 70),
-                  "Minimum brightness for white squares")
-settings.register("game.colors.black",
-                  ColorSetting(0, 0, 0),
-                  "Color for black squares")
 settings.register("game.colors.capture",
                   ColorSetting(255, 100, 0),
                   "Color to indicate a capture move")
@@ -92,59 +83,12 @@ class BoardState:
         pass
 
     def _handle_game_state_changed(self, event: events.GameStateChangedEvent):
-        # Trigger check animation only on transition into check
-
-        # if is_check and not self._was_check:
-        #     base_map = self._get_reset_color_map(chess.SQUARES)
-        #     board = game_state.board
-        #     king_square = board.king(board.turn)
-        #     checkers = list(board.checkers())
-        #     overlay = {}
-        #     if king_square is not None:
-        #         overlay[king_square] = settings['game.colors.invalid_piece_placement']
-        #     for sq in checkers:
-        #         overlay[sq] = settings['game.colors.capture']
-
-        # anim = animations.AnimationKingCheck(
-        #     king_square=king_square if king_square is not None else chess.E4,
-        #     base_frame=base_map,
-        #     start_colors=base_map,
-        #     overlay_colors=overlay,
-        #     callback=self._scan_board,
-        # )
-        # anim.start()
-
         self._scan_board()
 
     def _handle_new_game_event(self, event: events.NewGameEvent):
         self._scan_board()
 
     def _reset_led_layer(self):
-        # white_squares = [sq for sq in squares if (chess.square_rank(sq) + chess.square_file(sq)) % 2 == 1]
-        # black_squares = [sq for sq in squares if (chess.square_rank(sq) + chess.square_file(sq)) % 2 == 0]
-
-        # # Add gradient to white squares: brighter closer to the player whose turn it is
-        # white_min = settings['game.colors.white_min']
-        # white_max = settings['game.colors.white_max']
-
-        # color_map = {}
-
-        # for rank in range(8):
-        #     squares_in_rank = [sq for sq in white_squares if chess.square_rank(sq) == rank]
-        #     gradient = rank / 7 if game_state.board.turn == chess.BLACK else (7 - rank) / 7
-        #     color = (
-        #         int(white_min[0] + (white_max[0] - white_min[0]) * gradient),
-        #         int(white_min[1] + (white_max[1] - white_min[1]) * gradient),
-        #         int(white_min[2] + (white_max[2] - white_min[2]) * gradient),
-        #     )
-
-        #     for sq in squares_in_rank:
-        #         color_map[sq] = color
-
-        # for sq in black_squares:
-        #     color_map[sq] = settings['game.colors.black']
-
-        # Light up the last move if available
         self._led_layer.reset()
 
         if game_state.board.move_stack:

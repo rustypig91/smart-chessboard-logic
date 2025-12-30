@@ -26,7 +26,7 @@ class _XiaoInterface:
     DEVICE_DESC = 'Chessboard console'
 
     DEFAULT_SENSOR_PIECE_OFFSET_MV = 100
-    CONSECUTIVE_READINGS_REQUIRED = 2
+    CONSECUTIVE_READINGS_REQUIRED = 1
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, 'instance'):
@@ -243,7 +243,7 @@ class _XiaoInterface:
             raise RuntimeError("Monitor is already running")
 
         self._monitoring = True
-        self._monitor_thread = Thread(target=self._monitor_thread_func)
+        self._monitor_thread = Thread(target=self._monitor_thread_func, daemon=True)
         self._monitor_thread.start()
 
     def _monitor_stop(self):
@@ -274,16 +274,14 @@ class _XiaoInterface:
             line = self.port.readline().decode('utf-8').strip()
             match = re.match(exp_file, line)
             if match:
-                file_char = match.group('file').strip()
+                file_char = match.group('file')
                 file_index = ord(file_char) - ord('A')
-                ranks = match.group('ranks').strip('|').strip()
-                ranks = ranks.split('|')
+                ranks = match.group('ranks').split('|')
 
                 changed_squares = []
-                for rank_index, value_mv in enumerate([int(x) for x in ranks]):
+                for rank_index, value_mv in enumerate(ranks):
                     square = chess.square(file_index, rank_index)
-                    voltage = value_mv * 1e-3
-
+                    voltage = int(value_mv) * 1e-3
                     # Require both current and previous voltage to exceed offset
                     if voltage >= settings['hal_sensor.offset']:
                         new_color = chess.BLACK
@@ -304,6 +302,7 @@ class _XiaoInterface:
 
                 if first_scan_completed:
                     if len(changed_squares) > 0:
+                        log.warning(f"First scan completed: {first_scan_completed}, changed squares: {changed_squares}")
                         events.event_manager.publish(events.SquarePieceStateChangeEvent(
                             changed_squares, self._board_piece_colors))
                 elif not first_scan_completed and all(count >= self.CONSECUTIVE_READINGS_REQUIRED for count in self._board_piece_consecutive_counts):

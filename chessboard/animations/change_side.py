@@ -22,8 +22,8 @@ class AnimationChangeSide(Animation):
         self.restart()
 
     def update(self) -> bool:
-        intensity_max = 1.0
-        intensity_min = 0.5
+        intensity_max = 1.5
+        intensity_min = 0.2
 
         if self._change_to == chess.WHITE:
             self._current_position -= self._movement_per_frame

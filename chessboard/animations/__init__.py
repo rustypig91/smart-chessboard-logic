@@ -20,13 +20,15 @@ def _handle_chess_move_event(event: events.ChessMoveEvent) -> None:
 
 def _handle_piece_state_change(event: events.SquarePieceStateChangeEvent) -> None:
     # Trigger a ripple around newly dropped friendly pieces (None -> turn)
-    for sq in event.squares:
-        if event.colors[sq] is not None:
-            anim = AnimationWaterDroplet(
-                fps=15.0,
-                # duration=1.0,
-                center_square=sq)
-            anim.start()
+    if len(event.squares) != 1:
+        return
+
+    if event.colors[event.squares[0]] is not None:
+        anim = AnimationWaterDroplet(
+            fps=15.0,
+            # duration=1.0,
+            center_square=event.squares[0])
+        anim.start()
 
 
 _checkers_animation = AnimationPulse(

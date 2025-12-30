@@ -22,9 +22,9 @@ app.register_blueprint(api_board, url_prefix='/api/board', name='board')
 app.register_blueprint(api_settings, url_prefix='/api/settings', name='settings')
 app.register_blueprint(api_game, url_prefix='/api/game', name='game')
 
-if is_raspberrypi:
-    from chessboard.api.system.raspberry_pi import api as api_board_raspberry_pi
-    app.register_blueprint(api_board_raspberry_pi, url_prefix='/api/system', name='raspberry_pi')
+# if is_raspberrypi:
+#     from chessboard.api.system.raspberry_pi import api as api_board_raspberry_pi
+#     app.register_blueprint(api_board_raspberry_pi, url_prefix='/api/system', name='raspberry_pi')
 
 socketio = SocketIO(app, async_mode="threading")
 

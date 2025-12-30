@@ -38,7 +38,7 @@ class AnimationWaterDroplet(Animation):
 
         # Expanding circular ripple: modulate the provided base frame intensities
         for sq in chess.SQUARES:
-            self._led_layer.colors[sq] = (150, 150, 150)
+            self._led_layer.colors[sq] = (102, 204, 255)
 
             r = chess.square_rank(sq)
             f = chess.square_file(sq)
@@ -47,6 +47,7 @@ class AnimationWaterDroplet(Animation):
             gauss = math.exp(-((dist - radius)**2) / (2 * self._sigma**2))
             # Damping with distance to emulate energy loss in water
             amplitude = gauss * math.exp(-self._damp * radius) * self._boost
+            amplitude = min(1.0, max(0.0, amplitude)) * 0.2
 
             # Scale base color upwards (brighten) at the wavefront
             # scale = 1.0 + amplitude

@@ -9,9 +9,11 @@ from chessboard import is_raspberrypi
 import chessboard.animations
 from chessboard.logger import log
 
+
 if is_raspberrypi:
     import chessboard.raspberry_pi_system
 
+log.info("Is Raspberry Pi: %s", is_raspberrypi)
 
 parser = argparse.ArgumentParser(description="Chessboard Web App")
 parser.add_argument('--new-game', action='store_true', help='Start a new game instead of loading the old one')
@@ -30,4 +32,4 @@ if args.debug:
 if args.new_game:
     game_state.new_game(engine_weight=args.engine_weight, engine_color=args.engine_color)
 
-api.socketio.run(api.app, debug=args.debug, host='0.0.0.0', port=args.port, allow_unsafe_werkzeug=True)
+api.socketio.run(api.app, debug=False, host='0.0.0.0', port=args.port, allow_unsafe_werkzeug=True)

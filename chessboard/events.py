@@ -237,35 +237,6 @@ class GameStateChangedEvent(Event):
         return items
 
 
-class EventModifier:
-    def __init__(self,
-                 event_manager: '_EventManager',
-                 event_type: type[Event],
-                 modifier: Callable[[Event], Event | None]):
-        """ Modifies or suppresses events of a specific type.
-
-        event_manager: The event manager instance.
-        event_type: The type of event to modify.
-        modifier: A callable that takes an event instance and returns a modified event or None to suppress it.
-        """
-        self._event_manager = event_manager
-        self._event_type = event_type
-        self._modifier = modifier
-
-    @property
-    def event_type(self) -> type[Event]:
-        return self._event_type
-
-    def __enter__(self):
-        if self._event_type not in self._event_manager._modifiers:
-            self._event_manager._modifiers[self._event_type] = []
-
-        self._event_manager._modifiers[self._event_type].insert(0, self)
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self._event_manager._modifiers[self._event_type].remove(self)
-
-
 class _EventManager:
     def __init__(self):
         self._subscribers: dict[type[Event],
@@ -279,7 +250,6 @@ class _EventManager:
         self._event_task = self._event_loop.create_task(self._main())
 
         self._latest_events: dict[type[Event], Event] = {}
-        self._modifiers: dict[type[Event], list[EventModifier]] = {}
 
         self._thread = threading.Thread(target=self.main, daemon=True)
         self._thread.start()
@@ -330,24 +300,14 @@ class _EventManager:
             sync_event.wait(timeout=timeout)
 
     def _handle_event(self, event: Event):
-        event_type = type(event)
-        modifiers = self._modifiers.get(event_type, [])
-        for modifier in modifiers:
-            log.debug(f"Modifying event {event_type.__name__} using {modifier._modifier}")
-            new_event = modifier._modifier(event)
-            if new_event is None:
-                return
-            event = new_event
-
-        if event_type in self._subscribers:
-            for callback in self._subscribers[event_type]:
-                try:
-                    callback(event)
-                except Exception as e:
-                    log.error(f"Error in event callback: {e}")
-                    traceback.print_exc()
+        for callback in self._subscribers.get(type(event), []):
+            try:
+                callback(event)
+            except Exception as e:
+                log.error(f"Error in event callback: {e}")
+                traceback.print_exc()
         # Signal the event is handled if blocking was requested
-        if hasattr(event, '_sync_event') and event._sync_event is not None:
+        if event._sync_event is not None:
             event._sync_event.set()
 
     async def _main(self):
@@ -359,8 +319,6 @@ class _EventManager:
             except asyncio.CancelledError:
                 break
 
-            # if not isinstance(event, HalSensorVoltageEvent):
-            #     # Skip logging for high-frequency events
             log.debug(f"{type(event).__name__}: {event.to_json()}")
 
             self._handle_event(event)
@@ -381,10 +339,6 @@ class _EventManager:
 
     def get_last_event(self, event_type: type[Event]) -> Event | None:
         return self._latest_events.get(event_type, None)
-
-    def modifier(self, event_type: type[Event], modifier: Callable[[Event], Event | None]) -> EventModifier:
-        """ Suppresses publishing events of the given type with the provided callbacks. """
-        return EventModifier(self, event_type, modifier)
 
 
 event_manager = _EventManager()

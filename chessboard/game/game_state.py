@@ -134,7 +134,7 @@ class GameState:
             pickle.dump(self, f)
 
         log.info(
-            f"Saved game state from {GameState.SAVE_FILE}:\n"
+            f"Saved game state to {GameState.SAVE_FILE}:\n"
             f"  FEN: {self.board.fen()}\n"
             f"  White time left: {self.chess_clock.white_time_left}\n"
             f"  Black time left: {self.chess_clock.black_time_left}\n"

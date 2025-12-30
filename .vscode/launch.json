@@ -7,7 +7,7 @@
             "request": "launch",
             "python": "${workspaceFolder}/.venv/bin/python",
             "module": "chessboard",
-            "args": ["--new-game"],
+            "args": ["--new-game", "--debug"],
             "cwd": "${workspaceFolder}"
         },
         {

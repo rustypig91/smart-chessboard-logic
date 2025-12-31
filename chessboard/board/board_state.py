@@ -46,7 +46,7 @@ class BoardState:
     def _handle_piece_state_change(self, event: events.SquarePieceStateChangeEvent):
         self._board_piece_color_map = event.colors
         move = self._scan_board()
-        if move is not None:
+        if move is not None and move.to_square in event.squares:
             events.event_manager.publish(events.LegalMoveDetectedEvent(move=move))
 
     def _handle_time_button_pressed(self, event: events.TimeButtonPressedEvent):

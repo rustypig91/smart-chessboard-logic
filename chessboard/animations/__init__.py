@@ -7,9 +7,10 @@ import chessboard.events as events
 from chessboard.game.game_state import game_state
 from chessboard.settings import settings, ColorSetting
 
-settings.register('led.color.check', ColorSetting(255, 100, 0), 'Color for when the king is in check')
-settings.register('led.color.water_droplet', ColorSetting(102, 204, 255), 'Color for water droplet animation')
+settings.register('animation.check.color', ColorSetting(255, 100, 0), 'Color for when the king is in check')
 
+settings.register('animation.legal_move.enabled', True, 'Enable animations for legal moves detected')
+settings.register('animation.legal_move.color', ColorSetting(102, 204, 255), 'Color for water droplet animation')
 
 _change_side_animation = AnimationChangeSide(
     new_side=chess.WHITE,
@@ -24,10 +25,12 @@ def _handle_chess_move_event(event: events.ChessMoveEvent) -> None:
 
 
 def _handle_legal_move_detected(event: events.LegalMoveDetectedEvent) -> None:
+    if not settings['animations.legal_move.enabled']:
+        return
     # Trigger a ripple around newly dropped friendly pieces (None -> turn)
     anim = AnimationWaterDroplet(
         fps=15.0,
-        color=settings['led.color.water_droplet'],
+        color=settings['animation.legal_move.color'],
         center_square=event.move.to_square)
     anim.start()
 
@@ -35,7 +38,7 @@ def _handle_legal_move_detected(event: events.LegalMoveDetectedEvent) -> None:
 _checkers_animation = AnimationPulse(
     pulsating_squares=[],
     frequency_hz=0.5,
-    pulsating_color=settings['led.color.check'],
+    pulsating_color=settings['animation.check.color'],
     fps=10.0,
 )
 

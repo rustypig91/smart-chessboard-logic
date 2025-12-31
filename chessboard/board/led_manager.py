@@ -74,10 +74,7 @@ class LedLayer:
                 r2, g2, b2 = color
 
                 opacity = square_opacity.get(square, layer_opacity)
-                if opacity < 0.0:
-                    opacity = 0.0
-                elif opacity > 1.0:
-                    opacity = 1.0
+                opacity = min(max(opacity, 0.0), 1.0)  # Clamp between 0.0 and 1.0
 
                 r_final = int(r1 * (1 - opacity) + r2 * opacity)
                 g_final = int(g1 * (1 - opacity) + g2 * opacity)
@@ -122,7 +119,8 @@ class _LedManager:
         final_colors = self.base_colors.copy()
 
         with self._lock:
-            for layer in list(self._layers):
+            # Apply layers in ascending priority order
+            for layer in sorted(list(self._layers), key=lambda l: l.priority):
                 layer.apply_layer(final_colors)
 
         return final_colors
@@ -137,7 +135,7 @@ class _LedManager:
                 raise ValueError("Layer already added to LED manager")
 
             self._layers.add(layer)
-            self._layers = weakref.WeakSet(sorted(list(self._layers), key=lambda l: l.priority))
+            # Do not attempt to sort the WeakSet; ordering is applied when iterating
 
     def remove_layer(self, layer: LedLayer) -> None:
         """Explicitly remove a layer if present."""

@@ -7,10 +7,11 @@ from chessboard.game.engine import Engine
 from chessboard.game.chess_clock import ChessClock
 from chessboard.logger import log
 import chessboard.events as events
+import chessboard.persistent_storage as persistent_storage
 
 
 class GameState:
-    SAVE_FILE = os.path.join(os.path.dirname(__file__), ".saved_game.pkl")
+    SAVE_FILE = ".saved_game.pkl"
 
     def __init__(self):
         self.board = chess.Board()
@@ -132,12 +133,12 @@ class GameState:
         return self.chess_clock.paused and self.is_game_started
 
     def save(self) -> None:
-        with open(GameState.SAVE_FILE, "wb") as f:
-            log.info(f"Saving game state to {GameState.SAVE_FILE}")
+        savefile = persistent_storage.get_filename(GameState.SAVE_FILE)
+        with open(savefile, "wb") as f:
             pickle.dump(self, f)
 
         log.info(
-            f"Saved game state to {GameState.SAVE_FILE}:\n"
+            f"Saved game state to {savefile}:\n"
             f"  FEN: {self.board.fen()}\n"
             f"  White time left: {self.chess_clock.white_time_left}\n"
             f"  Black time left: {self.chess_clock.black_time_left}\n"
@@ -151,14 +152,15 @@ class GameState:
     @staticmethod
     def load() -> 'GameState':
         try:
-            with open(GameState.SAVE_FILE, "rb") as f:
+            savefile = persistent_storage.get_filename(GameState.SAVE_FILE)
+            with open(savefile, "rb") as f:
                 loaded_game: GameState = pickle.load(f)
 
             if loaded_game.is_game_over:
                 loaded_game.reset()
 
             log.info(
-                f"Loaded game state from {GameState.SAVE_FILE}:\n"
+                f"Loaded game state from {savefile}:\n"
                 f"  FEN: {loaded_game.board.fen()}\n"
                 f"  White time left: {loaded_game.chess_clock.white_time_left}\n"
                 f"  Black time left: {loaded_game.chess_clock.black_time_left}\n"

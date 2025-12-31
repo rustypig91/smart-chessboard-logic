@@ -25,7 +25,7 @@ def _handle_chess_move_event(event: events.ChessMoveEvent) -> None:
 
 
 def _handle_legal_move_detected(event: events.LegalMoveDetectedEvent) -> None:
-    if not settings['animations.legal_move.enabled']:
+    if not settings['animation.legal_move.enabled']:
         return
     # Trigger a ripple around newly dropped friendly pieces (None -> turn)
     anim = AnimationWaterDroplet(

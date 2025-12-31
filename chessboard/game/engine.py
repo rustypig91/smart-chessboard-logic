@@ -6,6 +6,8 @@ from chessboard.settings import settings
 from threading import Thread
 from typing import Callable
 from random import choice
+import chessboard.persistent_storage as persistent_storage
+import shutil
 
 default_weights_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../weights'))
 
@@ -18,19 +20,32 @@ settings.register("engine.time_limit", 10.0, "Time limit for engine analysis in 
 
 class Engine:
     def __init__(self, weight: str, color: chess.Color = chess.BLACK):
-        weight_path = os.path.join(settings['engine.weights_path'], weight)
-        if not os.path.isfile(weight_path):
-            raise FileNotFoundError(f"Engine weights file not found: {weight_path}")
+        self._weight_path = persistent_storage.get_filename(f'weights/{weight}')
+        if not os.path.isfile(self._weight_path):
+            raise FileNotFoundError(f"Engine weights file not found: {self._weight_path}")
 
         # Thread to initialize the engine process; signal readiness via event
-        self.engine = chess.engine.SimpleEngine.popen_uci([settings['engine.path'], f"--weights={weight_path}"])
+        self.engine = chess.engine.SimpleEngine.popen_uci([settings['engine.path'], f"--weights={self._weight_path}"])
 
         self.color = color
         self.name = weight
 
     @staticmethod
+    def install_weight(weight_file: str) -> None:
+        """Install a new engine weight file from the given source path."""
+        weights_dir = persistent_storage.get_directory('weights')
+        dest_path = os.path.join(weights_dir, weight_file)
+
+        if not os.path.isfile(weight_file):
+            raise FileNotFoundError(f"Source weight file not found: {weight_file}")
+
+        shutil.move(weight_file, dest_path)
+
+        log.info(f"Installed new engine weight file: {dest_path}")
+
+    @staticmethod
     def get_available_weights() -> list[str]:
-        weights_dir = settings['engine.weights_path']
+        weights_dir = persistent_storage.get_directory('weights')
         if not os.path.isdir(weights_dir):
             log.warning(f"Engine weights directory not found: {weights_dir}")
             return []

@@ -92,12 +92,6 @@
                             <p>Configure LED brightness, colors</p>
                         </div>
                     </div>
-                    <div class="submenu-item" data-action="display-settings">
-                        <div>
-                            <h4>Display Settings</h4>
-                            <p>Adjust screen preferences</p>
-                        </div>
-                    </div>
                     <div class="submenu-item" data-action="about">
                         <div>
                             <h4>About</h4>
@@ -404,24 +398,41 @@
                             <div class="input-field" id="color-r" style="margin-left: 10px;"></div>
                         </div>
                     </div>
-                    <div class=" submenu-item" data-keyboard-numeric-output="color-g"
+                    <div class="submenu-item" data-keyboard-numeric-output="color-g"
                         data-keyboard-title="Enter G (0-255)" data-on-keyboard-done="updateColorPreview()">
                         <div style="display: flex; align-items: center;">
                             <h4 style="margin: 0;">Green</h4>
                             <div class="input-field" id="color-g" style="margin-left: 10px;"></div>
                         </div>
                     </div>
-                    <div class=" submenu-item" data-keyboard-numeric-output="color-b"
+                    <div class="submenu-item" data-keyboard-numeric-output="color-b"
                         data-keyboard-title="Enter B (0-255)" data-on-keyboard-done="updateColorPreview()">
                         <div style="display: flex; align-items: center;">
                             <h4 style="margin: 0;">Blue</h4>
                             <div class="input-field" id="color-b" style="margin-left: 10px;"></div>
                         </div>
                     </div>
-                    <div class=" submenu-item" data-action="color-picker-apply">
+                    <div class="submenu-item" data-action="apply-settings">
                         <div>
                             <h4>Apply</h4>
                             <p>Save selected color</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Boolean Picker View -->
+            <div id="boolean-picker-view" class="view">
+                <div class="view-header" id="boolean-picker-title">Select Value</div>
+                <div class="menu" id="boolean-picker-menu">
+                    <div class="submenu-item selected" data-action="boolean-picker-true">
+                        <div>
+                            <h4>True</h4>
+                        </div>
+                    </div>
+                    <div class="submenu-item" data-action="boolean-picker-false">
+                        <div>
+                            <h4>False</h4>
                         </div>
                     </div>
                 </div>
@@ -840,6 +851,42 @@
 
         // Store pending color path for picker
         let pendingColorPath = null;
+        let pendingBooleanPath = null;
+
+        function applyPendingSettings() {
+            if (pendingColorPath) {
+                const r = parseInt(document.getElementById('color-r').textContent) || 0;
+                const g = parseInt(document.getElementById('color-g').textContent) || 0;
+                const b = parseInt(document.getElementById('color-b').textContent) || 0;
+                const colorValue = [r, g, b];
+
+                loadingShow('Applying Color');
+                apiCall('/api/settings/' + pendingColorPath, { value: colorValue }, function (data) {
+                    if (data.success) {
+                        showMessageView('Success', 'Color setting updated successfully!');
+                    } else {
+                        showMessageView('Error', 'Failed to update color setting: ' + (data.error || 'Unknown error'));
+                    }
+                    pendingColorPath = null;
+                });
+            }
+
+            if (pendingBooleanPath) {
+                const boolValue = document.getElementById('boolean-picker-result').textContent === 'true';
+
+                loadingShow('Applying Setting');
+                apiCall(pendingBooleanPath, { value: boolValue }, function (data) {
+                    if (data.success) {
+                        showMessageView('Success', 'Setting updated successfully!');
+                    } else {
+                        showMessageView('Error', 'Failed to update setting: ' + (data.error || 'Unknown error'));
+                    }
+                    pendingBooleanPath = null;
+                });
+            }
+            loadBoardSettings();
+        }
+
 
         function loadBoardSettings() {
             loadingShow('Loading Settings');
@@ -880,10 +927,10 @@
                 if (setting.type === 'ColorSetting') {
                     // Open color picker with current value
                     // const rgb = setting.value.match(/\d+/g).map(Number);
-                    pendingColorPath = settingKey;
                     openColorPicker(settingKey, setting.value);
                 } else {
-                    showMessageView('Error', 'Unsupported setting type: ' + setting.type);
+                    // Open boolean picker
+                    openBooleanPicker(settingKey, setting.value);
                 }
             });
         }
@@ -978,14 +1025,15 @@
                     case 'set-board-setting':
                         showBoardSettingView(selectedItem.dataset.settingKey);
                         break;
-                    case 'display-settings':
-                        // Add your display settings logic here
-                        break;
                     case 'change-board-setting':
                         loadBoardSettings();
                         break;
                     case 'about':
                         // Add your about page logic here
+                        break;
+                    case 'boolean-picker-true':
+                        document.getElementById('boolean-picker-result').textContent = 'true';
+                        menuGoBack(); // Go back to previous view
                         break;
                     case 'set-engine':
                         document.getElementById('engine-name').textContent = selectedItem.dataset.engineName;
@@ -996,6 +1044,10 @@
                         document.getElementById('engine-color').textContent = selectedItem.dataset.engineColor;
                         setCookie('engine-color', selectedItem.dataset.engineColor);
                         menuGoBack(); // Go back to New Game view
+                        break;
+                    case 'apply-settings':
+                        applyPendingSettings();
+                        menuGoBack();
                         break;
                     case 'set-time':
                         keyboardShow('Enter Minutes (blank=no limit)', '', function (inputText) {
@@ -1063,11 +1115,26 @@
 
         // Expose a function to open color picker with initial RGB and path
         function openColorPicker(path, initialRGB) {
+            pendingColorPath = path;
             document.getElementById('color-r').textContent = (initialRGB && initialRGB[0] != null) ? initialRGB[0] : '0';
             document.getElementById('color-g').textContent = (initialRGB && initialRGB[1] != null) ? initialRGB[1] : '0';
             document.getElementById('color-b').textContent = (initialRGB && initialRGB[2] != null) ? initialRGB[2] : '0';
             updateColorPreview();
             showView('color-picker-view');
+        }
+
+        function openBooleanPicker(path, initialValue) {
+            pendingBooleanPath = path;
+
+            document.getElementById('boolean-picker-title').textContent = path;
+
+            if (initialValue === true || initialValue.toLowerCase() === 'true') {
+                selectedIndex = 0;
+            } else {
+                selectedIndex = 1;
+            }
+            menuUpdateSelection();
+            showView('boolean-picker-view');
         }
 
         function menuReset() {

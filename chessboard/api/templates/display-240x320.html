@@ -910,6 +910,18 @@
                     boardSettingsView.appendChild(item);
                 });
 
+                // Append Restore Defaults button at the bottom
+                const restoreItem = document.createElement('div');
+                restoreItem.className = 'submenu-item';
+                restoreItem.dataset.action = 'restore-defaults';
+                restoreItem.innerHTML = `
+                        <div>
+                            <h4>Restore Defaults</h4>
+                            <p>Reset all settings to their default values</p>
+                        </div>
+                    `;
+                boardSettingsView.appendChild(restoreItem);
+
                 selectedIndex = 0;
                 menuUpdateSelection();
             });
@@ -1027,6 +1039,17 @@
                         break;
                     case 'change-board-setting':
                         loadBoardSettings();
+                        break;
+                    case 'restore-defaults':
+                        loadingShow('Restoring Defaults');
+                        apiCall('/api/settings/restore_defaults', {}, function (data) {
+                            if (data.success) {
+                                showMessageView('Settings', 'Defaults restored successfully.');
+                                loadBoardSettings();
+                            } else {
+                                showMessageView('Error', 'Failed to restore defaults: ' + (data.error || 'Unknown error'));
+                            }
+                        });
                         break;
                     case 'about':
                         // Add your about page logic here

@@ -23,17 +23,13 @@ def _handle_chess_move_event(event: events.ChessMoveEvent) -> None:
     _change_side_animation.set_side(not event.side)
 
 
-def _handle_piece_state_change(event: events.SquarePieceStateChangeEvent) -> None:
+def _handle_legal_move_detected(event: events.LegalMoveDetectedEvent) -> None:
     # Trigger a ripple around newly dropped friendly pieces (None -> turn)
-    if len(event.squares) != 1:
-        return
-
-    if event.colors[event.squares[0]] is not None:
-        anim = AnimationWaterDroplet(
-            fps=15.0,
-            color=settings['led.color.water_droplet'],
-            center_square=event.squares[0])
-        anim.start()
+    anim = AnimationWaterDroplet(
+        fps=15.0,
+        color=settings['led.color.water_droplet'],
+        center_square=event.move.to_square)
+    anim.start()
 
 
 _checkers_animation = AnimationPulse(
@@ -63,6 +59,6 @@ def _handle_game_state_change(event: events.GameStateChangedEvent) -> None:
 
 
 events.event_manager.subscribe(events.ChessMoveEvent, _handle_chess_move_event)
-events.event_manager.subscribe(events.SquarePieceStateChangeEvent, _handle_piece_state_change)
+events.event_manager.subscribe(events.LegalMoveDetectedEvent, _handle_legal_move_detected)
 events.event_manager.subscribe(events.GameStateChangedEvent, _handle_game_state_change)
 _change_side_animation.start()

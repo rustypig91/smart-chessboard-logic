@@ -237,6 +237,19 @@ class GameStateChangedEvent(Event):
         return items
 
 
+class LegalMoveDetectedEvent(Event):
+    def __init__(self, move: chess.Move):
+        super().__init__()
+        self.move = move
+
+    def to_json(self) -> dict:
+        return {
+            "from_square": chess.square_name(self.move.from_square),
+            "to_square": chess.square_name(self.move.to_square),
+            "promotion": chess.piece_symbol(self.move.promotion) if self.move.promotion else None
+        }
+
+
 class _EventManager:
     def __init__(self):
         self._subscribers: dict[type[Event],

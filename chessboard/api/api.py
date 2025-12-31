@@ -1,6 +1,6 @@
 import os
-
-from flask import Flask, render_template, send_from_directory, request
+from typing import Any
+from flask import Flask, render_template, send_from_directory, request, Response
 from flask_socketio import SocketIO
 
 
@@ -22,49 +22,49 @@ app.register_blueprint(api_board, url_prefix='/api/board', name='board')
 app.register_blueprint(api_settings, url_prefix='/api/settings', name='settings')
 app.register_blueprint(api_game, url_prefix='/api/game', name='game')
 
-# if is_raspberrypi:
-#     from chessboard.api.system.raspberry_pi import api as api_board_raspberry_pi
-#     app.register_blueprint(api_board_raspberry_pi, url_prefix='/api/system', name='raspberry_pi')
+if is_raspberrypi:
+    from chessboard.api.system.raspberry_pi import api as api_board_raspberry_pi
+    app.register_blueprint(api_board_raspberry_pi, url_prefix='/api/system', name='raspberry_pi')
 
 socketio = SocketIO(app, async_mode="threading")
 
 
 @app.route('/')
-def index():
+def index() -> str:
     return render_template('index.html')
 
 
 @app.route('/display/240x320')
-def home():
+def home() -> str:
     return render_template('display-240x320.html')
 
 
 @app.route('/favicon.ico')
-def favicon():
+def favicon() -> Response:
     return send_from_directory(os.path.join(app.root_path, 'static'),
                                'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
 
 @app.route('/overview')
-def overview():
+def overview() -> str:
     """API endpoint to get board overview status"""
     return render_template('overview.html')
 
 
 @app.route('/simulator')
-def simulator():
+def simulator() -> str:
     """API endpoint to get the board simulator page"""
     return render_template('simulator.html')
 
 
 @app.route('/firmware')
-def firmware_updater():
+def firmware_updater() -> str:
     """Firmware updater page"""
     return render_template('firmware_updater.html')
 
 
 @socketio.on('publish_event')
-def handle_publish_event(data):
+def handle_publish_event(data: dict[str, Any]) -> None:
     """
     Handle events published by clients.
     Expects 'event_type' and 'event_data' in data.
@@ -88,7 +88,7 @@ def handle_publish_event(data):
 
 
 @socketio.on('request_last_event')
-def handle_request_last_event(data):
+def handle_request_last_event(data: dict[str, Any]) -> None:
     """
     Handle client request for the last event of a specific type.
     Expects 'event_type' in data.

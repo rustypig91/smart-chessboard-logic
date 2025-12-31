@@ -1,3 +1,8 @@
+import os
+import shutil
+import tempfile
+from typing import Optional, Literal
+
 from RPi import GPIO  # type: ignore
 import serial
 import serial.tools.list_ports
@@ -10,10 +15,6 @@ from chessboard.settings import settings
 from chessboard.logger import log
 import chessboard.events as events
 import subprocess
-
-import os
-import shutil
-import tempfile
 
 
 settings.register('hal_sensor.offset', 0.10, description="Voltage offset in volts")
@@ -40,9 +41,9 @@ class _XiaoInterface:
             return
         self._initialized = True
 
-        self._port = None
-        self._monitoring = False
-        self._monitor_thread = None
+        self._port: Optional[serial.Serial] = None
+        self._monitoring: bool = False
+        self._monitor_thread: Optional[Thread] = None
         self._board_piece_colors: list[chess.Color | None | str] = [None] * 64
         self._board_piece_consecutive_counts: list[int] = [0] * 64
 
@@ -54,25 +55,25 @@ class _XiaoInterface:
 
         events.event_manager.subscribe(events.SystemShutdownEvent, self._handle_shutdown_event)
 
-    def _handle_shutdown_event(self, event: events.SystemShutdownEvent):
+    def _handle_shutdown_event(self, event: events.SystemShutdownEvent) -> None:
         log.info("Xiao device shutdown started")
         self._shutdown_device()
         log.info("Xiao device shutdown completed")
 
-    def __del__(self):
+    def __del__(self) -> None:
         self._monitor_stop()
         if self._port is not None:
             self._port.close()
 
-    def start(self):
+    def start(self) -> None:
         if not self._monitoring:
             self._monitor_start()
 
-    def stop(self):
+    def stop(self) -> None:
         if self._monitoring:
             self._monitor_stop()
 
-    def flash_firmware(self, firmware_path: str):
+    def flash_firmware(self, firmware_path: str) -> None:
         """Flash new firmware to the Xiao device using the bootloader.
 
         Args:
@@ -113,16 +114,16 @@ class _XiaoInterface:
         self._monitor_start()
 
     @property
-    def port(self):
+    def port(self) -> Optional[serial.Serial]:
         if self._port is None:
             self._reset_device()
 
         return self._port
 
-    def _set_reset_pin(self, value):
+    def _set_reset_pin(self, value: Literal[0, 1]) -> None:
         GPIO.output(self.RESET_PIN, value)
 
-    def calibrate_sensors(self):
+    def calibrate_sensors(self) -> None:
         """Calibrate the HAL sensors when no pieces are on the board.
 
         Warning: No pieces shall be on the board when this is called.
@@ -161,7 +162,7 @@ class _XiaoInterface:
 
             sleep(0.5)
 
-    def _shutdown_device(self):
+    def _shutdown_device(self) -> None:
         if self._monitoring:
             self._monitor_stop()
 
@@ -183,7 +184,7 @@ class _XiaoInterface:
             sleep(0.1)
             tty_device = self._find_tty_device()
 
-    def _start_bootloader(self):
+    def _start_bootloader(self) -> None:
         self._shutdown_device()
 
         self._set_reset_pin(GPIO.LOW)
@@ -196,7 +197,7 @@ class _XiaoInterface:
         sleep(1)
         log.info("Xiao bootloader started")
 
-    def _reset_device(self):
+    def _reset_device(self) -> None:
         if self._port is not None:
             self._port.close()
             self._port = None
@@ -238,7 +239,7 @@ class _XiaoInterface:
         sleep(1)
         self._port.flush()
 
-    def _monitor_start(self):
+    def _monitor_start(self) -> None:
         if self._monitoring:
             raise RuntimeError("Monitor is already running")
 
@@ -246,7 +247,7 @@ class _XiaoInterface:
         self._monitor_thread = Thread(target=self._monitor_thread_func, daemon=True)
         self._monitor_thread.start()
 
-    def _monitor_stop(self):
+    def _monitor_stop(self) -> None:
         if not self._monitoring:
             return
 
@@ -257,7 +258,7 @@ class _XiaoInterface:
 
         log.info("HAL sensor monitoring stoped")
 
-    def _monitor_thread_func(self):
+    def _monitor_thread_func(self) -> None:
         if self.port is None:
             return
 

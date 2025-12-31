@@ -1,5 +1,5 @@
 import chess
-from flask import Blueprint, jsonify, request, render_template
+from flask import Blueprint, jsonify, request, render_template, Response
 from chessboard.board.board_state import board_state
 from chessboard.game.game_state import game_state
 from chessboard.board.led_manager import led_manager, LedLayer
@@ -10,13 +10,13 @@ _color_preview_layer = LedLayer(priority=100)
 
 
 @api.route('/square/colors', methods=['GET'])
-def get_led_status():
+def get_led_status() -> Response:
     """API endpoint to get the current LED status of the board"""
     return jsonify({'success': True, 'colors': led_manager.colors})
 
 
 @api.route('/square/color_preview', methods=['POST'])
-def preview_square_color():
+def preview_square_color() -> Response | tuple[Response, int]:
     """API endpoint to preview a color on a specific square"""
     data = request.get_json()
     color = data.get('color')  # Expecting [R, G, B]
@@ -42,7 +42,7 @@ def preview_square_color():
 
 
 @api.route('/square/color_preview', methods=['DELETE'])
-def clear_square_color_preview():
+def clear_square_color_preview() -> Response:
     """API endpoint to clear the color preview layer"""
     led_manager.remove_layer(_color_preview_layer)
     # Ensure clients get an immediate update
@@ -51,7 +51,7 @@ def clear_square_color_preview():
 
 
 @api.route('/square/pieces', methods=['GET'])
-def get_board_state():
+def get_board_state() -> Response:
     """API endpoint to get the current board state"""
 
     pieces = {}
@@ -62,14 +62,14 @@ def get_board_state():
 
 
 @api.route('/game/reset', methods=['POST'])
-def reset_game():
+def reset_game() -> Response:
     """API endpoint to reset the game"""
     game_state.reset()
     return jsonify({'success': True})
 
 
 @api.route('/game/start', methods=['POST'])
-def start_game():
+def start_game() -> Response:
     """API endpoint to start a new game"""
     data = request.get_json()
     start_time = data.get('start_time', None)

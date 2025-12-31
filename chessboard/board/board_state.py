@@ -1,7 +1,4 @@
-from time import time
-from typing import Iterable as iterable
 import chess
-import chess.engine
 
 
 import chessboard.events as events
@@ -31,12 +28,9 @@ class BoardState:
     def __init__(self) -> None:
         events.event_manager.subscribe(events.SquarePieceStateChangeEvent, self._handle_piece_state_change)
         events.event_manager.subscribe(events.TimeButtonPressedEvent, self._handle_time_button_pressed)
-        events.event_manager.subscribe(events.NewGameEvent, self._handle_new_game_event)
-        events.event_manager.subscribe(events.ChessMoveEvent, self._handle_move)
-        events.event_manager.subscribe(events.GameOverEvent, self._handle_game_over)
-        events.event_manager.subscribe(events.GameStateChangedEvent, self._handle_game_state_changed)
-
-        self._was_check = False
+        events.event_manager.subscribe(events.NewGameEvent, lambda _: self._scan_board())
+        events.event_manager.subscribe(events.ChessMoveEvent, lambda _: self._scan_board())
+        events.event_manager.subscribe(events.GameStateChangedEvent, lambda _: self._scan_board())
 
         # Current realtime state of pieces on board
         self._board_piece_color_map: list[chess.Color | None] = [None] * 64
@@ -51,7 +45,9 @@ class BoardState:
 
     def _handle_piece_state_change(self, event: events.SquarePieceStateChangeEvent):
         self._board_piece_color_map = event.colors
-        self._scan_board()
+        move = self._scan_board()
+        if move is not None:
+            events.event_manager.publish(events.LegalMoveDetectedEvent(move=move))
 
     def _handle_time_button_pressed(self, event: events.TimeButtonPressedEvent):
         if event.color != game_state.board.turn:
@@ -71,22 +67,6 @@ class BoardState:
         log.info(f"Time button pressed, registering move: {move.uci()}")
 
         events.event_manager.publish(events.ChessMoveEvent(move=move, side=event.color))
-
-    def _handle_move(self, event: events.ChessMoveEvent):
-        self._scan_board()
-
-    def _handle_game_over(self, event: events.GameOverEvent):
-        # Build a stable base to restore after the celebration
-        # self._ongoing_animation = animations.AnimationRainbow(start_colors=self._board_square_color_map,
-        #                                                       callback=self._scan_board, loop=True)
-        # self._ongoing_animation.start()
-        pass
-
-    def _handle_game_state_changed(self, event: events.GameStateChangedEvent):
-        self._scan_board()
-
-    def _handle_new_game_event(self, event: events.NewGameEvent):
-        self._scan_board()
 
     def _reset_led_layer(self):
         self._led_layer.reset()

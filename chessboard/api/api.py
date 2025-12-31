@@ -1,6 +1,6 @@
 import os
 from typing import Any
-from flask import Flask, render_template, send_from_directory, request, Response
+from flask import Flask, render_template, send_from_directory, request, Response, url_for
 from flask_socketio import SocketIO
 
 
@@ -10,32 +10,46 @@ from chessboard.api.system.system import api as api_board_system
 from chessboard.api.board.board import api as api_board
 from chessboard.api.settings import api as api_settings
 from chessboard.api.game import api as api_game
+from chessboard.api.system.xiao import api as api_system_xiao
 from chessboard import is_raspberrypi
 
 from chessboard.logger import log
 import traceback
 
-app = Flask(__name__, template_folder="templates", static_url_path='/static')
+app = Flask(__name__, template_folder='templates', static_url_path='/static')
 app.register_blueprint(api_board_wifi, url_prefix='/api/system/wifi', name='wifi')
 app.register_blueprint(api_board_system, url_prefix='/api/system', name='system')
 app.register_blueprint(api_board, url_prefix='/api/board', name='board')
 app.register_blueprint(api_settings, url_prefix='/api/settings', name='settings')
 app.register_blueprint(api_game, url_prefix='/api/game', name='game')
+app.register_blueprint(api_system_xiao, url_prefix='/api/system/xiao/', name='xiao')
 
-if is_raspberrypi:
-    from chessboard.api.system.raspberry_pi import api as api_board_raspberry_pi
-    app.register_blueprint(api_board_raspberry_pi, url_prefix='/api/system', name='raspberry_pi')
+socketio = SocketIO(app, async_mode='threading')
 
-socketio = SocketIO(app, async_mode="threading")
+
+def has_no_empty_params(rule):
+    defaults = rule.defaults if rule.defaults is not None else ()
+    arguments = rule.arguments if rule.arguments is not None else ()
+    return len(defaults) >= len(arguments)
 
 
 @app.route('/')
 def index() -> str:
-    return render_template('index.html')
+    # Provide routes so index.html can render links to all pages
+    links = []
+    for rule in app.url_map.iter_rules():
+        # Filter out rules we can't navigate to in a browser
+        # and rules that require parameters
+        methods = rule.methods or set()
+        if "GET" in methods and has_no_empty_params(rule):
+            url = url_for(rule.endpoint, **(rule.defaults or {}))
+            links.append(url)
+
+    return render_template('index.html', pages=links)
 
 
 @app.route('/display/240x320')
-def home() -> str:
+def display() -> str:
     return render_template('display-240x320.html')
 
 
@@ -57,10 +71,10 @@ def simulator() -> str:
     return render_template('simulator.html')
 
 
-@app.route('/firmware')
-def firmware_updater() -> str:
+@app.route('/xiao_firmware_updater')
+def xiao_firmware_updater() -> str:
     """Firmware updater page"""
-    return render_template('firmware_updater.html')
+    return render_template('xiao_firmware_updater.html')
 
 
 @socketio.on('publish_event')

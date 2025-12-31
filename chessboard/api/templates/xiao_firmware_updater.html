@@ -97,7 +97,7 @@
     </div>
 
     <script>
-        const API_UPLOAD = '/api/system/update_xiao_firmware';
+        const API_UPLOAD = '/api/system/xiao/update_firmware';
         const el = {
             file: document.getElementById('fileInput'),
             upload: document.getElementById('uploadBtn'),
@@ -108,7 +108,8 @@
 
         function log(msg) {
             const time = new Date().toLocaleTimeString();
-            el.log.textContent = `[${time}] ${msg}\n` + el.log.textContent;
+            el.log.textContent += `[${time}] ${msg}\n`;
+            el.log.scrollTop = el.log.scrollHeight;
         }
 
         async function uploadFirmware(file) {
@@ -131,7 +132,7 @@
                     return;
                 }
                 log('Upload successful: ' + (data.message || 'OK'));
-                el.status.textContent = 'Upload complete. Ready to flash.';
+                el.status.textContent = 'Flash completed successfully';
             } catch (e) {
                 log('Error: ' + (e?.message || e));
                 el.status.textContent = 'Error during upload';

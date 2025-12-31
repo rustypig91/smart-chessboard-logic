@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Smart Chessboard — Index</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>
+        :root {
+            color-scheme: light dark;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+            margin: 0;
+            padding: 2rem;
+        }
+
+        header {
+            margin-bottom: 1.5rem;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin: 0 0 .5rem;
+        }
+
+        #filter {
+            width: 100%;
+            max-width: 28rem;
+            padding: .5rem .75rem;
+            border: 1px solid #ccc;
+            border-radius: .375rem;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 1rem 0 0;
+        }
+
+        li {
+            margin: .25rem 0;
+        }
+
+        a {
+            text-decoration: none;
+            color: #0b6;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .empty {
+            opacity: .7;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Smart Chessboard — Available Pages</h1>
+        <input id="filter" type="search" placeholder="Filter pages…" aria-label="Filter pages">
+    </header>
+
+    <main>
+        <ul id="page-list">
+            {% for p in pages %}
+            <li><a href="{{ p }}">{{ p }}</a></li>
+            {% endfor %}
+        </ul>
+    </main>
+
+    <script>
+        (function () {
+            const input = document.getElementById('filter');
+            const list = document.getElementById('page-list');
+            if (!input || !list) return;
+            const items = Array.from(list.querySelectorAll('li'));
+            input.addEventListener('input', () => {
+                const q = input.value.trim().toLowerCase();
+                items.forEach(li => {
+                    const text = (li.textContent || '').toLowerCase();
+                    li.style.display = !q || text.includes(q) ? '' : 'none';
+                });
+            });
+        }());
+    </script>
+</body>
+
+</html>

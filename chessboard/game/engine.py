@@ -9,12 +9,7 @@ from random import choice
 import chessboard.persistent_storage as persistent_storage
 import shutil
 
-default_weights_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../weights'))
-
 settings.register("engine.path", "lc0", "Path to the chess engine executable")
-settings.register("engine.weights_path", default_weights_path,
-                  "Path to the chess engine weights file (if applicable)")
-
 settings.register("engine.time_limit", 10.0, "Time limit for engine analysis in seconds")
 
 

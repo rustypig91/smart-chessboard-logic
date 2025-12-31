@@ -53,7 +53,7 @@ def update_setting(key):
         new_value = chessboard_settings[key]
 
         log.info(f"Setting '{key}' changed from {setting.value} to {new_value}")
-        return jsonify(success=True, setting=new_value.to_json())
+        return jsonify(success=True, message=f"Setting '{key}' updated to {new_value}", new_value=new_value)
     except KeyError:
         log.error(f"Setting '{key}' not found")
         return jsonify(success=False, error="Setting not found"), 404

@@ -425,12 +425,12 @@
             <div id="boolean-picker-view" class="view">
                 <div class="view-header" id="boolean-picker-title">Select Value</div>
                 <div class="menu" id="boolean-picker-menu">
-                    <div class="submenu-item selected" data-action="boolean-picker-true">
+                    <div class="submenu-item selected" data-action="apply-settings">
                         <div>
                             <h4>True</h4>
                         </div>
                     </div>
-                    <div class="submenu-item" data-action="boolean-picker-false">
+                    <div class="submenu-item" data-action="apply-settings">
                         <div>
                             <h4>False</h4>
                         </div>
@@ -579,7 +579,7 @@
         // Track selectedIndex for each view
         const viewSelectedIndices = {};
 
-        function showView(viewId) {
+        function showView(viewId, selectIndex = 0) {
             // Save current selectedIndex before leaving
             if (currentView == viewId) {
                 return; // Already in requested view
@@ -597,7 +597,7 @@
                 viewStack.push(viewId);
                 currentView = viewId;
                 // Restore previous selectedIndex for this view, or default to 0
-                selectedIndex = 0;
+                selectedIndex = selectIndex;
                 menuUpdateSelection();
                 buttonsUpdate(viewButtonsConfig[viewId] || menuButtonFunctions);
 
@@ -863,7 +863,7 @@
                 loadingShow('Applying Color');
                 apiCall('/api/settings/' + pendingColorPath, { value: colorValue }, function (data) {
                     if (data.success) {
-                        showMessageView('Success', 'Color setting updated successfully!');
+                        showMessageView('Success', data.message || 'Color setting updated successfully!');
                     } else {
                         showMessageView('Error', 'Failed to update color setting: ' + (data.error || 'Unknown error'));
                     }
@@ -872,12 +872,12 @@
             }
 
             if (pendingBooleanPath) {
-                const boolValue = document.getElementById('boolean-picker-result').textContent === 'true';
+                const boolValue = selectedIndex === 0; // True if first item selected, else False
 
                 loadingShow('Applying Setting');
-                apiCall(pendingBooleanPath, { value: boolValue }, function (data) {
+                apiCall('/api/settings/' + pendingBooleanPath, { value: boolValue }, function (data) {
                     if (data.success) {
-                        showMessageView('Success', 'Setting updated successfully!');
+                        showMessageView('Success', data.message || 'Setting updated successfully!');
                     } else {
                         showMessageView('Error', 'Failed to update setting: ' + (data.error || 'Unknown error'));
                     }
@@ -1031,10 +1031,6 @@
                     case 'about':
                         // Add your about page logic here
                         break;
-                    case 'boolean-picker-true':
-                        document.getElementById('boolean-picker-result').textContent = 'true';
-                        menuGoBack(); // Go back to previous view
-                        break;
                     case 'set-engine':
                         document.getElementById('engine-name').textContent = selectedItem.dataset.engineName;
                         setCookie('engine-name', selectedItem.dataset.engineName);
@@ -1128,13 +1124,11 @@
 
             document.getElementById('boolean-picker-title').textContent = path;
 
-            if (initialValue === true || initialValue.toLowerCase() === 'true') {
-                selectedIndex = 0;
-            } else {
-                selectedIndex = 1;
+            let index = 1;
+            if (initialValue === true || initialValue === 'true') {
+                index = 0;
             }
-            menuUpdateSelection();
-            showView('boolean-picker-view');
+            showView('boolean-picker-view', index);
         }
 
         function menuReset() {

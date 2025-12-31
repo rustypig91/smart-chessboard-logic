@@ -11,7 +11,7 @@ import chessboard.persistent_storage as persistent_storage
 
 
 class GameState:
-    SAVE_FILE = ".saved_game.pkl"
+    SAVE_FILE = "saved_game.pkl"
 
     def __init__(self):
         self.board = chess.Board()

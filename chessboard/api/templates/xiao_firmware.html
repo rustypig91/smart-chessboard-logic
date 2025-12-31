@@ -93,17 +93,36 @@
         <div style="margin-top:12px">
             <progress id="progress" value="0" max="100" style="display:none"></progress>
         </div>
+        <div class="row" style="margin-top:12px">
+            <button id="calibrateBtn">Calibrate Sensors</button>
+        </div>
         <div id="log"></div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+        <h1>Xiao Info</h1>
+        <div class="row" style="margin-top:8px">
+            <button id="refreshInfoBtn">Refresh</button>
+            <span class="spacer"></span>
+            <span id="infoStatus" style="font-size:12px; color:#6e7781;"></span>
+        </div>
+        <div id="xiaoInfo" style="margin-top:8px; font-size:12px"></div>
     </div>
 
     <script>
         const API_UPLOAD = '/api/system/xiao/update_firmware';
+        const API_CALIBRATE = '/api/system/xiao/calibrate_sensors';
+        const API_INFO = '/api/system/xiao/info';
         const el = {
             file: document.getElementById('fileInput'),
             upload: document.getElementById('uploadBtn'),
+            calibrate: document.getElementById('calibrateBtn'),
             status: document.getElementById('status'),
             progress: document.getElementById('progress'),
             log: document.getElementById('log'),
+            info: document.getElementById('xiaoInfo'),
+            infoStatus: document.getElementById('infoStatus'),
+            refreshInfo: document.getElementById('refreshInfoBtn'),
         };
 
         function log(msg) {
@@ -158,6 +177,84 @@
             simulateProgress();
             uploadFirmware(file);
         });
+
+        el.calibrate.addEventListener('click', async () => {
+            el.calibrate.disabled = true;
+            el.status.textContent = 'Calibrating sensors…';
+            log('Starting sensor calibration');
+            try {
+                const res = await fetch(API_CALIBRATE, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                const data = await res.json().catch(() => ({ success: false, error: 'Invalid JSON response' }));
+                if (!res.ok || !data.success) {
+                    const err = data.error || `${res.status} ${res.statusText}`;
+                    log('Calibration failed: ' + err);
+                    el.status.textContent = 'Calibration failed';
+                    return;
+                }
+                log('Calibration completed successfully');
+                el.status.textContent = 'Calibration completed successfully';
+            } catch (e) {
+                log('Calibration error: ' + (e?.message || e));
+                el.status.textContent = 'Calibration error';
+            } finally {
+                el.calibrate.disabled = false;
+            }
+        });
+
+        async function loadXiaoInfo() {
+            el.infoStatus.textContent = 'Loading…';
+            el.refreshInfo.disabled = true;
+            el.info.innerHTML = '';
+            try {
+                const res = await fetch(API_INFO, { method: 'GET' });
+                const data = await res.json().catch(() => ({ success: false, error: 'Invalid JSON response' }));
+                if (!res.ok || !data.success) {
+                    const err = data.error || `${res.status} ${res.statusText}`;
+                    el.infoStatus.textContent = 'Failed to load info';
+                    log('Info load failed: ' + err);
+                    return;
+                }
+                renderInfo(data.info || {});
+                el.infoStatus.textContent = '';
+            } catch (e) {
+                el.infoStatus.textContent = 'Failed to load info';
+                log('Info load error: ' + (e?.message || e));
+            } finally {
+                el.refreshInfo.disabled = false;
+            }
+        }
+
+        function renderInfo(info) {
+            const container = el.info;
+            container.innerHTML = '';
+            const list = document.createElement('ul');
+            list.style.listStyle = 'none';
+            list.style.padding = '0';
+            list.style.margin = '0';
+            Object.keys(info).forEach(key => {
+                const li = document.createElement('li');
+                li.style.borderBottom = '1px solid #e1e4e8';
+                li.style.padding = '6px 0';
+                const k = document.createElement('strong');
+                k.textContent = key + ': ';
+                const v = document.createElement('span');
+                v.textContent = String(info[key]);
+                li.appendChild(k);
+                li.appendChild(v);
+                list.appendChild(li);
+            });
+            if (!list.childNodes.length) {
+                const empty = document.createElement('div');
+                empty.textContent = 'No info available.';
+                container.appendChild(empty);
+            } else {
+                container.appendChild(list);
+            }
+        }
+
+        el.refreshInfo.addEventListener('click', () => loadXiaoInfo());
+        // Load on page open
+        loadXiaoInfo();
     </script>
 </body>
 

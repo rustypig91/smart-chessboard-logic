@@ -54,3 +54,22 @@ def calibrate_sensors():
         return jsonify({'success': True, 'message': 'Sensor calibration completed'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@api.route('/info', methods=['GET'])
+def get_xiao_info():
+    """API endpoint to get the status of the Xiao microcontroller"""
+    try:
+        info = {}
+        if is_raspberrypi:
+            from chessboard.raspberry_pi_system.xiao_interface import xiao_interface
+            info['version'] = xiao_interface.version
+            info['port'] = xiao_interface.port.port
+        else:
+            log.warning("Xiao info requested on non-Raspberry Pi system")
+            info['version'] = 'N/A'
+            info['port'] = 'N/A'
+
+        return jsonify({'success': True, 'info': info})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500

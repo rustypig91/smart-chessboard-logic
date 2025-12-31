@@ -79,10 +79,10 @@ def simulator() -> str:
     return render_template('simulator.html')
 
 
-@app.route('/xiao_firmware_updater')
-def xiao_firmware_updater() -> str:
+@app.route('/xiao_firmware')
+def xiao_firmware() -> str:
     """Firmware updater page"""
-    return render_template('xiao_firmware_updater.html')
+    return render_template('xiao_firmware.html')
 
 
 @socketio.on('publish_event')

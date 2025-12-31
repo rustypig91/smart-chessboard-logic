@@ -15,7 +15,7 @@ from chessboard.settings import settings
 from chessboard.logger import log
 import chessboard.events as events
 import subprocess
-
+from chessboard.thread_safe_variable import ThreadSafeVariable
 
 settings.register('hal_sensor.offset', 0.10, description="Voltage offset in volts")
 
@@ -47,6 +47,8 @@ class _XiaoInterface:
         self._board_piece_colors: list[chess.Color | None | str] = [None] * 64
         self._board_piece_consecutive_counts: list[int] = [0] * 64
 
+        self._version = ThreadSafeVariable("unknown")
+
         self._monitor_start()
 
         GPIO.setwarnings(False)
@@ -54,6 +56,10 @@ class _XiaoInterface:
         GPIO.setup(self.RESET_PIN, GPIO.OUT)
 
         events.event_manager.subscribe(events.SystemShutdownEvent, self._handle_shutdown_event)
+
+    @property
+    def version(self) -> str:
+        return self._version.value
 
     def _handle_shutdown_event(self, event: events.SystemShutdownEvent) -> None:
         log.info("Xiao device shutdown started")
@@ -114,9 +120,12 @@ class _XiaoInterface:
         self._monitor_start()
 
     @property
-    def port(self) -> Optional[serial.Serial]:
+    def port(self) -> serial.Serial:
         if self._port is None:
             self._reset_device()
+
+        if self._port is None:
+            raise RuntimeError("Failed to initialize Xiao serial port")
 
         return self._port
 
@@ -233,11 +242,15 @@ class _XiaoInterface:
             sleep(0.1)
             tty_device = self._find_tty_device()
 
-        sleep(1)  # Wait for the serial connection to stabilize
+        sleep(0.1)  # Wait for the serial connection to stabilize
         self._port = serial.Serial(
             tty_device, baudrate=self.BAUDRATE, timeout=1)
-        sleep(1)
         self._port.flush()
+        sleep(0.2)
+        self._port.flush()
+        self._send_command('')  # Ensure we have a clean prompt
+
+        self._version.value = self._send_command('version').strip()
 
     def _monitor_start(self) -> None:
         if self._monitoring:
@@ -259,9 +272,6 @@ class _XiaoInterface:
         log.info("HAL sensor monitoring stoped")
 
     def _monitor_thread_func(self) -> None:
-        if self.port is None:
-            return
-
         self.port.write(b'board monitor offset\n')
 
         log.info("HAL sensor monitoring started")
@@ -344,7 +354,12 @@ class _XiaoInterface:
         self.port.write(command.encode('utf-8') + b'\n')
         self.port.flush()
 
-        return self._wait_for_prompt()
+        response = self._wait_for_prompt()
+        # Trim echoed command from response
+        if response.startswith(command):
+            response = response[len(command):]
+
+        return response.strip()
 
 
 xiao_interface = _XiaoInterface()

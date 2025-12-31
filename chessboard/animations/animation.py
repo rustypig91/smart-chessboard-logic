@@ -11,7 +11,7 @@ class Animation:
     def __init__(self,
                  fps: float,
                  priority: int = 10,
-                 loop: bool = False) -> None:
+                 loop: bool = False):
 
         self._thread = None
 
@@ -45,7 +45,7 @@ class Animation:
         return self._thread is not None and self._thread.is_alive()
 
     def update(self) -> bool:
-        """ Update the animation state. Returns True if the animation is complete. """
+        """ Update the animation state. Shall return True if the animation is complete. """
         raise NotImplementedError()
 
     def start(self):
@@ -60,7 +60,7 @@ class Animation:
 
         self._thread.start()
 
-    def stop(self):
+    def stop(self) -> None:
         if self._thread is None:
             return
         self._stop.set()
@@ -71,11 +71,11 @@ class Animation:
 
         leds.led_manager.remove_layer(self._led_layer)
 
-    def restart(self):
+    def restart(self) -> None:
         self.stop()
         self.start()
 
-    def _animate_thread(self):
+    def _animate_thread(self) -> None:
         index = self.frame_index
         start_time = None
         is_complete = False

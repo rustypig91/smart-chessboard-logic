@@ -27,7 +27,7 @@ class AnimationRainbow(Animation):
         self._duration = duration
 
         try:
-            self._black_color = settings['game.colors.black']
+            self._black_color = settings['led.color.black']
         except KeyError:
             self._black_color = (0, 0, 0)
 

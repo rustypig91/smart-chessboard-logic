@@ -191,45 +191,30 @@
                             <p>Begin a new chess game</p>
                         </div>
                     </div>
-                    <div class="menu-item" data-next-view="select-opponent-view">
+                    <div class="menu-item" data-next-view="select-engine-view">
                         <div>
-                            <h3>Opponent</h3>
-                            <p id="opponent-type">Human</p>
+                            <h3>Engine</h3>
+                            <p id="engine-name"></p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-next-view="select-engine-color-view">
+                        <div>
+                            <h3>Engine Color</h3>
+                            <p id="engine-color">Black</p>
                         </div>
                     </div>
                     <div class="menu-item" data-action="set-time">
                         <div>
                             <h3>Time</h3>
-
                             <p id="time-setting">No limit</p>
                         </div>
                     </div>
                 </div>
             </div>
 
-
-            <!-- New Game -> Select Opponent View -->
-            <div id="select-opponent-view" class="view">
-                <div class="view-header">Select Opponent</div>
-                <div class="menu">
-                    <div class="menu-item selected" data-action="set-opponent-human">
-                        <div>
-                            <h3>Human</h3>
-                            <p>Play against another person</p>
-                        </div>
-                    </div>
-                    <div class="menu-item" data-next-view="display-computers-view">
-                        <div>
-                            <h3>Computer</h3>
-                            <p>Play against AI</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- New Game -> Select Opponent -> Computers View -->
-            <div id="display-computers-view" class="view">
-                <div class="view-header">Select Computer Opponent</div>
+            <!-- New Game -> Engine -->
+            <div id="select-engine-view" class="view">
+                <div class="view-header">Select Engine</div>
                 <div id="computers-menu" class="menu">
                 </div>
             </div>
@@ -241,8 +226,8 @@
                             const item = document.createElement('div');
                             item.className = 'menu-item';
                             if (index === 0) item.classList.add('selected');
-                            item.dataset.action = 'set-opponent-computer';
-                            item.dataset.computerLevel = bot;
+                            item.dataset.action = 'set-engine';
+                            item.dataset.engineName = bot;
                             item.innerHTML = `
                                     <div>
                                         <h3>${bot}</h3>
@@ -254,6 +239,31 @@
                     });
                 });
             </script>
+
+            <!-- New Game -> Engine Color -->
+            <div id="select-engine-color-view" class="view">
+                <div class="view-header">Select Engine Color</div>
+                <div class="menu">
+                    <div class="menu-item selected" data-action="set-engine-color" data-engine-color="Black">
+                        <div>
+                            <h3>Black</h3>
+                            <p>Engine plays as Black</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-action="set-engine-color" data-engine-color="White">
+                        <div>
+                            <h3>White</h3>
+                            <p>Engine plays as White</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-action="set-engine-color" data-engine-color="No engine">
+                        <div>
+                            <h3>No engine</h3>
+                            <p>Play human vs human</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <!-- New Game -> Start Game -> Game Overview View -->
             <div id="game-overview-view" class="view">
@@ -281,7 +291,8 @@
                         </div>
                     </div>
 
-                    <div style="text-align:center; font-size:12px; color:#fff; margin-top:2px;" id="last-move">Last: -
+                    <div style="text-align:center; font-size:12px; color:#fff; margin-top:2px;" id="last-move">Last:
+                        -
                     </div>
                 </div>
             </div>
@@ -889,8 +900,14 @@
                 time_minutes = 0.0;
             }
 
+            let engine_name = document.getElementById('engine-name').textContent;
+            if (engine_name === 'No engine') {
+                engine_name = null;
+            }
+
             post_data = {
-                opponent: document.getElementById('opponent-type').textContent || 'Human',
+                engine_name: engine_name,
+                engine_color: document.getElementById('engine-color').textContent,
                 start_time_seconds: time_minutes * 60.0,  // Convert minutes to seconds
                 increment_seconds: 0.0,
             };
@@ -970,25 +987,24 @@
                     case 'about':
                         // Add your about page logic here
                         break;
-                    case 'set-opponent-human':
-                        document.getElementById('opponent-type').textContent = 'Human';
-                        setCookie('opponent', 'Human');
-                        menuGoBack();
+                    case 'set-engine':
+                        document.getElementById('engine-name').textContent = selectedItem.dataset.engineName;
+                        setCookie('engine-name', selectedItem.dataset.engineName);
+                        menuGoBack(); // Go back to New Game view
                         break;
-                    case 'set-opponent-computer':
-                        document.getElementById('opponent-type').textContent = selectedItem.dataset.computerLevel;
-                        setCookie('opponent', selectedItem.dataset.computerLevel);
-                        menuGoBack();
+                    case 'set-engine-color':
+                        document.getElementById('engine-color').textContent = selectedItem.dataset.engineColor;
+                        setCookie('engine-color', selectedItem.dataset.engineColor);
                         menuGoBack(); // Go back to New Game view
                         break;
                     case 'set-time':
                         keyboardShow('Enter Minutes (blank=no limit)', '', function (inputText) {
                             if (inputText && !isNaN(inputText) && Number(inputText) > 0) {
                                 document.getElementById('time-setting').textContent = inputText + ' min';
-                                setCookie('time', inputText + ' min');
+                                setCookie('time-setting', inputText + ' min');
                             } else {
                                 document.getElementById('time-setting').textContent = 'No limit';
-                                setCookie('time', 'No limit');
+                                setCookie('time-setting', 'No limit');
                             }
                         }, true);
                         break;
@@ -1083,13 +1099,23 @@
 
         // --- Load settings from cookies on page load ---
         function loadSettingsFromCookies() {
-            const opponent = getCookie('opponent');
-            if (opponent) {
-                document.getElementById('opponent-type').textContent = opponent;
-            }
-            const time = getCookie('time');
-            if (time) {
-                document.getElementById('time-setting').textContent = time;
+            const cname = name + '=';
+            const decodedCookie = decodeURIComponent(document.cookie);
+            const ca = decodedCookie.split(';');
+            for (let i = 0; i < ca.length; i++) {
+                let c = ca[i].trim();
+                if (!c) continue;
+
+                const eqIdx = c.indexOf('=');
+                if (eqIdx < 0) continue;
+
+                const key = c.substring(0, eqIdx);
+                const value = c.substring(eqIdx + 1);
+
+                const el = document.getElementById(key);
+                if (el) {
+                    el.textContent = value;
+                }
             }
         }
 

@@ -20,16 +20,18 @@ def get_available_bots():
 def start_new_game():
     """API endpoint to start a new game against a computer opponent"""
     data = request.get_json()
-    opponent = data.get('opponent', 'Human')
+    engine_name = data.get('engine_name', None)
+    engine_color = data.get('engine_color', 'black').lower()
     start_time_seconds = data.get('start_time_seconds', float('inf'))
     increment_seconds = data.get('increment_seconds', 0.0)
 
-    engine_weight = None
-    if opponent != 'Human':
-        engine_weight = opponent
-
-    if engine_weight is not None and engine_weight not in Engine.get_available_weights():
+    if engine_name is not None and engine_name not in Engine.get_available_weights():
         return jsonify({'success': False, 'error': 'Selected opponent not available'}), 400
+
+    if engine_color not in ('white', 'black'):
+        return jsonify({'success': False, 'error': 'Invalid engine color specified'}), 400
+
+    engine_color = chess.WHITE if engine_color == 'white' else chess.BLACK
 
     if type(start_time_seconds) not in (float, int) or start_time_seconds < 0:
         return jsonify({'success': False, 'error': f'Invalid start time specified'}), 400
@@ -43,12 +45,12 @@ def start_new_game():
     game_state.new_game(
         start_time_seconds=start_time_seconds,
         increment_seconds=increment_seconds,
-        engine_weight=engine_weight,
-        engine_color=chess.BLACK)
+        engine_weight=engine_name,
+        engine_color=engine_color)
 
     # Here you would typically set up the game state with the engine
     # For this example, we'll just return success
-    return jsonify({'success': True, 'message': f'Game started against {opponent} with {start_time_seconds}s per move'})
+    return jsonify({'success': True, 'message': f'Game started'})
 
 
 @api.route('/pause', methods=['POST'])

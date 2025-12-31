@@ -229,6 +229,9 @@ class GameState:
 
         self._send_game_state_event()
 
+        if self.engine is not None and self.engine.color == chess.WHITE:
+            self.engine.get_move_async(self.board, self._handle_engine_move)
+
     def reset(self) -> None:
         self._resigned = {
             chess.WHITE: False,

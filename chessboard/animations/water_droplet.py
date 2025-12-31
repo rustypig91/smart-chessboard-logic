@@ -6,9 +6,15 @@ from chessboard.animations.animation import Animation
 
 class AnimationWaterDroplet(Animation):
     def __init__(self,
+                 color: tuple[int, int, int],
                  center_square: chess.Square,
                  *args,
                  **kwargs) -> None:
+        """ Water droplet ripple animation originating from a center square.
+
+        color: RGB color tuple for the droplet ripple.
+        center_square: chess.Square where the droplet originates.        
+        """
         super().__init__(*args, **kwargs)
 
         self._center = center_square
@@ -19,27 +25,21 @@ class AnimationWaterDroplet(Animation):
         corners = [(0, 0), (0, 7), (7, 0), (7, 7)]
         self._max_radius = max(math.sqrt((r0 - r)**2 + (f0 - f)**2) for r, f in corners)
 
+        for sq in chess.SQUARES:
+            self._led_layer.colors[sq] = color
+
         # Wave parameters: narrow ring (sigma) and damping
         self._sigma = 0.75  # ring thickness
-        # self._damp = 0.12   # amplitude decay per radius unit
-        self._damp = 0.12
+        self._damp = 0.12   # damping factor
         self._boost = 1.0   # overall brightness boost at wavefront
 
     def update(self) -> bool:
-        index = self.frame_index
-
-        # t = index / (self.total_frames - 1) if self.total_frames > 1 else 1.0
-        t = self.elapsed_time
-
-        radius = t * self._max_radius
+        radius = self.elapsed_time * self._max_radius
 
         r0 = chess.square_rank(self._center)
         f0 = chess.square_file(self._center)
 
-        # Expanding circular ripple: modulate the provided base frame intensities
         for sq in chess.SQUARES:
-            self._led_layer.colors[sq] = (102, 204, 255)
-
             r = chess.square_rank(sq)
             f = chess.square_file(sq)
             dist = math.sqrt((r - r0)**2 + (f - f0)**2)
@@ -49,18 +49,6 @@ class AnimationWaterDroplet(Animation):
             amplitude = gauss * math.exp(-self._damp * radius) * self._boost
             amplitude = min(1.0, max(0.0, amplitude)) * 0.2
 
-            # Scale base color upwards (brighten) at the wavefront
-            # scale = 1.0 + amplitude
-            # self._led_layer.intensity.update({sq: scale})
             self._led_layer.square_opacity[sq] = amplitude
-
-        # Highlight the center at the start by boosting base color
-        # if index == 0 and self._center in self._base_colors and self._base_colors[self._center] is not None:
-        #     base = self._base_colors[self._center]
-        #     scale = 1.5
-        #     boosted = (min(255, int(base[0] * scale)),
-        #                min(255, int(base[1] * scale)),
-        #                min(255, int(base[2] * scale)))
-        #     colors[self._center] = boosted
 
         return radius >= self._max_radius

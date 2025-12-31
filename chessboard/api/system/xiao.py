@@ -35,6 +35,22 @@ def update_firmware():
 
             log.info("Firmware flashing completed successfully")
 
-        return jsonify({'success': True, 'message': 'Firmware uploaded and flashing initiated'})
+        return jsonify({'success': True, 'message': 'Firmware flashed successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@api.route('/calibrate_sensors', methods=['POST'])
+def calibrate_sensors():
+    """API endpoint to calibrate the Xiao sensors"""
+    try:
+        if is_raspberrypi:
+            from chessboard.raspberry_pi_system.xiao_interface import xiao_interface
+            xiao_interface.calibrate_sensors()
+        else:
+            log.warning("Sensor calibration attempted on non-Raspberry Pi system")
+
+        log.info("Sensor calibration completed successfully")
+        return jsonify({'success': True, 'message': 'Sensor calibration completed'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

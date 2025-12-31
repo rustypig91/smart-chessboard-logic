@@ -320,7 +320,8 @@
                     <div>${escapeHtml(w.name || w.filename || 'Unnamed')}
                     </div>
                     <div class="meta">
-                        ${formatSize(w.size)} ${w.size ? '·' : ''} ${escapeHtml(w.id || '')}
+                        ${formatSize(w.size)} ${w.size ? '·' : ''}
+                        ${w.last_modified ? 'Last modified: ' + formatDate(w.last_modified) : ''}
                     </div>`;
                 actions.className = 'actions';
 
@@ -339,7 +340,7 @@
 
         async function deleteWeight(id) {
             if (!id) return;
-            if (!confirm('Delete this weight?')) return;
+            if (!confirm(`Delete ${escapeHtml(id)}?`)) return;
             try {
                 const res = await fetch(cfg.deletePrefix + encodeURIComponent(id), {
                     method: 'DELETE',
@@ -361,6 +362,20 @@
             const u = ['B', 'KB', 'MB', 'GB']; let i = 0; let b = +bytes;
             while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
             return `${b.toFixed(b >= 100 ? 0 : 1)} ${u[i]}`;
+        }
+        function formatDate(ts) {
+            try {
+                const d = new Date(Number(ts) * 1000);
+                if (isNaN(d.getTime())) return '';
+                const two = n => String(n).padStart(2, '0');
+                const yyyy = d.getFullYear();
+                const mm = two(d.getMonth() + 1);
+                const dd = two(d.getDate());
+                const HH = two(d.getHours());
+                const MM = two(d.getMinutes());
+                const SS = two(d.getSeconds());
+                return `${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}`; // Non-retarded 24-hour format
+            } catch { return ''; }
         }
 
         loadWeights();

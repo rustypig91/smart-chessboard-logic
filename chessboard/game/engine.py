@@ -8,6 +8,7 @@ from typing import Callable
 from random import choice
 import chessboard.persistent_storage as persistent_storage
 import shutil
+import requests
 
 settings.register("engine.path", "lc0", "Path to the chess engine executable")
 settings.register("engine.time_limit", 10.0, "Time limit for engine analysis in seconds")
@@ -28,15 +29,46 @@ class Engine:
     @staticmethod
     def install_weight(weight_file: str) -> None:
         """Install a new engine weight file from the given source path."""
-        weights_dir = persistent_storage.get_directory('weights')
-        dest_path = os.path.join(weights_dir, weight_file)
+        dest_path = persistent_storage.get_filename(f'weights/{os.path.basename(weight_file)}')
 
         if not os.path.isfile(weight_file):
             raise FileNotFoundError(f"Source weight file not found: {weight_file}")
 
         shutil.move(weight_file, dest_path)
 
-        log.info(f"Installed new engine weight file: {dest_path}")
+        log.info(f"Installed new engine weight from {weight_file} to {dest_path}")
+
+    @staticmethod
+    def delete_weight(weight_name: str) -> None:
+        """Delete an existing engine weight file by name."""
+        weight_path = os.path.join(Engine.weight_directory(), weight_name)
+
+        if not os.path.isfile(weight_path):
+            raise FileNotFoundError(f"Weight file not found: {weight_path}")
+
+        os.remove(weight_path)
+        log.info(f"Deleted engine weight: {weight_name}")
+
+    @staticmethod
+    def install_weight_from_url(url: str) -> None:
+        """Install a new engine weight file from a URL."""
+
+        response = requests.get(url, stream=True)
+        if response.status_code != 200:
+            raise ValueError(f"Failed to download weight file from URL: {url}")
+
+        filename = os.path.basename(url)
+        dest_path = os.path.join(Engine.weight_directory(), filename)
+
+        with open(dest_path, 'wb') as f:
+            shutil.copyfileobj(response.raw, f)
+
+        log.info(f"Installed new engine weight from URL {url} to {dest_path}")
+
+    @staticmethod
+    def weight_directory() -> str:
+        """Get the directory where engine weights are stored."""
+        return persistent_storage.get_directory('weights')
 
     @staticmethod
     def get_available_weights() -> list[str]:
@@ -51,6 +83,10 @@ class Engine:
         weights.sort()
 
         return weights
+
+    @staticmethod
+    def get_weight_filename(weight: str) -> str:
+        return os.path.join(Engine.weight_directory(), weight)
 
     def analyze(self, board: chess.Board) -> None:
         info = self.engine.analyse(board, chess.engine.Limit(time=settings['engine.time_limit']))

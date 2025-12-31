@@ -11,6 +11,7 @@ from chessboard.api.board.board import api as api_board
 from chessboard.api.settings import api as api_settings
 from chessboard.api.game import api as api_game
 from chessboard.api.system.xiao import api as api_system_xiao
+from chessboard.api.engine import api as api_engine
 from chessboard import is_raspberrypi
 
 from chessboard.logger import log
@@ -23,6 +24,7 @@ app.register_blueprint(api_board, url_prefix='/api/board', name='board')
 app.register_blueprint(api_settings, url_prefix='/api/settings', name='settings')
 app.register_blueprint(api_game, url_prefix='/api/game', name='game')
 app.register_blueprint(api_system_xiao, url_prefix='/api/system/xiao/', name='xiao')
+app.register_blueprint(api_engine, url_prefix='/api/engine', name='engine')
 
 socketio = SocketIO(app, async_mode='threading')
 
@@ -51,6 +53,12 @@ def index() -> str:
 @app.route('/display/240x320')
 def display() -> str:
     return render_template('display-240x320.html')
+
+
+@app.route('/install_weight')
+def install_weight() -> str:
+    """API endpoint to get the weight installation page"""
+    return render_template('install_weight.html')
 
 
 @app.route('/favicon.ico')

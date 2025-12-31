@@ -47,8 +47,8 @@ class Stopwatch:
     def decrement(self, seconds: float):
         with self._lock:
             self._elapsed -= seconds
-            if self._elapsed < 0:
-                self._elapsed = 0.0
+            # if self._elapsed < 0:
+            #     self._elapsed = 0.0
 
     @property
     def paused(self) -> bool:
@@ -168,7 +168,7 @@ class ChessClock:
 
         current_player = self.clocks[self.current_player]
         current_player.pause()
-        current_player.increment(self.get_increment(self.current_player))
+        current_player.decrement(self.get_increment(self.current_player))
 
         self.current_player = color
         next_player = self.clocks[self.current_player]

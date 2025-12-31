@@ -195,7 +195,7 @@ class GameState:
                  start_time_seconds: float | tuple[float, float] = float('inf'),
                  increment_seconds: float | tuple[float, float] = 0.0,
                  engine_weight: str | None = None,
-                 engine_color: chess.Color = chess.BLACK) -> None:
+                 engine_color: chess.Color | None = None) -> None:
         """ Start a new game """
         self.reset()
 
@@ -204,7 +204,7 @@ class GameState:
             increment_seconds=increment_seconds,
             timeout_callback=self._clock_timeout_callback)
 
-        if engine_weight is not None:
+        if engine_weight is not None and engine_color is not None:
             self.engine = Engine(weight=engine_weight, color=engine_color)
         else:
             self.engine = None

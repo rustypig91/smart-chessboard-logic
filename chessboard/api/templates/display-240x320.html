@@ -203,6 +203,12 @@
                             <p id="time-setting">No limit</p>
                         </div>
                     </div>
+                    <div class="menu-item" data-action="set-increment">
+                        <div>
+                            <h3>Increment</h3>
+                            <p id="increment-setting">0 sec</p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -370,15 +376,15 @@
                         }
 
                         const wMin = Math.floor((whiteTime || 0) / 60);
-                        const wSec = ((whiteTime || 0) % 60).toFixed(1);
+                        const wSec = Math.abs(((whiteTime || 0) % 60)).toFixed(1);
                         const bMin = Math.floor((blackTime || 0) / 60);
-                        const bSec = ((blackTime || 0) % 60).toFixed(1);
+                        const bSec = Math.abs(((blackTime || 0) % 60)).toFixed(1);
 
                         const wEl = document.getElementById('white-clock');
                         const bEl = document.getElementById('black-clock');
 
-                        if (wEl) wEl.textContent = `${padStart(String(wMin), 2, '0')}:${padStart(String(wSec), 2, '0')}`;
-                        if (bEl) bEl.textContent = `${padStart(String(bMin), 2, '0')}:${padStart(String(bSec), 2, '0')}`;
+                        if (wEl) wEl.textContent = `${String(wMin)}:${padStart(String(wSec), 4, '0')}`;
+                        if (bEl) bEl.textContent = `${String(bMin)}:${padStart(String(bSec), 4, '0')}`;
 
                     }, 100);
 
@@ -624,7 +630,7 @@
                     return data;
                 }).catch(error => {
                     loadingHide();
-                    showMessageView('Error', endpoint + ' call error: ' + (error.message || error));
+                    showMessageView('Error', endpoint + ' call error: ' + (error.message || "Unknown error"));
                     throw error;
                 });
         }
@@ -959,16 +965,28 @@
                 time_minutes = 0.0;
             }
 
+            let increment_setting = document.getElementById('increment-setting').textContent
+            const inc_match = /([\d.]+)\s*sec/i.exec(increment_setting || '');
+            let increment_seconds = 0.0;
+            if (inc_match) {
+                increment_seconds = parseFloat(inc_match[1]);
+            }
+
             let engine_name = document.getElementById('engine-name').textContent;
-            if (engine_name === 'No engine') {
+            if (engine_name === '') {
                 engine_name = null;
+            }
+
+            let engine_color = document.getElementById('engine-color').textContent;
+            if (engine_color.toLowerCase() === 'no engine' || engine_color === '') {
+                engine_color = null;
             }
 
             post_data = {
                 engine_name: engine_name,
-                engine_color: document.getElementById('engine-color').textContent,
+                engine_color: engine_color,
                 start_time_seconds: time_minutes * 60.0,  // Convert minutes to seconds
-                increment_seconds: 0.0,
+                increment_seconds: increment_seconds,
             };
 
             apiCall('/api/game/new', post_data, function (data) {
@@ -1076,6 +1094,17 @@
                             } else {
                                 document.getElementById('time-setting').textContent = 'No limit';
                                 setCookie('time-setting', 'No limit');
+                            }
+                        }, true);
+                        break;
+                    case 'set-increment':
+                        keyboardShow('Enter Increment Seconds', '', function (inputText) {
+                            if (inputText && !isNaN(inputText) && Number(inputText) >= 0) {
+                                document.getElementById('increment-setting').textContent = inputText + ' sec';
+                                setCookie('increment-setting', inputText + ' sec');
+                            } else {
+                                document.getElementById('increment-setting').textContent = '0 sec';
+                                setCookie('increment-setting', '0 sec');
                             }
                         }, true);
                         break;

@@ -2,7 +2,7 @@ import chess
 from flask import Blueprint, jsonify, request
 from chessboard.game.engine import Engine
 from chessboard.game.game_state import game_state
-
+from chessboard.logger import log
 
 api = Blueprint('api', __name__, template_folder='templates')
 
@@ -21,22 +21,29 @@ def start_new_game():
     """API endpoint to start a new game against a computer opponent"""
     data = request.get_json()
     engine_name = data.get('engine_name', None)
-    engine_color = data.get('engine_color', 'black').lower()
+    engine_color = data.get('engine_color', None)
     start_time_seconds = data.get('start_time_seconds', float('inf'))
     increment_seconds = data.get('increment_seconds', 0.0)
 
-    if engine_name is not None and engine_name not in Engine.get_available_weights():
-        return jsonify({'success': False, 'error': 'Selected opponent not available'}), 400
-
-    if engine_color not in ('white', 'black'):
+    if not engine_color:
+        engine_name = None
+        engine_color = None
+    elif engine_color.lower() in ('white', 'black'):
+        engine_color = chess.WHITE if engine_color.lower() == 'white' else chess.BLACK
+    else:
+        log.warning(f"Invalid engine color specified: {engine_color}")
         return jsonify({'success': False, 'error': 'Invalid engine color specified'}), 400
 
-    engine_color = chess.WHITE if engine_color == 'white' else chess.BLACK
+    if engine_name and engine_name not in Engine.get_available_weights():
+        log.warning(f"Attempted to start game with unavailable opponent: '{engine_name}'")
+        return jsonify({'success': False, 'error': 'Selected opponent not available'}), 400
 
     if type(start_time_seconds) not in (float, int) or start_time_seconds < 0:
+        log.warning(f"Invalid start time specified: {start_time_seconds}")
         return jsonify({'success': False, 'error': f'Invalid start time specified'}), 400
 
     if type(increment_seconds) not in (float, int) or increment_seconds < 0:
+        log.warning(f"Invalid increment specified: {increment_seconds}")
         return jsonify({'success': False, 'error': 'Invalid increment specified'}), 400
 
     if start_time_seconds == 0.0:

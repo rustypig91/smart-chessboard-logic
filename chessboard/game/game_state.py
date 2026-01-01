@@ -222,22 +222,23 @@ class GameState:
         log.info(
             f"New game started\n"
             f"  Time control: {start_time_seconds}+{increment_seconds} seconds\n"
-            f"  Engine: {engine_weight if engine_weight is not None else 'None'} as {'black' if engine_color == chess.BLACK else 'white'}"
+            f"  White player: {self.players[chess.WHITE]}\n"
+            f"  Black player: {self.players[chess.BLACK]}"
         )
 
-        new_game_event = events.NewGameEvent(
+        # new_game_event =
+        events.event_manager.publish(events.NewGameEvent(
             white_player=self.players[chess.WHITE],
             black_player=self.players[chess.BLACK],
             start_time_seconds=(
-                self.chess_clock.get_initial_time(chess.WHITE),
-                self.chess_clock.get_initial_time(chess.BLACK)
+                self.chess_clock.white_start_time,
+                self.chess_clock.black_start_time
             ),
             increment_seconds=(
-                self.chess_clock.get_increment(chess.WHITE),
-                self.chess_clock.get_increment(chess.BLACK)
+                self.chess_clock.white_increment_time,
+                self.chess_clock.black_increment_time
             )
-        )
-        events.event_manager.publish(new_game_event)
+        ))
 
         self.publish_game_state()
 

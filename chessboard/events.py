@@ -35,6 +35,17 @@ class Event:
             return None
         return 'white' if color == chess.WHITE else 'black'
 
+    @staticmethod
+    def _convert_to_json_value(value: object) -> object:
+        if isinstance(value, float) and value == float('inf'):
+            return 'inf'
+        elif isinstance(value, chess.Board):
+            return value.fen()
+        elif isinstance(value, ModuleType):
+            return value.__name__
+        else:
+            return value
+
     def to_json(self) -> dict:
         json_items = {}
 
@@ -42,14 +53,11 @@ class Event:
             if key.startswith('_'):
                 # Skip private attributes
                 continue
-            elif isinstance(value, float) and value == float('inf'):
-                json_items[key] = 'inf'
-            elif isinstance(value, chess.Board):
-                json_items[key] = value.fen()
-            elif isinstance(value, ModuleType):
-                json_items[key] = value.__name__
+
+            if isinstance(value, list) or isinstance(value, tuple):
+                json_items[key] = [self._convert_to_json_value(v) for v in value]
             else:
-                json_items[key] = value
+                json_items[key] = self._convert_to_json_value(value)
 
         return json_items
 
@@ -136,25 +144,21 @@ class PlayerNotifyEvent(Event):
 class GameStartedEvent(Event):
     def __init__(self):
         super().__init__()
-        pass
 
 
 class GamePausedEvent(Event):
     def __init__(self):
         super().__init__()
-        pass
 
 
 class GameResumedEvent(Event):
     def __init__(self):
         super().__init__()
-        pass
 
 
 class SystemShutdownEvent(Event):
     def __init__(self):
         super().__init__()
-        pass
 
 
 class NewGameEvent(Event):
@@ -290,21 +294,22 @@ class _EventManager:
         """
 
         event.sender = inspect.getmodule(inspect.stack()[1].frame)
-        sync_event = None
+
         if block:
             # Prevent deadlock: ensure blocking publish is not invoked from the event handling thread
             if threading.current_thread() is self._thread:
                 raise RuntimeError("publish(block=True) cannot be called from the event handling thread")
-            sync_event = threading.Event()
-            event._sync_event = sync_event
+            event._sync_event = threading.Event()
 
         if event is None:
             raise ValueError("Cannot publish None event")
 
-        self._event_queue.put(event)
+        self._event_queue.put_nowait(event)
 
-        if block and sync_event:
-            sync_event.wait(timeout=timeout)
+        if block and event._sync_event is not None:
+            success = event._sync_event.wait(timeout=timeout)
+            if not success:
+                raise TimeoutError("Timeout waiting for event to be handled")
 
     def _handle_event(self, event: Event):
         for callback in self._subscribers.get(type(event), ()):

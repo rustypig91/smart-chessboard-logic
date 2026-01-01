@@ -28,8 +28,6 @@ class BoardState:
     def __init__(self) -> None:
         events.event_manager.subscribe(events.SquarePieceStateChangeEvent, self._handle_piece_state_change)
         events.event_manager.subscribe(events.TimeButtonPressedEvent, self._handle_time_button_pressed)
-        # events.event_manager.subscribe(events.NewGameEvent, lambda _: self._scan_board())
-        # events.event_manager.subscribe(events.ChessMoveEvent, lambda _: self._scan_board())
         events.event_manager.subscribe(events.GameStateChangedEvent, lambda _: self._scan_board())
 
         # Current realtime state of pieces on board

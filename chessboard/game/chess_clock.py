@@ -219,6 +219,14 @@ class ChessClock:
     def black_start_time(self) -> float:
         return self._initial_time_seconds[chess.BLACK]
 
+    @property
+    def white_increment_time(self) -> float:
+        return self._increment_seconds[chess.WHITE]
+
+    @property
+    def black_increment_time(self) -> float:
+        return self._increment_seconds[chess.BLACK]
+
 
 if __name__ == "__main__":
     clock = ChessClock(initial_time_seconds=300, increment_seconds=2)

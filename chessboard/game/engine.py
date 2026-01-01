@@ -20,11 +20,10 @@ class Engine:
         if not os.path.isfile(self._weight_path):
             raise FileNotFoundError(f"Engine weights file not found: {self._weight_path}")
 
-        # Thread to initialize the engine process; signal readiness via event
-        self.engine = chess.engine.SimpleEngine.popen_uci([settings['engine.path'], f"--weights={self._weight_path}"])
-
         self.color = color
         self.name = weight
+
+        self.engine = chess.engine.SimpleEngine.popen_uci([settings['engine.path'], f"--weights={self._weight_path}"])
 
     @staticmethod
     def install_weight(weight_file: str) -> None:
@@ -138,5 +137,5 @@ class Engine:
     def __setstate__(self, state: object) -> None:
         self.__dict__.update(state)  # type: ignore
         # Re-initialize the engine process after deserialization
-        weight_path = os.path.join(settings['engine.weights_path'], self.name)
-        self.engine = chess.engine.SimpleEngine.popen_uci([settings['engine.path'], f"--weights={weight_path}"])
+        # weight_path = os.path.join(settings['engine.weights_path'], self.name)
+        self.engine = chess.engine.SimpleEngine.popen_uci([settings['engine.path'], f"--weights={self._weight_path}"])

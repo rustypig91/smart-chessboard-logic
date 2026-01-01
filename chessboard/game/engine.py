@@ -14,6 +14,7 @@ from chessboard.game.analysis import analysis
 
 settings.register("engine.path", "lc0", "Path to the chess engine executable")
 settings.register("engine.time_limit", 10.0, "Time limit for engine analysis in seconds")
+settings.register("engine.hash_mb", 32, "Hash table size in MB for the playing engine (UCI 'Hash')")
 
 
 class Engine:
@@ -26,6 +27,13 @@ class Engine:
         self.name = weight
 
         self.engine = chess.engine.SimpleEngine.popen_uci([settings['engine.path'], f"--weights={self._weight_path}"])
+        # Configure UCI options (reduce hash table size if supported)
+        try:
+            self.engine.configure({"RamLimitMb": int(settings['engine.hash_mb']),
+                                   "Threads": 1})
+
+        except Exception as e:
+            log.error(f"Skipping Hash config for playing engine: {e}")
 
         log.info(f"Engine '{self.name}' initialized with weight file: {self._weight_path}")
 
@@ -150,3 +158,8 @@ class Engine:
         # Re-initialize the engine process after deserialization
         # weight_path = os.path.join(settings['engine.weights_path'], self.name)
         self.engine = chess.engine.SimpleEngine.popen_uci([settings['engine.path'], f"--weights={self._weight_path}"])
+        try:
+            self.engine.configure({"RamLimitMb": int(settings['engine.hash_mb']),
+                                   "Threads": 1})
+        except Exception as e:
+            log.debug(f"Skipping Hash config for playing engine (reinit): {e}")

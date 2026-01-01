@@ -14,6 +14,7 @@ settings.register("analysis.enabled", True, "Enable or disable game analysis")
 settings.register("analysis.time_limit", 5.0, "Time limit for analysis in seconds")
 settings.register("analysis.depth_limit", 5, "Depth limit for analysis")
 settings.register("analysis.engine", "stockfish", "Path to the analysis engine executable")
+settings.register("analysis.hash_mb", 16, "Hash table size in MB for the analysis engine (UCI 'Hash')")
 
 
 class _StopAnalysis(Exception):
@@ -144,14 +145,23 @@ class _Analysis:
                 continue  # Skip analysis
 
             self._engine = chess.engine.SimpleEngine.popen_uci([settings['analysis.engine']])
+            self._engine.configure({"Threads": 1,
+                                    "Hash": int(settings['analysis.hash_mb'])})
+            # Configure UCI options (reduce hash table size)
+            try:
+                self._engine.configure({"Hash": int(settings['analysis.hash_mb'])})
+            except Exception as e:
+                log.debug(f"Skipping Hash config for analysis engine: {e}")
 
             try:
                 self._start_analysis(board)
             except Exception as e:
                 log.error(f"Analysis failed: {e}", exc_info=True)
 
-            self._engine.quit()
-            self._engine.close()
+            self._engine.transport.terminate()
+            # self._engine.quit()
+            # self._engine.close()
+
             del self._engine
             self._engine = None
 

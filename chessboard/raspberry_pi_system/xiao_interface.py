@@ -18,6 +18,7 @@ import subprocess
 from chessboard.thread_safe_variable import ThreadSafeVariable
 
 settings.register('hal_sensor.offset', 0.10, description="Voltage offset in volts")
+settings.register('hal_sensor.hysteresis', 0.01, description="Voltage hysteresis in volts")
 
 
 class _XiaoInterface:
@@ -45,7 +46,6 @@ class _XiaoInterface:
         self._monitoring: bool = False
         self._monitor_thread: Optional[Thread] = None
         self._board_piece_colors: list[chess.Color | None | str] = [None] * 64
-        self._board_piece_consecutive_counts: list[int] = [0] * 64
 
         self._version = ThreadSafeVariable("unknown")
 
@@ -272,54 +272,45 @@ class _XiaoInterface:
         log.info("HAL sensor monitoring stoped")
 
     def _monitor_thread_func(self) -> None:
-        self.port.write(b'board monitor offset\n')
+        offset = int(settings['hal_sensor.offset'] * 1e3)
+        hysteresis = int(settings['hal_sensor.hysteresis'] * 1e3)
+        self.port.write(f'board monitor threshold {offset} {hysteresis}\n'.encode('utf-8'))
 
         log.info("HAL sensor monitoring started")
 
-        # Regular expression to match a line with file and ranks
-        exp_file = r'^(?P<file>[A-H])\|(?P<ranks>( *-?\d+ *\|){7} *-?\d+ *)$'
+        exp = r'^(?P<sign>[\+\- ])(?P<file>[A-H])(?P<rank>[1-8])$'
 
-        first_scan_completed = False
+        # Monitor function will send initial piece states for all squares
+        # This variable tracks whether we need to send initial states for all squares
+        board_piece_state_received: Optional[list[bool]] = [False] * 64
 
         while self._monitoring:
-            line = self.port.readline().decode('utf-8').strip()
-            match = re.match(exp_file, line)
+            line = self.port.readline().decode('utf-8').rstrip()
+            match = re.match(exp, line)
             if match:
                 file_char = match.group('file')
                 file_index = ord(file_char) - ord('A')
-                ranks = match.group('ranks').split('|')
+                rank_index = int(match.group('rank')) - 1
+                sign = match.group('sign')
 
-                changed_squares = []
-                for rank_index, value_mv in enumerate(ranks):
-                    square = chess.square(file_index, rank_index)
-                    voltage = int(value_mv) * 1e-3
-                    # Require both current and previous voltage to exceed offset
-                    if voltage >= settings['hal_sensor.offset']:
-                        new_color = chess.BLACK
-                    elif voltage <= -settings['hal_sensor.offset']:
-                        new_color = chess.WHITE
-                    else:
-                        new_color = None
+                square = chess.square(file_index, rank_index)
 
-                    current_color = self._board_piece_colors[square]
-                    if new_color == current_color:
-                        self._board_piece_consecutive_counts[square] += 1
-                    else:
-                        self._board_piece_colors[square] = new_color
-                        self._board_piece_consecutive_counts[square] = 1
+                if sign == '+':
+                    self._board_piece_colors[square] = chess.BLACK
+                elif sign == '-':
+                    self._board_piece_colors[square] = chess.WHITE
+                else:
+                    self._board_piece_colors[square] = None
 
-                    if self._board_piece_consecutive_counts[square] == self.CONSECUTIVE_READINGS_REQUIRED:
-                        changed_squares.append(square)
-
-                if first_scan_completed:
-                    if len(changed_squares) > 0:
-                        log.warning(f"First scan completed: {first_scan_completed}, changed squares: {changed_squares}")
+                if board_piece_state_received is not None:
+                    board_piece_state_received[square] = True
+                    if all(board_piece_state_received):
                         events.event_manager.publish(events.SquarePieceStateChangeEvent(
-                            changed_squares, self._board_piece_colors))
-                elif not first_scan_completed and all(count >= self.CONSECUTIVE_READINGS_REQUIRED for count in self._board_piece_consecutive_counts):
-                    first_scan_completed = True
+                            chess.SQUARES, self._board_piece_colors))
+                        board_piece_state_received = None
+                else:
                     events.event_manager.publish(events.SquarePieceStateChangeEvent(
-                        chess.SQUARES, self._board_piece_colors))
+                        [square], self._board_piece_colors))
 
         self.port.write(b'q')
         self._wait_for_prompt()

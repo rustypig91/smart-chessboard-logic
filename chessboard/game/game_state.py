@@ -214,6 +214,8 @@ class GameState:
             timeout_callback=self._clock_timeout_callback)
 
         if engine_weight is not None and engine_color is not None:
+            if self.engine is not None:
+                del self.engine
             self.engine = Engine(weight=engine_weight, color=engine_color)
         else:
             self.engine = None

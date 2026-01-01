@@ -29,7 +29,7 @@ app.register_blueprint(api_engine, url_prefix='/api/engine', name='engine')
 
 # eventlet.monkey_patch()  # noqa
 
-socketio = SocketIO(app, async_mode='gevent')
+socketio = SocketIO(app, async_mode='threading')
 
 
 def has_no_empty_params(rule):

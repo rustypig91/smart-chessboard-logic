@@ -22,7 +22,7 @@ class _StopAnalysis(Exception):
 
 class _Analysis:
     def __init__(self) -> None:
-        self.engine = None  # chess.engine.SimpleEngine.popen_uci([settings['analysis.engine']])
+        self._engine = None  # chess.engine.SimpleEngine.popen_uci([settings['analysis.engine']])
         log.info(f"Analysis engine ({settings['analysis.engine']}) initialized")
 
         # Persistent worker: continues analysis and restarts on new board
@@ -40,8 +40,8 @@ class _Analysis:
                 self._worker_thread.join(timeout=1.0)
         except Exception:
             pass
-        if self.engine is not None:
-            self.engine.quit()
+        if self._engine is not None:
+            self._engine.quit()
 
     def _cp_to_probs(self, cp: float, scale: float = 400.0) -> tuple[float, float]:
         # Logistic mapping from centipawns to win probability
@@ -75,7 +75,7 @@ class _Analysis:
             self._worker_thread.start()
 
     def _start_analysis(self, board: chess.Board) -> None:
-        if self.engine is None:
+        if self._engine is None:
             cp = self._estimate_material_cp(board)
             p_w, p_b = self._cp_to_probs(float(cp))
             events.event_manager.publish(events.GameWinProbabilityEvent(white_win_prob=p_w, black_win_prob=p_b))
@@ -91,7 +91,7 @@ class _Analysis:
 
         analysis_interrupted = False
 
-        with self.engine.analysis(board, limit, info=chess.engine.INFO_SCORE) as analysis:
+        with self._engine.analysis(board, limit, info=chess.engine.INFO_SCORE) as analysis:
             for info in analysis:
                 # Cancel if a newer request arrived
                 if not self._analysis_queue.empty():
@@ -104,7 +104,6 @@ class _Analysis:
                 try:
                     score = info.get('score')
                     if score is None:
-                        time.sleep(0.1)
                         continue
                     s_white = score.white()
                     if s_white.is_mate():
@@ -144,20 +143,32 @@ class _Analysis:
             elif isinstance(board, _StopAnalysis):
                 continue  # Skip analysis
 
-            self.engine = chess.engine.SimpleEngine.popen_uci([settings['analysis.engine']])
+            self._engine = chess.engine.SimpleEngine.popen_uci([settings['analysis.engine']])
 
             try:
                 self._start_analysis(board)
             except Exception as e:
                 log.error(f"Analysis failed: {e}", exc_info=True)
 
-            self.engine.quit()
+            self._engine.quit()
+            self._engine.close()
+            del self._engine
+            self._engine = None
 
-        if self.engine is not None:
-            self.engine.quit()
-            self.engine = None
+        if self._engine is not None:
+            self._engine.close()
+            self._engine = None
 
         log.info("Analysis worker thread exiting")
 
+    def is_analysis_running(self) -> bool:
+        if self._engine is None:
+            return False
 
-_analysis = _Analysis()
+        return self._engine.protocol.loop.is_running()
+
+    def stop_analysis(self) -> None:
+        self._analysis_queue.put(_StopAnalysis())
+
+
+analysis = _Analysis()

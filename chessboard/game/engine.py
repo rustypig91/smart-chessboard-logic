@@ -1,4 +1,5 @@
 import os
+import time
 import chess
 import chess.engine
 from chessboard.logger import log
@@ -9,6 +10,7 @@ from random import choice
 import chessboard.persistent_storage as persistent_storage
 import shutil
 import requests
+from chessboard.game.analysis import analysis
 
 settings.register("engine.path", "lc0", "Path to the chess engine executable")
 settings.register("engine.time_limit", 10.0, "Time limit for engine analysis in seconds")
@@ -25,9 +27,13 @@ class Engine:
 
         self.engine = chess.engine.SimpleEngine.popen_uci([settings['engine.path'], f"--weights={self._weight_path}"])
 
+        log.info(f"Engine '{self.name}' initialized with weight file: {self._weight_path}")
+
     def __del__(self):
         if self.engine is not None:
             self.engine.quit()
+            self.engine.close()
+            log.info(f"Engine '{self.name}' shut down")
 
     @staticmethod
     def install_weight(weight_file: str) -> None:
@@ -114,8 +120,14 @@ class Engine:
         def _run():
             depth = choice([2, 3, 4])  # Randomize depth for variability
             try:
+                analysis.stop_analysis()
+                while analysis.is_analysis_running():
+                    log.debug("Waiting for analysis to complete before engine move")
+                    time.sleep(0.5)
+
                 log.debug("(async) Getting best move")
                 result = self.engine.play(board, chess.engine.Limit(time=settings['engine.time_limit'], depth=depth))
+
                 log.info(f"(async) Engine selected move: {result}")
 
                 callback(result)

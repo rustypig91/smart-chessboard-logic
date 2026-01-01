@@ -1,5 +1,5 @@
-from gevent import monkey
-monkey.patch_all()  # noqa
+# from gevent import monkey
+# monkey.patch_all()  # noqa
 
 import argparse
 import logging

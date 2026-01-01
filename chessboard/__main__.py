@@ -36,6 +36,7 @@ def main():
     import chessboard.events as events
     import chessboard.api.api as api
     import chessboard.animations
+    import chessboard.game.analysis
 
     if args.new_game:
         game_state.new_game(engine_weight=args.engine_weight, engine_color=args.engine_color)

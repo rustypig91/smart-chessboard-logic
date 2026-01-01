@@ -254,6 +254,18 @@ class LegalMoveDetectedEvent(Event):
         }
 
 
+class GameWinProbabilityEvent(Event):
+    """Probability of winning for each side, emitted after each move."""
+
+    def __init__(self, white_win_prob: float, black_win_prob: float):
+        super().__init__()
+        self.white_win_prob = float(white_win_prob)
+        self.black_win_prob = float(black_win_prob)
+
+    def __repr__(self):
+        return f"GameWinProbabilityEvent(white={self.white_win_prob:.3f}, black={self.black_win_prob:.3f})"
+
+
 class _EventManager:
     def __init__(self):
         self._subscribers: dict[type[Event],

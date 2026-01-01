@@ -25,6 +25,10 @@ class Engine:
 
         self.engine = chess.engine.SimpleEngine.popen_uci([settings['engine.path'], f"--weights={self._weight_path}"])
 
+    def __del__(self):
+        if self.engine is not None:
+            self.engine.quit()
+
     @staticmethod
     def install_weight(weight_file: str) -> None:
         """Install a new engine weight file from the given source path."""
@@ -87,10 +91,6 @@ class Engine:
     def get_weight_filename(weight: str) -> str:
         return os.path.join(Engine.weight_directory(), weight)
 
-    def analyze(self, board: chess.Board) -> None:
-        info = self.engine.analyse(board, chess.engine.Limit(time=settings['engine.time_limit']))
-        log.warning(f"Engine analysis info: {info}")
-
     def get_move(self, board: chess.Board) -> chess.Move:
         log.debug(f"Getting best move for board:\n{board.fen()}")
         # Ensure engine is initialized
@@ -119,7 +119,6 @@ class Engine:
                 log.info(f"(async) Engine selected move: {result}")
 
                 callback(result)
-                self.analyze(board)
 
             except Exception as e:
                 log.exception(f"Error during async engine play: {e}")

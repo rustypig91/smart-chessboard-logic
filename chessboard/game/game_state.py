@@ -1,4 +1,3 @@
-import os
 import chess
 import chess.engine
 

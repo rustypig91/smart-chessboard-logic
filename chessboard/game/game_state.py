@@ -324,6 +324,9 @@ class GameState:
             )
             return
 
+        if self.is_game_paused:
+            self.resume_game()
+
         self.chess_clock.set_player(self.board.turn)
         self.publish_game_state()
 

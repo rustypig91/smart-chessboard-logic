@@ -37,8 +37,8 @@ class Event:
 
     @staticmethod
     def _convert_to_json_value(value: object) -> object:
-        if isinstance(value, float) and value == float('inf'):
-            return 'inf'
+        if isinstance(value, float):
+            return value if value != float('inf') else "inf"
         elif isinstance(value, chess.Board):
             return value.fen()
         elif isinstance(value, ModuleType):

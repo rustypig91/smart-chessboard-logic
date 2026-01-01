@@ -269,6 +269,12 @@
             <div id="game-overview-view" class="view">
                 <div class="view-header">Game Overview</div>
                 <div style="padding:6px; display:flex; flex-direction:column; gap:8px; position:relative;">
+                    <!-- Win Probability Bar (left side) -->
+                    <div id="win-prob-bar" aria-label="Win probability" title="Win Probability"
+                        style="position:absolute; left:2px; top:0; bottom:0; width:8px; border-radius:4px; overflow:hidden; display:flex; flex-direction:column; background:#222;">
+                        <div id="prob-black" style="background:#444; height:50%;"></div>
+                        <div id="prob-white" style="background:#eaeaea; height:50%;"></div>
+                    </div>
                     <div id="pause-overlay"
                         style="display:none; position:absolute; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.45); z-index:10; align-items:center; justify-content:center;">
                         <div style="font-size:48px; color:#fff; line-height:1;">⏸</div>
@@ -346,6 +352,29 @@
                 }
 
                 addBoardEventListener('GameStateChangedEvent', handleGameStateEvent)
+
+                // Win Probability updates
+                function updateWinProbabilityBar(whiteProb, blackProb) {
+                    const w = Math.max(0, Math.min(1, Number(whiteProb || 0)));
+                    const b = Math.max(0, Math.min(1, Number(blackProb || (1 - w))));
+                    const sum = w + b;
+                    const wn = sum > 0 ? (w / sum) : 0.5;
+                    const bn = 1 - wn;
+
+                    const wEl = document.getElementById('prob-white');
+                    const bEl = document.getElementById('prob-black');
+                    if (wEl && bEl) {
+                        wEl.style.height = Math.round(wn * 100) + '%';
+                        bEl.style.height = Math.round(bn * 100) + '%';
+                        // Optional: subtle color shift with probability
+                        wEl.style.background = '#eaeaea';
+                        bEl.style.background = '#444';
+                    }
+                }
+
+                addBoardEventListener('GameWinProbabilityEvent', function (data) {
+                    updateWinProbabilityBar(data.white_win_prob, data.black_win_prob);
+                });
 
                 document.addEventListener("DOMContentLoaded", () => {
                     setInterval(() => {

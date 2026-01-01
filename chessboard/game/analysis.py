@@ -1,6 +1,7 @@
 import chess
 import chess.engine
 import math
+import time
 from chessboard.logger import log
 import chessboard.events as events
 from chessboard.settings import settings
@@ -45,30 +46,58 @@ class _Analysis:
         Thread(target=self._start_analysis, args=(event.board.copy(),), daemon=True).start()
 
     def _start_analysis(self, board: chess.Board) -> None:
-        """ Handle ChessMoveEvent to compute and publish win probabilities. """
+        """Stream analysis and publish multiple GameWinProbabilityEvent updates during the run."""
         try:
-            # Prefer engine analysis if available
-            if self.engine is not None and self.engine is not None:
-                info = self.engine.analyse(
-                    board,
-                    chess.engine.Limit(time=settings['analysis.time_limit']),
-                    # info=chess.engine.INFO_SCORE
-                )
-                score = info.get('score')
-                if score is not None:
-                    s_white = score.white()
-                    if s_white.is_mate():
-                        # Large cp to approximate forced mate, sign gives who is winning
-                        cp = 100000 if (s_white.mate() or 0) > 0 else -100000
-                    else:
-                        cp = s_white.score(mate_score=100000)
-                else:
-                    cp = self._estimate_material_cp(board)
-            else:
+            if self.engine is None:
+                # Fallback: single estimate from material only
                 cp = self._estimate_material_cp(board)
+                p_w, p_b = self._cp_to_probs(float(cp))
+                events.event_manager.publish(events.GameWinProbabilityEvent(white_win_prob=p_w, black_win_prob=p_b))
+                return
 
-            p_w, p_b = self._cp_to_probs(float(cp))
-            events.event_manager.publish(events.GameWinProbabilityEvent(white_win_prob=p_w, black_win_prob=p_b))
+            emit_interval = 0.25  # seconds between emits to avoid spamming
+            last_emit_t = 0.0
+            last_probs = None
+
+            # Stream engine analysis info updates
+            with self.engine.analysis(
+                board,
+                chess.engine.Limit(time=settings['analysis.time_limit']),
+                info=chess.engine.INFO_SCORE,
+            ) as analysis:
+                for info in analysis:
+                    try:
+                        score = info.get('score')
+                        if score is None:
+                            continue
+                        s_white = score.white()
+                        if s_white.is_mate():
+                            cp = 100000 if (s_white.mate() or 0) > 0 else -100000
+                        else:
+                            cp = s_white.score(mate_score=100000)
+
+                        p_w, p_b = self._cp_to_probs(float(cp))
+                        now = time.time()
+                        if (now - last_emit_t) >= emit_interval or last_probs is None or abs(p_w - last_probs[0]) >= 0.001:
+                            events.event_manager.publish(
+                                events.GameWinProbabilityEvent(white_win_prob=p_w, black_win_prob=p_b)
+                            )
+                            last_emit_t = now
+                            last_probs = (p_w, p_b)
+                    except Exception as inner_e:
+                        # Keep streaming despite individual update errors
+                        log.debug(f"Analysis stream update error: {inner_e}")
+
+            # Ensure a final emit with the last known probabilities
+            if last_probs is not None:
+                events.event_manager.publish(
+                    events.GameWinProbabilityEvent(white_win_prob=last_probs[0], black_win_prob=last_probs[1])
+                )
+            else:
+                # If nothing streamed, emit a material fallback once
+                cp = self._estimate_material_cp(board)
+                p_w, p_b = self._cp_to_probs(float(cp))
+                events.event_manager.publish(events.GameWinProbabilityEvent(white_win_prob=p_w, black_win_prob=p_b))
         except Exception as e:
             log.warning(f"Failed to compute win probability: {e}", exc_info=True)
 

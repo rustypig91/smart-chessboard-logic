@@ -19,18 +19,24 @@ class _Analysis:
         self.engine = chess.engine.SimpleEngine.popen_uci([settings['analysis.engine']])
         log.info(f"Analysis engine ({settings['analysis.engine']}) initialized")
 
-        self._analysis_thread: Thread | None = None
-        self._stop_event: Event | None = None
+        # Persistent worker: continues analysis and restarts on new board
+        self._worker_thread: Thread | None = None
+        self._shutdown_event: Event = Event()
+        self._request_event: Event = Event()
+        self._current_request_id: int = 0
+        self._current_board: chess.Board | None = None
+
+        self._analysis_queue = queue.Queue()
 
         events.event_manager.subscribe(
             events.GameStateChangedEvent, self._handle_chess_move_event)
 
     def __del__(self):
         try:
-            if self._analysis_thread and self._analysis_thread.is_alive():
-                if self._stop_event:
-                    self._stop_event.set()
-                self._analysis_thread.join(timeout=1.0)
+            if self._worker_thread and self._worker_thread.is_alive():
+                self._shutdown_event.set()
+                self._request_event.set()
+                self._worker_thread.join(timeout=1.0)
         except Exception:
             pass
         if self.engine is not None:
@@ -53,20 +59,17 @@ class _Analysis:
     def _handle_chess_move_event(self, event: events.GameStateChangedEvent):
         if not settings['analysis.enabled']:
             return
-        try:
-            if self._analysis_thread and self._analysis_thread.is_alive():
-                if self._stop_event:
-                    self._stop_event.set()
-                self._analysis_thread.join(timeout=0.5)
-        except Exception:
-            pass
+        # Set latest board request and wake worker
+        self._current_board = event.board.copy()
+        self._current_request_id += 1
+        self._request_event.set()
 
-        self._stop_event = Event()
-        self._analysis_thread = Thread(target=self._start_analysis, args=(
-            event.board.copy(), self._stop_event), daemon=True)
-        self._analysis_thread.start()
+        # Start worker lazily
+        if not self._worker_thread or not self._worker_thread.is_alive():
+            self._worker_thread = Thread(target=self._worker_loop, daemon=True)
+            self._worker_thread.start()
 
-    def _start_analysis(self, board: chess.Board, stop_event: Event) -> None:
+    def _start_analysis(self, board: chess.Board, request_id: int) -> None:
         try:
             if self.engine is None:
                 cp = self._estimate_material_cp(board)
@@ -79,47 +82,40 @@ class _Analysis:
             last_probs = None
 
             total_limit = float(settings['analysis.time_limit']) or 0.0
-            chunk = 0.4 if total_limit > 0.4 else total_limit
-            elapsed = 0.0
+            limit = chess.engine.Limit(time=total_limit) if total_limit > 0.0 else chess.engine.Limit()
 
-            while not stop_event.is_set() and (total_limit == 0.0 or elapsed < total_limit):
-                slice_time = chunk if total_limit == 0.0 else max(0.05, min(chunk, total_limit - elapsed))
-                info = None
-                try:
-                    info = self.engine.analyse(
-                        board,
-                        chess.engine.Limit(time=slice_time),
-                        info=chess.engine.INFO_SCORE,
-                    )
-                except Exception as inner_e:
-                    log.debug(f"Analysis slice error: {inner_e}")
+            with self.engine.analysis(board, limit, info=chess.engine.INFO_SCORE) as analysis:
+                for info in analysis:
+                    # Cancel if a newer request arrived
+                    if request_id != self._current_request_id:
+                        try:
+                            analysis.stop()
+                        except Exception:
+                            pass
+                        break
+                    try:
+                        score = info.get('score')
+                        log.warning(f"Analysis info: {info}")
+                        if score is None:
+                            continue
+                        s_white = score.white()
+                        if s_white.is_mate():
+                            cp = 100000 if (s_white.mate() or 0) > 0 else -100000
+                        else:
+                            cp = s_white.score(mate_score=100000)
 
-                elapsed += slice_time
-                if stop_event.is_set():
-                    break
+                        p_w, p_b = self._cp_to_probs(float(cp))
+                        now = time.time()
+                        if (now - last_emit_t) >= emit_interval or last_probs is None or abs(p_w - last_probs[0]) >= 0.001:
+                            events.event_manager.publish(
+                                events.GameWinProbabilityEvent(white_win_prob=p_w, black_win_prob=p_b)
+                            )
+                            last_emit_t = now
+                            last_probs = (p_w, p_b)
+                    except Exception as inner_e:
+                        log.debug(f"Analysis stream update error: {inner_e}")
 
-                try:
-                    score = info.get('score') if info else None
-                    if score is None:
-                        continue
-                    s_white = score.white()
-                    if s_white.is_mate():
-                        cp = 100000 if (s_white.mate() or 0) > 0 else -100000
-                    else:
-                        cp = s_white.score(mate_score=100000)
-
-                    p_w, p_b = self._cp_to_probs(float(cp))
-                    now = time.time()
-                    if (now - last_emit_t) >= emit_interval or last_probs is None or abs(p_w - last_probs[0]) >= 0.001:
-                        events.event_manager.publish(
-                            events.GameWinProbabilityEvent(white_win_prob=p_w, black_win_prob=p_b)
-                        )
-                        last_emit_t = now
-                        last_probs = (p_w, p_b)
-                except Exception as inner_e:
-                    log.debug(f"Analysis update error: {inner_e}")
-
-            if not stop_event.is_set():
+            if request_id == self._current_request_id:
                 if last_probs is not None:
                     events.event_manager.publish(
                         events.GameWinProbabilityEvent(white_win_prob=last_probs[0], black_win_prob=last_probs[1])
@@ -130,6 +126,22 @@ class _Analysis:
                     events.event_manager.publish(events.GameWinProbabilityEvent(white_win_prob=p_w, black_win_prob=p_b))
         except Exception as e:
             log.warning(f"Failed to compute win probability: {e}", exc_info=True)
+
+    def _worker_loop(self) -> None:
+        while not self._shutdown_event.is_set():
+            self._request_event.wait(timeout=0.1)
+            if self._shutdown_event.is_set():
+                break
+            if not self._request_event.is_set():
+                continue
+            # Clear event to coalesce multiple quick updates
+            self._request_event.clear()
+            board = self._current_board.copy() if self._current_board is not None else None
+            req_id = self._current_request_id
+            if board is None:
+                continue
+            # Run analysis for this request; cancels itself on newer requests
+            self._start_analysis(board, req_id)
 
 
 _analysis = _Analysis()

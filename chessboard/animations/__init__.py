@@ -50,6 +50,8 @@ def _handle_game_state_change(event: events.GameStateChangedEvent) -> None:
         _checkers_animation.squares = list(checkers) + [king_square]
         if not _checkers_animation.is_running:
             _checkers_animation.start()
+    else:
+        _checkers_animation.stop()
 
     if event.winner is not None:
         # Victory rainbow animation

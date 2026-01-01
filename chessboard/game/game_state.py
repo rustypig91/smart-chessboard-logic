@@ -44,7 +44,7 @@ class GameState:
             self.chess_clock.pause()
             log.info("Game paused")
             events.event_manager.publish(events.GamePausedEvent())
-            self._game_state_changed()
+            self.publish_game_state()
 
     def resume_game(self):
         """ Continue a paused game """
@@ -56,7 +56,7 @@ class GameState:
             self.chess_clock.start()
             log.info("Game continued")
             events.event_manager.publish(events.GameResumedEvent())
-            self._game_state_changed()
+            self.publish_game_state()
 
             if self.engine is not None and self.engine.color == self.board.turn:
                 self.engine.get_move_async(self.board, self._handle_engine_move)
@@ -66,7 +66,7 @@ class GameState:
         self.chess_clock.start()
         events.event_manager.publish(events.GameStartedEvent())
         log.info("Game started")
-        self._game_state_changed()
+        self.publish_game_state()
 
         if self.engine is not None and self.engine.color == self.board.turn:
             self.engine.get_move_async(self.board, self._handle_engine_move)
@@ -95,7 +95,7 @@ class GameState:
 
         self.chess_clock.set_player(self.board.turn)
 
-        self._game_state_changed()
+        self.publish_game_state()
 
     @property
     def players(self) -> dict[chess.Color, str]:
@@ -134,8 +134,18 @@ class GameState:
 
     def save(self) -> None:
         savefile = persistent_storage.get_filename(GameState.SAVE_FILE)
+        new_bytes = pickle.dumps(self)
+
+        try:
+            with open(savefile, "rb") as f:
+                old_bytes = f.read()
+            if old_bytes == new_bytes:
+                return  # No changes, skip writing and logging
+        except FileNotFoundError:
+            pass
+
         with open(savefile, "wb") as f:
-            pickle.dump(self, f)
+            f.write(new_bytes)
 
         log.info(
             f"Saved game state to {savefile}:\n"
@@ -172,7 +182,7 @@ class GameState:
             )
 
             loaded_game._event_listeners_setup = False
-            loaded_game._game_state_changed()
+            loaded_game.publish_game_state()
 
             return loaded_game
         except Exception as e:
@@ -229,7 +239,7 @@ class GameState:
         )
         events.event_manager.publish(new_game_event)
 
-        self._game_state_changed()
+        self.publish_game_state()
 
     def reset(self) -> None:
         self._resigned = {
@@ -240,7 +250,7 @@ class GameState:
         self.board.reset()
         self.chess_clock.reset()
 
-    def _game_state_changed(self):
+    def publish_game_state(self):
         events.event_manager.publish(
             events.GameStateChangedEvent(
                 board=self.board,
@@ -314,7 +324,7 @@ class GameState:
             return
 
         self.chess_clock.set_player(self.board.turn)
-        self._game_state_changed()
+        self.publish_game_state()
 
         if self.engine is not None and self.engine.color == self.board.turn:
             self.engine.get_move_async(self.board, self._handle_engine_move)
@@ -328,7 +338,7 @@ class GameState:
             message=f"Game over! {winner} by {event.reason.lower()}."
         ))
 
-        self._game_state_changed()
+        self.publish_game_state()
 
     def __getstate__(self):
         return (

@@ -142,14 +142,15 @@ class ChessClock:
         self.clocks[self.current_player].run()
 
     def _send_update_event(self):
-        events.event_manager.publish(
-            events.ChessClockStateChangedEvent(
-                paused=self.paused,
-                current_player=self.current_player,
-                white_time_left=self.white_time_left,
-                black_time_left=self.black_time_left
-            )
-        )
+        # events.event_manager.publish(
+        #     events.ChessClockStateChangedEvent(
+        #         paused=self.paused,
+        #         current_player=self.current_player,
+        #         white_time_left=self.white_time_left,
+        #         black_time_left=self.black_time_left
+        #     )
+        # )
+        pass
 
     def pause(self):
         self.clocks[self.current_player].pause()

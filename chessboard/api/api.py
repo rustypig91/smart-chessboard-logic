@@ -13,6 +13,7 @@ from chessboard.api.game import api as api_game
 from chessboard.api.system.xiao import api as api_system_xiao
 from chessboard.api.engine import api as api_engine
 from chessboard import is_raspberrypi
+from chessboard.game.game_state import game_state
 
 from chessboard.logger import log
 import traceback
@@ -109,30 +110,10 @@ def handle_publish_event(data: dict[str, Any]) -> None:
         return
 
 
-@socketio.on('request_last_event')
-def handle_request_last_event(data: dict[str, Any]) -> None:
-    """
-    Handle client request for the last event of a specific type.
-    Expects 'event_type' in data.
-    """
-    event_type = data.get('event_type')
-    if not event_type:
-        log.error("request_last_event missing 'event_type'")
-        return
-
-    try:
-        event_class = getattr(chessboard.events, event_type)
-        last_event = chessboard.events.event_manager.get_last_event(event_class)
-        if last_event:
-            log.debug(f"request_last_event: {event_type}; {last_event.to_json()}")
-            socketio.emit(f'board_event.{event_type}', last_event.to_json(), to=request.sid)  # type: ignore
-
-        else:
-            log.debug(f"request_last_event: {event_type}; no last event found")
-    except Exception as e:
-        traceback_lines = "\n    ".join(traceback.format_exc().splitlines())
-        log.error(f"Error handling request_last_event: {e}: \n    {traceback_lines}")
-        return
+@socketio.on('publish_game_state')
+def handle_publish_game_state() -> None:
+    """Handle request to get the current game state"""
+    game_state.publish_game_state()
 
 
 chessboard.events.event_manager.subscribe_all_events(lambda event: emit_event(event))

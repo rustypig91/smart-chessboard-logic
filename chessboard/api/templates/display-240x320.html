@@ -388,7 +388,7 @@
 
                     }, 100);
 
-                    socket.emit("request_last_event", { event_type: "GameStateChangedEvent" })
+                    socket.emit("publish_game_state")
                 });
 
             </script>

@@ -1,4 +1,3 @@
-import asyncio
 from collections.abc import Callable
 from types import ModuleType
 import chess
@@ -7,6 +6,7 @@ import threading
 import traceback
 import atexit
 import inspect
+import queue
 
 
 class Event:
@@ -257,12 +257,7 @@ class _EventManager:
         for event_type in Event.__subclasses__():
             self._subscribers[event_type] = []
 
-        self._event_queue = asyncio.Queue()
-
-        self._event_loop = asyncio.new_event_loop()
-        self._event_task = self._event_loop.create_task(self._main())
-
-        self._latest_events: dict[type[Event], Event] = {}
+        self._event_queue = queue.Queue()
 
         self._thread = threading.Thread(target=self.main, daemon=True)
         self._thread.start()
@@ -293,27 +288,26 @@ class _EventManager:
         block: If True, waits until the event has been handled by all subscribers.
         timeout: Maximum time to wait if blocking is enabled.
         """
-        if not self._event_loop.is_running():
-            log.warning(f"Event loop is not running. Cannot publish event: {type(event).__name__}")
-            return
 
         event.sender = inspect.getmodule(inspect.stack()[1].frame)
-
         sync_event = None
         if block:
+            # Prevent deadlock: ensure blocking publish is not invoked from the event handling thread
+            if threading.current_thread() is self._thread:
+                raise RuntimeError("publish(block=True) cannot be called from the event handling thread")
             sync_event = threading.Event()
             event._sync_event = sync_event
 
-        asyncio.run_coroutine_threadsafe(
-            self._event_queue.put(event), self._event_loop)
+        if event is None:
+            raise ValueError("Cannot publish None event")
 
-        self._latest_events[type(event)] = event
+        self._event_queue.put(event)
 
         if block and sync_event:
             sync_event.wait(timeout=timeout)
 
     def _handle_event(self, event: Event):
-        for callback in self._subscribers.get(type(event), []):
+        for callback in self._subscribers.get(type(event), ()):
             try:
                 callback(event)
             except Exception as e:
@@ -323,13 +317,10 @@ class _EventManager:
         if event._sync_event is not None:
             event._sync_event.set()
 
-    async def _main(self):
+    def main(self):
         while True:
-            try:
-                event = await asyncio.wait_for(self._event_queue.get(), timeout=1.0)
-            except asyncio.TimeoutError:
-                continue
-            except asyncio.CancelledError:
+            event = self._event_queue.get()
+            if event is None:
                 break
 
             log.debug(f"{type(event).__name__}: {event.to_json()}")
@@ -337,21 +328,11 @@ class _EventManager:
             self._handle_event(event)
             self._event_queue.task_done()
 
-    def main(self):
-        asyncio.set_event_loop(self._event_loop)
-        self._event_loop.run_until_complete(self._event_task)
+        log.info("EventManager main loop exiting")
 
     def stop(self):
-        if self._event_loop.is_running():
-            self._event_task.cancel()
-            self._event_loop.call_soon_threadsafe(self._event_loop.stop)
-            if self._thread is not None and self._thread.is_alive():
-                self._thread.join(timeout=2)
-                self._thread = None
-            log.info("EventManager stopped")
-
-    def get_last_event(self, event_type: type[Event]) -> Event | None:
-        return self._latest_events.get(event_type, None)
+        self._event_queue.put(None)
+        self._thread.join(timeout=2.0)
 
 
 event_manager = _EventManager()

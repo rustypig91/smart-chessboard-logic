@@ -7,6 +7,7 @@ import chessboard.events as events
 from chessboard.settings import settings
 from threading import Thread, Event
 import queue
+import time
 
 
 settings.register("analysis.enabled", True, "Enable or disable game analysis")
@@ -15,15 +16,17 @@ settings.register("analysis.depth_limit", 5, "Depth limit for analysis")
 settings.register("analysis.engine", "stockfish", "Path to the analysis engine executable")
 
 
+class _StopAnalysis(Exception):
+    pass
+
+
 class _Analysis:
     def __init__(self) -> None:
-        self.engine = chess.engine.SimpleEngine.popen_uci([settings['analysis.engine']])
+        self.engine = None  # chess.engine.SimpleEngine.popen_uci([settings['analysis.engine']])
         log.info(f"Analysis engine ({settings['analysis.engine']}) initialized")
 
         # Persistent worker: continues analysis and restarts on new board
         self._worker_thread: Thread | None = None
-        self._current_request_id: int = 0
-        self._current_board: chess.Board | None = None
 
         self._analysis_queue = queue.Queue()
 
@@ -57,15 +60,18 @@ class _Analysis:
     def _handle_chess_move_event(self, event: events.GameStateChangedEvent):
         if not settings['analysis.enabled']:
             return
-        # Set latest board request and wake worker
-        self._current_board = event.board.copy()
-        self._current_request_id += 1
+
+        if (event.turn == chess.WHITE and event.white_player != 'Human') or \
+           (event.turn == chess.BLACK and event.black_player != 'Human'):
+            self._analysis_queue.put(_StopAnalysis())
+            log.warning("Skipping analysis during engine's turn")
+            return  # Skip analysis during engine's turn
 
         self._analysis_queue.put(event.board.copy())
 
         # Start worker lazily
         if not self._worker_thread or not self._worker_thread.is_alive():
-            self._worker_thread = Thread(target=self._worker_loop, daemon=True)
+            self._worker_thread = Thread(target=self._worker_loop, daemon=True, name="AnalysisWorker")
             self._worker_thread.start()
 
     def _start_analysis(self, board: chess.Board) -> None:
@@ -97,8 +103,8 @@ class _Analysis:
                     break
                 try:
                     score = info.get('score')
-                    log.warning(f"Analysis info: {info}")
                     if score is None:
+                        time.sleep(0.1)
                         continue
                     s_white = score.white()
                     if s_white.is_mate():
@@ -135,11 +141,21 @@ class _Analysis:
             board = self._analysis_queue.get()
             if board is None:
                 break
+            elif isinstance(board, _StopAnalysis):
+                continue  # Skip analysis
+
+            self.engine = chess.engine.SimpleEngine.popen_uci([settings['analysis.engine']])
 
             try:
                 self._start_analysis(board)
             except Exception as e:
-                log.warning(f"Analysis failed: {e}", exc_info=True)
+                log.error(f"Analysis failed: {e}", exc_info=True)
+
+            self.engine.quit()
+
+        if self.engine is not None:
+            self.engine.quit()
+            self.engine = None
 
         log.info("Analysis worker thread exiting")
 

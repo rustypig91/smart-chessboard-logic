@@ -27,7 +27,9 @@ app.register_blueprint(api_game, url_prefix='/api/game', name='game')
 app.register_blueprint(api_system_xiao, url_prefix='/api/system/xiao/', name='xiao')
 app.register_blueprint(api_engine, url_prefix='/api/engine', name='engine')
 
-socketio = SocketIO(app, async_mode='threading')
+# eventlet.monkey_patch()  # noqa
+
+socketio = SocketIO(app, async_mode='gevent')
 
 
 def has_no_empty_params(rule):

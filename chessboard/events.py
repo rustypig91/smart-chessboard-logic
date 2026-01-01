@@ -266,6 +266,29 @@ class GameWinProbabilityEvent(Event):
         return f"GameWinProbabilityEvent(white={self.white_win_prob:.3f}, black={self.black_win_prob:.3f})"
 
 
+class AnalysisCompletedEvent(Event):
+    """Emitted when analysis of the current position is completed."""
+
+    def __init__(self, best_move: chess.Move | None, score_cp: float | None, score_mate: int | None, depth: int):
+        super().__init__()
+        self.best_move = best_move
+        self.score_cp = score_cp
+        self.score_mate = score_mate
+        self.depth = depth
+
+    def to_json(self) -> dict:
+        return {
+            "best_move": {
+                "from_square": chess.square_name(self.best_move.from_square),
+                "to_square": chess.square_name(self.best_move.to_square),
+                "promotion": chess.piece_symbol(self.best_move.promotion) if self.best_move and self.best_move.promotion else None
+            } if self.best_move else None,
+            "score_cp": self.score_cp,
+            "score_mate": self.score_mate,
+            "depth": self.depth
+        }
+
+
 class _EventManager:
     def __init__(self):
         self._subscribers: dict[type[Event],

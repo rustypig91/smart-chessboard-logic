@@ -268,10 +268,10 @@
             <!-- New Game -> Start Game -> Game Overview View -->
             <div id="game-overview-view" class="view">
                 <div class="view-header">Game Overview</div>
-                <div style="padding:6px; display:flex; flex-direction:column; gap:8px; position:relative;">
+                <div style="padding:6px 6px 6px 18px; display:flex; flex-direction:column; gap:8px; position:relative;">
                     <!-- Win Probability Bar (left side) -->
                     <div id="win-prob-bar" aria-label="Win probability" title="Win Probability"
-                        style="position:absolute; left:2px; top:0; bottom:0; width:8px; border-radius:4px; overflow:hidden; display:flex; flex-direction:column; background:#222;">
+                        style="position:absolute; left:6px; top:0; bottom:0; width:8px; border-radius:4px; overflow:hidden; display:flex; flex-direction:column; background:#222; pointer-events:none;">
                         <div id="prob-black" style="background:#444; height:50%;"></div>
                         <div id="prob-white" style="background:#eaeaea; height:50%;"></div>
                     </div>
@@ -352,6 +352,25 @@
                 }
 
                 addBoardEventListener('GameStateChangedEvent', handleGameStateEvent)
+
+                function hideProbabilityBar(hidden) {
+                    const bar = document.getElementById('win-prob-bar');
+                    if (bar) {
+                        if (hidden) bar.style.display = 'none';
+                        else bar.style.display = 'flex';
+                    }
+                }
+
+                function toggleProbabilityBar() {
+                    const bar = document.getElementById('win-prob-bar');
+                    if (bar) {
+                        if (bar.style.display === 'none') {
+                            bar.style.display = 'flex';
+                        } else {
+                            bar.style.display = 'none';
+                        }
+                    }
+                }
 
                 // Win Probability updates
                 function updateWinProbabilityBar(whiteProb, blackProb) {
@@ -583,7 +602,7 @@
 
         let gameOverviewButtonFunctions = [
             { short: menuGoBack, shortHint: 'Back', long: null, longHint: '' },
-            { short: null, shortHint: '-', long: regretLastMove, longHint: 'Regret' },
+            { short: toggleProbabilityBar, shortHint: 'Toggle Prob', long: regretLastMove, longHint: 'Regret' },
             { short: null, shortHint: '-', long: resignGame, longHint: 'Resign' },
             { short: gameResume, shortHint: '▶', long: gamePause, longHint: '⏸' },
         ];

@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, request
 import psutil
 import time
 import chessboard.events as events
-
+import threading
 api = Blueprint('api', __name__, template_folder='templates')
 
 
@@ -58,6 +58,10 @@ def info():
             'free': disk_usage.free,
             'percent_used': disk_usage.percent,
             'percent_free': 100 - disk_usage.percent
+        },
+        'threads': {
+            'total': [t.name for t in threading.enumerate()],
+            'active': len(threading.enumerate())
         }
     })
 

@@ -106,7 +106,6 @@ class Engine:
         return os.path.join(Engine.weight_directory(), weight)
 
     def get_move(self, board: chess.Board) -> chess.Move:
-        log.debug(f"Getting best move for board:\n{board.fen()}")
         # Ensure engine is initialized
         result = self.engine.play(board, chess.engine.Limit(depth=2))
 
@@ -133,7 +132,6 @@ class Engine:
                     log.debug("Waiting for analysis to complete before engine move")
                     time.sleep(0.5)
 
-                log.debug("(async) Getting best move")
                 result = self.engine.play(board, chess.engine.Limit(time=settings['engine.time_limit'], depth=depth))
 
                 log.info(f"(async) Engine selected move: {result}")

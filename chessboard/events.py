@@ -1,4 +1,5 @@
 from collections.abc import Callable
+import enum
 from types import ModuleType
 import chess
 from chessboard.logger import log
@@ -7,6 +8,12 @@ import traceback
 import atexit
 import inspect
 import queue
+
+
+@enum.unique
+class PlayerType(enum.Enum):
+    HUMAN = 'human'
+    ENGINE = 'engine'
 
 
 class Event:
@@ -43,6 +50,10 @@ class Event:
             return value.fen()
         elif isinstance(value, ModuleType):
             return value.__name__
+        elif isinstance(value, chess.Move):
+            return value.uci()
+        elif isinstance(value, PlayerType):
+            return value.value
         else:
             return value
 
@@ -162,10 +173,11 @@ class SystemShutdownEvent(Event):
 
 
 class NewGameEvent(Event):
-    def __init__(self, white_player: str, black_player: str, start_time_seconds: tuple[float, float], increment_seconds: tuple[float, float]):
+    def __init__(self, white_player: PlayerType, black_player: PlayerType, engine_weight: str | None, start_time_seconds: tuple[float, float], increment_seconds: tuple[float, float]):
         super().__init__()
         self.white_player = white_player
         self.black_player = black_player
+        self.engine_weight = engine_weight
         self.start_time_seconds = start_time_seconds
         self.increment_seconds = increment_seconds
 
@@ -201,15 +213,15 @@ class GameStateChangedEvent(Event):
         black_time_elapsed: float,
         white_start_time: float,
         black_start_time: float,
-        white_player: str,
-        black_player: str,
+        white_player: PlayerType,
+        black_player: PlayerType,
         winner: chess.Color | None | str,
         is_game_started: bool = False,
         is_game_paused: bool = False,
     ):
         super().__init__()
 
-        self.board = board
+        self.board = board.copy(stack=1)
 
         self.last_move = board.move_stack[-1].uci() if board.move_stack else None
         self.is_check = board.is_check()
@@ -254,39 +266,29 @@ class LegalMoveDetectedEvent(Event):
         }
 
 
-class GameWinProbabilityEvent(Event):
+class EngineAnalysisEvent(Event):
     """Probability of winning for each side, emitted after each move."""
 
-    def __init__(self, white_win_prob: float, black_win_prob: float):
+    def __init__(self, board: chess.Board, weight: str, white_win_prob: float = 0.5, black_win_prob: float = 0.5, pv: list[chess.Move] = [], depth: int = 0, score: int = 0):
         super().__init__()
         self.white_win_prob = float(white_win_prob)
         self.black_win_prob = float(black_win_prob)
+        self.score = score
+        self.pv = pv
+        self.depth = depth
+        self.board = board.copy(stack=False)
+        self.weight = weight
 
     def __repr__(self):
         return f"GameWinProbabilityEvent(white={self.white_win_prob:.3f}, black={self.black_win_prob:.3f})"
 
 
-class AnalysisCompletedEvent(Event):
-    """Emitted when analysis of the current position is completed."""
+class HintEvent(Event):
+    """ Engine provided hint for the next move. """
 
-    def __init__(self, best_move: chess.Move | None, score_cp: float | None, score_mate: int | None, depth: int):
+    def __init__(self, move: chess.Move):
         super().__init__()
-        self.best_move = best_move
-        self.score_cp = score_cp
-        self.score_mate = score_mate
-        self.depth = depth
-
-    def to_json(self) -> dict:
-        return {
-            "best_move": {
-                "from_square": chess.square_name(self.best_move.from_square),
-                "to_square": chess.square_name(self.best_move.to_square),
-                "promotion": chess.piece_symbol(self.best_move.promotion) if self.best_move and self.best_move.promotion else None
-            } if self.best_move else None,
-            "score_cp": self.score_cp,
-            "score_mate": self.score_mate,
-            "depth": self.depth
-        }
+        self.move = move
 
 
 class _EventManager:

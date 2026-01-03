@@ -1,8 +1,8 @@
 import chess
 from flask import Blueprint, jsonify, request
-from chessboard.game.engine import Engine
 from chessboard.game.game_state import game_state
 from chessboard.logger import log
+from chessboard.game.engine import engine
 
 api = Blueprint('api', __name__, template_folder='templates')
 
@@ -11,7 +11,7 @@ api = Blueprint('api', __name__, template_folder='templates')
 def get_available_bots():
     """API endpoint to get a list of available computer opponents"""
 
-    available_bots = Engine.get_available_weights()
+    available_bots = engine.get_available_weights()
 
     return jsonify({'success': True, 'bots': available_bots})
 
@@ -34,7 +34,7 @@ def start_new_game():
         log.warning(f"Invalid engine color specified: {engine_color}")
         return jsonify({'success': False, 'error': 'Invalid engine color specified'}), 400
 
-    if engine_name and engine_name not in Engine.get_available_weights():
+    if engine_name and engine_name not in engine.get_available_weights():
         log.warning(f"Attempted to start game with unavailable opponent: '{engine_name}'")
         return jsonify({'success': False, 'error': 'Selected opponent not available'}), 400
 
@@ -108,6 +108,17 @@ def get_game_state():
             'black_time_left': game_state.chess_clock.black_time_left if game_state.chess_clock.black_time_left != float('inf') else None,
             'paused': game_state.chess_clock.paused
         },
-        'white_player': game_state.players[chess.WHITE],
-        'black_player': game_state.players[chess.BLACK],
+        'white_player': game_state._players[chess.WHITE],
+        'black_player': game_state._players[chess.BLACK]
     })
+
+
+@api.route('/hint', methods=['POST'])
+def get_hint():
+    """API endpoint to get a hint for the next move from the engine"""
+    move = game_state.get_hint()
+
+    if move is None:
+        return jsonify({'success': False, 'error': 'No hint available'}), 400
+
+    return jsonify({'success': True, 'move': move.uci()})

@@ -391,7 +391,7 @@
                     }
                 }
 
-                addBoardEventListener('GameWinProbabilityEvent', function (data) {
+                addBoardEventListener('EngineAnalysisEvent', function (data) {
                     updateWinProbabilityBar(data.white_win_prob, data.black_win_prob);
                 });
 
@@ -586,6 +586,10 @@
             apiCall('/api/game/resign', {});
         }
 
+        function getHint() {
+            apiCall('/api/game/hint', {});
+        }
+
         let menuButtonFunctions = [
             { short: menuGoBack, shortHint: 'Back', long: menuReset, longHint: 'Reset' },
             { short: menuUp, shortHint: '↑', long: null, longHint: '' },
@@ -603,7 +607,7 @@
         let gameOverviewButtonFunctions = [
             { short: menuGoBack, shortHint: 'Back', long: null, longHint: '' },
             { short: toggleProbabilityBar, shortHint: 'Toggle Prob', long: regretLastMove, longHint: 'Regret' },
-            { short: null, shortHint: '-', long: resignGame, longHint: 'Resign' },
+            { short: getHint, shortHint: 'hint', long: resignGame, longHint: 'Resign' },
             { short: gameResume, shortHint: '▶', long: gamePause, longHint: '⏸' },
         ];
 
@@ -1247,6 +1251,7 @@
             document.cookie = name + '=' + encodeURIComponent(value) + ';' + expires + ';path=/';
             console.debug('Cookie set:', name, value);
         }
+        setCookie('test', '1');
 
         function getCookie(name) {
             const cname = name + '=';

@@ -26,9 +26,9 @@ settings.register('led.color.previous_move',
 
 class BoardState:
     def __init__(self) -> None:
-        events.event_manager.subscribe(events.SquarePieceStateChangeEvent, self._handle_piece_state_change)
-        events.event_manager.subscribe(events.TimeButtonPressedEvent, self._handle_time_button_pressed)
-        events.event_manager.subscribe(events.GameStateChangedEvent, lambda _: self._scan_board())
+        events.event_manager.subscribe(events.SquarePieceStateChangeEvent, self._handle_piece_state_change_event)
+        events.event_manager.subscribe(events.TimeButtonPressedEvent, self._handle_time_button_pressed_event)
+        events.event_manager.subscribe(events.GameStateChangedEvent, self._handle_game_state_change_event)
 
         # Current realtime state of pieces on board
         self._board_piece_color_map: list[chess.Color | None] = [None] * 64
@@ -39,25 +39,27 @@ class BoardState:
         self._led_layer = leds.LedLayer(priority=0)
         leds.led_manager.add_layer(self._led_layer)
 
+        self._latest_board = chess.Board()
+
         log.info("BoardState initialized")
 
-    def _handle_piece_state_change(self, event: events.SquarePieceStateChangeEvent):
+    def _handle_game_state_change_event(self, event: events.GameStateChangedEvent):
+        self._latest_board = event.board.copy()
+        self._scan_board(self._latest_board)
+
+    def _handle_piece_state_change_event(self, event: events.SquarePieceStateChangeEvent):
         self._board_piece_color_map = event.colors
-        move = self._scan_board()
+        move = self._scan_board(self._latest_board)
         if move is not None and move.to_square in event.squares:
             events.event_manager.publish(events.LegalMoveDetectedEvent(move=move))
 
-    def _handle_time_button_pressed(self, event: events.TimeButtonPressedEvent):
+    def _handle_time_button_pressed_event(self, event: events.TimeButtonPressedEvent):
         if event.color != game_state.board.turn:
             log.warning(
                 f"Time button pressed for {'white' if event.color == chess.WHITE else 'black'} out of turn ({event.color}, expected {game_state.board.turn}), ignoring")
             return
 
-        if game_state.engine is not None and game_state.engine.color == event.color:
-            log.warning("Time button pressed for engine color, ignoring")
-            return
-
-        move = self._scan_board()
+        move = self._scan_board(self._latest_board)
         if move is None:
             log.error("No valid move detected on time button press")
             return
@@ -74,15 +76,7 @@ class BoardState:
             for sq in [last_move.from_square, last_move.to_square]:
                 self._led_layer.colors[sq] = settings['led.color.previous_move']
 
-        # Light up check
-        checkers = game_state.board.checkers()
-        king_square = game_state.board.king(game_state.board.turn)
-        if checkers and king_square is not None:
-            self._led_layer.colors[king_square] = settings['led.color.invalid_piece_placement']
-            for sq in checkers:
-                self._led_layer.colors[sq] = settings['led.color.capture']
-
-    def _scan_board(self) -> chess.Move | None:
+    def _scan_board(self, board: chess.Board) -> chess.Move | None:
         """Scan the board for piece changes and determine if a legal move has been made.
 
         Also updates the LED colors to reflect the current state.
@@ -104,23 +98,23 @@ class BoardState:
 
         for square in chess.SQUARES:
             color_board = self._board_piece_color_map[square]
-            piece_game = game_state.board.piece_at(square)
+            piece_game = board.piece_at(square)
 
             if color_board is None and piece_game is not None:
                 # Piece removed
-                if piece_game.color == game_state.board.turn:
+                if piece_game.color == board.turn:
                     missing_friendly_pieces.append(square)
                 else:
                     missing_opponent_pieces.append(square)
             elif color_board is not None and piece_game is None:
                 # Piece added
-                if color_board == game_state.board.turn:
+                if color_board == board.turn:
                     extra_friendly_pieces.append(square)
                 else:
                     extra_opponent_pieces.append(square)
             elif color_board is not None and piece_game is not None and color_board != piece_game.color:
                 # Piece changed
-                if color_board == game_state.board.turn:
+                if color_board == board.turn:
                     extra_friendly_pieces.append(square)
                     missing_opponent_pieces.append(square)
                 else:
@@ -148,7 +142,7 @@ class BoardState:
             # Check if the missing opponent piece can be captured by any friendly piece
             missing_sq = missing_opponent_pieces[0]
             can_be_captured = False
-            for move in game_state.board.legal_moves:
+            for move in board.legal_moves:
                 can_be_captured = move.to_square == missing_sq
                 if can_be_captured:
                     break
@@ -158,11 +152,11 @@ class BoardState:
             else:
                 color_map[missing_sq] = settings['led.color.invalid_piece_placement']
 
-        if game_state.board.has_castling_rights(game_state.board.turn) and len(missing_friendly_pieces) and len(extra_friendly_pieces) == 2:
+        if board.has_castling_rights(board.turn) and len(missing_friendly_pieces) and len(extra_friendly_pieces) == 2:
             # Possible castling finished
             castling_moves = []
-            for move in game_state.board.legal_moves:
-                if game_state.board.is_castling(move):
+            for move in board.legal_moves:
+                if board.is_castling(move):
                     from_sq = move.from_square
                     to_sq = move.to_square
                     if from_sq in missing_friendly_pieces and to_sq in extra_friendly_pieces:
@@ -185,7 +179,7 @@ class BoardState:
 
         if len(missing_friendly_pieces) == 1 and len(extra_friendly_pieces) == 0:
             # Friendly piece lifted, mark legal moves
-            legal_moves = [move for move in game_state.board.legal_moves if move.from_square == missing_friendly_pieces[0]]
+            legal_moves = [move for move in board.legal_moves if move.from_square == missing_friendly_pieces[0]]
             if len(legal_moves) == 0:
                 color_map.update({sq: settings['led.color.invalid_piece_placement']
                                  for sq in missing_friendly_pieces})
@@ -197,11 +191,11 @@ class BoardState:
                 color_map.update({sq: settings['led.color.move_from'] for sq in missing_friendly_pieces})
 
                 for move in legal_moves:
-                    if game_state.board.is_capture(move):
+                    if board.is_capture(move):
                         color_map[move.to_square] = settings['led.color.capture']
 
         if len(missing_friendly_pieces) == 1 and len(extra_friendly_pieces) == 1:
-            for move in game_state.board.legal_moves:
+            for move in board.legal_moves:
                 if {move.from_square, move.to_square} == {missing_friendly_pieces[0], extra_friendly_pieces[0]}:
                     legal_move = move
                     break
@@ -212,7 +206,7 @@ class BoardState:
         if legal_move is not None:
             color_map.update({sq: settings['led.color.move_from'] for sq in missing_friendly_pieces})
 
-            if game_state.board.is_capture(legal_move):
+            if board.is_capture(legal_move):
                 color_map[legal_move.to_square] = settings['led.color.capture']
             else:
                 color_map.update({sq: settings['led.color.move_to'] for sq in extra_friendly_pieces})

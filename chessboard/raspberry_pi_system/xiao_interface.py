@@ -274,7 +274,7 @@ class _XiaoInterface:
     def _monitor_thread_func(self) -> None:
         offset = int(settings['hal_sensor.offset'] * 1e3)
         hysteresis = int(settings['hal_sensor.hysteresis'] * 1e3)
-        self.port.write(f'board monitor threshold {offset} {hysteresis}\n'.encode('utf-8'))
+        self.port.write(f'board monitor threshold -{offset} {offset} {hysteresis}\n'.encode('utf-8'))
 
         log.info("HAL sensor monitoring started")
 

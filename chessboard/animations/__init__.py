@@ -18,12 +18,15 @@ _change_side_animation = AnimationChangeSide(
     fps=15.0,
     duration=0.5,
 )
+_change_side_animation.start()
+
 _checkers_animation = AnimationPulse(
     pulsating_squares=[],
     frequency_hz=0.5,
     pulsating_color=settings['animation.check.color'],
     fps=10.0,
 )
+
 _hint_animation = AnimationPulse(
     pulsating_squares=[],
     frequency_hz=0.5,
@@ -54,6 +57,8 @@ _rainbow_animation_shown = False
 def _handle_game_state_change(event: events.GameStateChangedEvent) -> None:
     checkers = game_state.board.checkers()
     king_square = game_state.board.king(game_state.board.turn)
+
+    _hint_animation.stop()
 
     if checkers and king_square is not None:
         _checkers_animation.squares = list(checkers) + [king_square]
@@ -96,4 +101,3 @@ events.event_manager.subscribe(events.LegalMoveDetectedEvent, _handle_legal_move
 events.event_manager.subscribe(events.GameStateChangedEvent, _handle_game_state_change)
 events.event_manager.subscribe(events.HintEvent, _handle_hint_event)
 events.event_manager.subscribe(events.SquarePieceStateChangeEvent, _handle_sqaure_piece_state_change)
-_change_side_animation.start()

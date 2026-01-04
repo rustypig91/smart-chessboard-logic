@@ -231,10 +231,6 @@ class Engine:
 
         with self._engine.analysis(board, limit, info=chess.engine.INFO_ALL) as analysis:
             for info in analysis:
-                # Cancel if a newer request arrived
-                if not self._analysis_queue.empty():
-                    break
-
                 score = info.get('score')
                 if score is not None:
                     analysis_event.white_win_prob, analysis_event.black_win_prob = _probability_from_engine_score(score)
@@ -244,6 +240,10 @@ class Engine:
                 analysis_event.depth = info.get('depth', 0)
 
                 events.event_manager.publish(analysis_event)
+
+                # Cancel if a newer request arrived
+                if not self._analysis_queue.empty():
+                    break
 
     def _engine_worker(self) -> None:
         while True:

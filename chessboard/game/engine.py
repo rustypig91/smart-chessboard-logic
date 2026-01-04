@@ -204,7 +204,7 @@ class _Lc0Engine:
         if weight_path is None:
             raise FileNotFoundError(f"Engine weights file not found: {weight_path}")
 
-        if self._current_weight.value == weight_path:
+        if self._current_weight.value == weight:
             return
 
         engine.configure({"WeightsFile": weight_path})

@@ -13,7 +13,7 @@ class AnimationWaterDroplet(Animation):
         """ Water droplet ripple animation originating from a center square.
 
         color: RGB color tuple for the droplet ripple.
-        center_square: chess.Square where the droplet originates.        
+        center_square: chess.Square where the droplet originates.
         """
         super().__init__(*args, **kwargs)
 

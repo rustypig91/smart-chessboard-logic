@@ -88,7 +88,7 @@ def _handle_hint_event(event: events.HintEvent) -> None:
         _hint_animation.start()
 
 
-def _handle_sqaure_piece_state_change(event: events.SquarePieceStateChangeEvent) -> None:
+def _handle_square_piece_state_change(event: events.SquarePieceStateChangeEvent) -> None:
     # Stop hint animation if either square involved changes piece state
     if _hint_animation.is_running:
         for square in event.squares:
@@ -100,4 +100,4 @@ events.event_manager.subscribe(events.ChessMoveEvent, _handle_chess_move_event)
 events.event_manager.subscribe(events.LegalMoveDetectedEvent, _handle_legal_move_detected)
 events.event_manager.subscribe(events.GameStateChangedEvent, _handle_game_state_change)
 events.event_manager.subscribe(events.HintEvent, _handle_hint_event)
-events.event_manager.subscribe(events.SquarePieceStateChangeEvent, _handle_sqaure_piece_state_change)
+events.event_manager.subscribe(events.SquarePieceStateChangeEvent, _handle_square_piece_state_change)

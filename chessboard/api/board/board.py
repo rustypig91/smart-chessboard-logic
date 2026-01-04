@@ -30,8 +30,8 @@ def preview_square_color() -> Response | tuple[Response, int]:
         return jsonify({'success': False, 'error': 'Invalid color value'}), 400
 
     _color_preview_layer.reset()
-    midle_squares = [chess.E4, chess.E5, chess.D4, chess.D5]
-    for square in midle_squares:
+    middle_squares = [chess.E4, chess.E5, chess.D4, chess.D5]
+    for square in middle_squares:
         _color_preview_layer.colors[square] = tuple(color)
 
     if not led_manager.has_layer(_color_preview_layer):

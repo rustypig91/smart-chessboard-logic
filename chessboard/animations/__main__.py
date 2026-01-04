@@ -53,5 +53,6 @@ animation = AnimationPulse(
     priority=500,
 )
 
-board.root.after(100, animation.start)
+START_DELAY_MS = 100
+board.root.after(START_DELAY_MS, animation.start)
 board.run()

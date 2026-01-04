@@ -27,9 +27,6 @@ class _XiaoInterface:
     RESET_PIN = 21
     DEVICE_DESC = 'Chessboard console'
 
-    DEFAULT_SENSOR_PIECE_OFFSET_MV = 100
-    CONSECUTIVE_READINGS_REQUIRED = 1
-
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, 'instance'):
             cls.instance = super(_XiaoInterface, cls).__new__(cls)

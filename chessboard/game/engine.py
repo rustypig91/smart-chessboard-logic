@@ -221,7 +221,7 @@ class _Lc0Engine:
         self._analysis_queue.put(None)
         self._engine_thread.join(timeout=2.0)
 
-        log.info(f"Engine '{settings['engine.path']}' shut down")
+        log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' shut down")
 
     def get_move_async(self, weight: str, board: chess.Board, callback: Callable[[chess.engine.PlayResult], None]) -> None:
         """Request the engine to select a move for the given board position."""

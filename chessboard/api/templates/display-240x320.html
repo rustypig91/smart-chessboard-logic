@@ -423,16 +423,28 @@
                             blackTime = lastGameState.black_time_elapsed + (dt * (lastGameState.turn === 'black' && !lastGameState.clock_paused ? 1 : 0));
                         }
 
+                        const wSign = whiteTime < 0 ? '-' : '';
+                        const bSign = blackTime < 0 ? '-' : '';
+
+                        whiteTime = Math.abs(whiteTime);
+                        blackTime = Math.abs(blackTime);
+
                         const wMin = Math.floor((whiteTime || 0) / 60);
-                        const wSec = Math.abs(((whiteTime || 0) % 60)).toFixed(1);
+                        const wSec = ((whiteTime || 0) % 60).toFixed(1);
                         const bMin = Math.floor((blackTime || 0) / 60);
-                        const bSec = Math.abs(((blackTime || 0) % 60)).toFixed(1);
+                        const bSec = ((blackTime || 0) % 60).toFixed(1);
 
                         const wEl = document.getElementById('white-clock');
                         const bEl = document.getElementById('black-clock');
 
-                        if (wEl) wEl.textContent = `${String(wMin)}:${padStart(String(wSec), 4, '0')}`;
-                        if (bEl) bEl.textContent = `${String(bMin)}:${padStart(String(bSec), 4, '0')}`;
+                        if (wEl) {
+                            wEl.textContent = `${wSign}${String(wMin)}:${padStart(String(wSec), 4, '0')}`;
+                        }
+                        if (bEl) {
+                            bEl.textContent = `${bSign}${String(bMin)}:${padStart(String(bSec), 4, '0')}`;
+                        }
+
+
 
                     }, 100);
 

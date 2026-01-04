@@ -21,8 +21,8 @@ class AnimationPulse(Animation):
         self._period = 1.0 / frequency_hz
         self._pulses = pulses
 
-        for self._square in pulsating_squares:
-            self._led_layer.colors[self._square] = self._color
+        for square in pulsating_squares:
+            self._led_layer.colors[square] = self._color
 
     @property
     def squares(self) -> list[chess.Square]:

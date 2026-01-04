@@ -15,6 +15,8 @@ import math
 import chessboard.events as events
 from chessboard.thread_safe_variable import ThreadSafeVariable
 
+import atexit
+
 settings.register("engine.player.time_limit", 10.0, "Time limit for engine analysis in seconds")
 
 settings.register("engine.analysis.time_limit", 15.0, "Time limit for analysis in seconds")
@@ -170,19 +172,13 @@ class _Lc0Engine:
 
     def __init__(self):
         self._analysis_queue = queue.Queue()
-        self._engine = chess.engine.SimpleEngine.popen_uci([_Lc0Engine.ENGINE_COMMAND])
 
         events.event_manager.subscribe(events.GameStateChangedEvent, self._handle_chess_move_event)
 
         self._current_weight = ThreadSafeVariable[str | None](None)
 
-        # Try to download the default weight from settings
-        self._set_weight(settings['engine.analysis.weight'])
-
         self._engine_thread = Thread(target=self._engine_worker, daemon=True)
         self._engine_thread.start()
-
-        log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' initialized")
 
     def _find_weight_file(self) -> str | None:
         weight_dir = persistent_storage.get_directory('weights')
@@ -203,7 +199,7 @@ class _Lc0Engine:
             board=event.board.copy()
         ))
 
-    def _set_weight(self, weight: str) -> None:
+    def _set_weight(self, engine: chess.engine.SimpleEngine, weight: str) -> None:
         weight_path = get_weight_file(weight, try_download=True)
         if weight_path is None:
             raise FileNotFoundError(f"Engine weights file not found: {weight_path}")
@@ -211,26 +207,34 @@ class _Lc0Engine:
         if self._current_weight.value == weight_path:
             return
 
-        self._engine.configure({"WeightsFile": weight_path})
+        engine.configure({"WeightsFile": weight_path})
         self._current_weight.value = weight
 
         log.info(f"Engine weight set to: {weight}")
 
     def __del__(self):
-        self._engine.quit()
-        self._analysis_queue.put(None)
-        self._engine_thread.join(timeout=2.0)
+        self.stop()
 
-        log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' shut down")
+    def stop(self) -> None:
+        """Stop the engine and its worker thread."""
+        if not self._engine_thread.is_alive():
+            self._analysis_queue.put(None)
+            self._engine_thread.join(timeout=5.0)
+
+    def start(self) -> None:
+        """Start the engine worker thread."""
+        if not self._engine_thread.is_alive():
+            self._engine_thread = Thread(target=self._engine_worker, daemon=True)
+            self._engine_thread.start()
 
     def get_move_async(self, weight: str, board: chess.Board, callback: Callable[[chess.engine.PlayResult], None]) -> None:
         """Request the engine to select a move for the given board position."""
         self._analysis_queue.put(_EngineGetMoveRequest(weight, board, callback))
 
-    def _get_move(self, board: chess.Board, callback: Callable[[chess.engine.PlayResult], None]) -> None:
+    def _get_move(self, engine: chess.engine.SimpleEngine, enboard: chess.Board, callback: Callable[[chess.engine.PlayResult], None]) -> None:
         depth = choice([2, 3, 4])  # Randomize depth for variability
         try:
-            result = self._engine.play(board, chess.engine.Limit(
+            result = engine.play(enboard, chess.engine.Limit(
                 time=settings['engine.player.time_limit'], depth=depth))
 
             log.info(f"Engine selected move: {result}")
@@ -240,7 +244,7 @@ class _Lc0Engine:
         except Exception as e:
             log.exception(f"Error during engine play: {e}")
 
-    def _start_analysis(self, board: chess.Board) -> None:
+    def _start_analysis(self, engine: chess.engine.SimpleEngine, board: chess.Board) -> None:
         total_limit = settings['engine.analysis.time_limit']
         depth_limit = settings['engine.analysis.depth_limit']
         limit = chess.engine.Limit(time=total_limit, depth=depth_limit)
@@ -251,7 +255,7 @@ class _Lc0Engine:
         analysis_event = events.EngineAnalysisEvent(board, current_weight)
         analysis_event.white_win_prob, analysis_event.black_win_prob = _probability_from_material(board)
 
-        with self._engine.analysis(board, limit, info=chess.engine.INFO_ALL) as analysis:
+        with engine.analysis(board, limit, info=chess.engine.INFO_ALL) as analysis:
             for info in analysis:
                 score = info.get('score')
                 if score is not None:
@@ -268,21 +272,30 @@ class _Lc0Engine:
                     break
 
     def _engine_worker(self) -> None:
+        engine = chess.engine.SimpleEngine.popen_uci([_Lc0Engine.ENGINE_COMMAND])
+        self._set_weight(engine, settings['engine.analysis.weight'])
+
+        log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' initialized")
+
         while True:
             event = self._analysis_queue.get()
             try:
                 if event is None:
                     break
                 elif isinstance(event, _EngineStartAnalysisRequest):
-                    self._set_weight(event.weight)
-                    self._start_analysis(event.board)
+                    self._set_weight(engine, event.weight)
+                    self._start_analysis(engine, event.board)
                 elif isinstance(event, _EngineGetMoveRequest):
-                    self._set_weight(event.weight)
-                    self._get_move(event.board, event.callback)
+                    self._set_weight(engine, event.weight)
+                    self._get_move(engine, event.board, event.callback)
             except Exception as e:
                 log.exception(f"Error in engine worker: {e}")
 
-        log.info("Analysis worker thread exiting")
+        engine.quit()
+        engine.close()
+
+        log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' shut down")
 
 
 engine = _Lc0Engine()
+atexit.register(engine.stop)

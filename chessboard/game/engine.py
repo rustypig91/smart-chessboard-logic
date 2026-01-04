@@ -15,13 +15,24 @@ import math
 import chessboard.events as events
 from chessboard.thread_safe_variable import ThreadSafeVariable
 
-settings.register("engine.path", "lc0", "Path to the chess engine executable")
-
 settings.register("engine.player.time_limit", 10.0, "Time limit for engine analysis in seconds")
 
 settings.register("engine.analysis.time_limit", 15.0, "Time limit for analysis in seconds")
 settings.register("engine.analysis.depth_limit", 25, "Depth limit for analysis")
 settings.register("engine.analysis.weight", "maia-1900.pb.gz", "Default engine weight file for analysis")
+
+
+DOWNLOADABLE_WEIGHTS = {
+    "maia-1100.pb.gz": "https://github.com/CSSLab/maia-chess/releases/download/v1.0/maia-1100.pb.gz",
+    "maia-1200.pb.gz": "https://github.com/CSSLab/maia-chess/releases/download/v1.0/maia-1200.pb.gz",
+    "maia-1300.pb.gz": "https://github.com/CSSLab/maia-chess/releases/download/v1.0/maia-1300.pb.gz",
+    "maia-1400.pb.gz": "https://github.com/CSSLab/maia-chess/releases/download/v1.0/maia-1400.pb.gz",
+    "maia-1500.pb.gz": "https://github.com/CSSLab/maia-chess/releases/download/v1.0/maia-1500.pb.gz",
+    "maia-1600.pb.gz": "https://github.com/CSSLab/maia-chess/releases/download/v1.0/maia-1600.pb.gz",
+    "maia-1700.pb.gz": "https://github.com/CSSLab/maia-chess/releases/download/v1.0/maia-1700.pb.gz",
+    "maia-1800.pb.gz": "https://github.com/CSSLab/maia-chess/releases/download/v1.0/maia-1800.pb.gz",
+    "maia-1900.pb.gz": "https://github.com/CSSLab/maia-chess/releases/download/v1.0/maia-1900.pb.gz",
+}
 
 
 def _cp_to_probs(cp: float, scale: float = 400.0) -> tuple[float, float]:
@@ -70,10 +81,96 @@ class _EngineStartAnalysisRequest:
         self.board = board
 
 
-class Engine:
+def install_weight(weight_file: str) -> None:
+    """Install a new engine weight file from the given source path."""
+    dest_path = persistent_storage.get_filename(f'weights/{os.path.basename(weight_file)}')
+
+    if not os.path.isfile(weight_file):
+        raise FileNotFoundError(f"Source weight file not found: {weight_file}")
+
+    shutil.move(weight_file, dest_path)
+
+    log.info(f"Installed new engine weight from {weight_file} to {dest_path}")
+
+
+def delete_weight(weight_name: str) -> None:
+    """Delete an existing engine weight file by name."""
+    weight_path = os.path.join(weight_directory(), weight_name)
+
+    if not os.path.isfile(weight_path):
+        raise FileNotFoundError(f"Weight file not found: {weight_path}")
+
+    os.remove(weight_path)
+    log.info(f"Deleted engine weight: {weight_name}")
+
+
+def install_weight_from_url(url: str) -> None:
+    """Install a new engine weight file from a URL."""
+
+    response = requests.get(url, stream=True)
+    if response.status_code != 200:
+        raise ValueError(f"Failed to download weight file from URL: {url}")
+
+    filename = os.path.basename(url)
+    dest_path = os.path.join(weight_directory(), filename)
+
+    with open(dest_path, 'wb') as f:
+        shutil.copyfileobj(response.raw, f)
+
+    log.info(f"Installed new engine weight from URL {url} to {dest_path}")
+
+
+def weight_directory() -> str:
+    """Get the directory where engine weights are stored."""
+    return persistent_storage.get_directory('weights')
+
+
+def get_available_weights() -> list[str]:
+    weights_dir = persistent_storage.get_directory('weights')
+    if not os.path.isdir(weights_dir):
+        log.warning(f"Engine weights directory not found: {weights_dir}")
+        return []
+
+    weights = [f for f in os.listdir(weights_dir) if f.endswith('.pb.gz')]
+    log.info(f"Available engine weights: {weights}")
+
+    for weight in DOWNLOADABLE_WEIGHTS.keys():
+        if weight not in weights:
+            weights.append(weight)
+
+    weights.sort()
+
+    return weights
+
+
+def get_weight_filename(weight: str) -> str:
+    return os.path.join(weight_directory(), weight)
+
+
+def get_weight_file(weight: str, try_download: bool = False) -> str | None:
+    weight_path = persistent_storage.get_filename(f'weights/{weight}')
+    if os.path.isfile(weight_path):
+        return weight_path
+    elif try_download:
+        # Try to download the weight file
+        download_url = DOWNLOADABLE_WEIGHTS.get(weight)
+        if download_url is None:
+            log.warning(f"No download URL found for weight: {weight}")
+            return None
+        install_weight_from_url(download_url)
+        if os.path.isfile(weight_path):
+            return weight_path
+        else:
+            log.warning(f"Engine weight file not found after download attempt: {weight_path}")
+            return None
+
+
+class _Lc0Engine:
+    ENGINE_COMMAND = "lc0"
+
     def __init__(self):
         self._analysis_queue = queue.Queue()
-        self._engine = chess.engine.SimpleEngine.popen_uci([settings['engine.path']])
+        self._engine = chess.engine.SimpleEngine.popen_uci([_Lc0Engine.ENGINE_COMMAND])
 
         events.event_manager.subscribe(events.GameStateChangedEvent, self._handle_chess_move_event)
 
@@ -85,21 +182,7 @@ class Engine:
         self._engine_thread = Thread(target=self._engine_worker, daemon=True)
         self._engine_thread.start()
 
-        log.info(f"Engine '{settings['engine.path']}' initialized")
-
-    def get_weight_file(self, weight: str) -> str | None:
-        weight_path = persistent_storage.get_filename(f'weights/{weight}')
-        if os.path.isfile(weight_path):
-            return weight_path
-        else:
-            # Try to download the weight file
-            download_url = f"https://github.com/CSSLab/maia-chess/releases/download/v1.0/{weight}"
-            self.install_weight_from_url(download_url)
-            if os.path.isfile(weight_path):
-                return weight_path
-            else:
-                log.warning(f"Engine weight file not found after download attempt: {weight_path}")
-                return None
+        log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' initialized")
 
     def _find_weight_file(self) -> str | None:
         weight_dir = persistent_storage.get_directory('weights')
@@ -121,7 +204,7 @@ class Engine:
         ))
 
     def _set_weight(self, weight: str) -> None:
-        weight_path = self.get_weight_file(weight)
+        weight_path = get_weight_file(weight, try_download=True)
         if weight_path is None:
             raise FileNotFoundError(f"Engine weights file not found: {weight_path}")
 
@@ -139,68 +222,6 @@ class Engine:
         self._engine_thread.join(timeout=2.0)
 
         log.info(f"Engine '{settings['engine.path']}' shut down")
-
-    @staticmethod
-    def install_weight(weight_file: str) -> None:
-        """Install a new engine weight file from the given source path."""
-        dest_path = persistent_storage.get_filename(f'weights/{os.path.basename(weight_file)}')
-
-        if not os.path.isfile(weight_file):
-            raise FileNotFoundError(f"Source weight file not found: {weight_file}")
-
-        shutil.move(weight_file, dest_path)
-
-        log.info(f"Installed new engine weight from {weight_file} to {dest_path}")
-
-    @staticmethod
-    def delete_weight(weight_name: str) -> None:
-        """Delete an existing engine weight file by name."""
-        weight_path = os.path.join(Engine.weight_directory(), weight_name)
-
-        if not os.path.isfile(weight_path):
-            raise FileNotFoundError(f"Weight file not found: {weight_path}")
-
-        os.remove(weight_path)
-        log.info(f"Deleted engine weight: {weight_name}")
-
-    @staticmethod
-    def install_weight_from_url(url: str) -> None:
-        """Install a new engine weight file from a URL."""
-
-        response = requests.get(url, stream=True)
-        if response.status_code != 200:
-            raise ValueError(f"Failed to download weight file from URL: {url}")
-
-        filename = os.path.basename(url)
-        dest_path = os.path.join(Engine.weight_directory(), filename)
-
-        with open(dest_path, 'wb') as f:
-            shutil.copyfileobj(response.raw, f)
-
-        log.info(f"Installed new engine weight from URL {url} to {dest_path}")
-
-    @staticmethod
-    def weight_directory() -> str:
-        """Get the directory where engine weights are stored."""
-        return persistent_storage.get_directory('weights')
-
-    @staticmethod
-    def get_available_weights() -> list[str]:
-        weights_dir = persistent_storage.get_directory('weights')
-        if not os.path.isdir(weights_dir):
-            log.warning(f"Engine weights directory not found: {weights_dir}")
-            return []
-
-        weights = [f for f in os.listdir(weights_dir) if f.endswith('.pb.gz')]
-        log.info(f"Available engine weights: {weights}")
-
-        weights.sort()
-
-        return weights
-
-    @staticmethod
-    def get_weight_filename(weight: str) -> str:
-        return os.path.join(Engine.weight_directory(), weight)
 
     def get_move_async(self, weight: str, board: chess.Board, callback: Callable[[chess.engine.PlayResult], None]) -> None:
         """Request the engine to select a move for the given board position."""
@@ -264,4 +285,4 @@ class Engine:
         log.info("Analysis worker thread exiting")
 
 
-engine = Engine()
+engine = _Lc0Engine()

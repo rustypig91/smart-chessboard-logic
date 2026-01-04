@@ -2,7 +2,7 @@ import chess
 from flask import Blueprint, jsonify, request
 from chessboard.game.game_state import game_state
 from chessboard.logger import log
-from chessboard.game.engine import engine
+import chessboard.game.engine as engine
 
 api = Blueprint('api', __name__, template_folder='templates')
 
@@ -37,6 +37,9 @@ def start_new_game():
     if engine_name and engine_name not in engine.get_available_weights():
         log.warning(f"Attempted to start game with unavailable opponent: '{engine_name}'")
         return jsonify({'success': False, 'error': 'Selected opponent not available'}), 400
+    elif engine_name and engine.get_weight_file(engine_name, try_download=True) is None:
+        log.warning(f"Engine weight file for '{engine_name}' not found")
+        return jsonify({'success': False, 'error': 'Selected opponent weight file not found'}), 400
 
     if type(start_time_seconds) not in (float, int) or start_time_seconds < 0:
         log.warning(f"Invalid start time specified: {start_time_seconds}")

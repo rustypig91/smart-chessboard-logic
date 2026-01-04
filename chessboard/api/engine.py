@@ -1,6 +1,6 @@
 import os
 from flask import Blueprint, jsonify, request
-from chessboard.game.engine import Engine
+import chessboard.game.engine as engine
 from werkzeug.utils import secure_filename
 from chessboard.logger import log
 import tempfile
@@ -13,15 +13,15 @@ def get_available_weights():
     """API endpoint to get a list of available engine weights"""
     try:
         weights = []
-        available_weights = Engine.get_available_weights()
+        available_weights = engine.get_available_weights()
 
         for weight in available_weights:
-            filename = Engine.get_weight_filename(weight)
+            filename = engine.get_weight_filename(weight)
             weights.append({
                 'name': weight,
                 'size': os.path.getsize(filename),
                 'last_modified': os.path.getmtime(filename),
-                'filename': Engine.get_weight_filename(weight)
+                'filename': engine.get_weight_filename(weight)
             })
 
         return jsonify({'success': True, 'weights': weights})
@@ -35,7 +35,7 @@ def delete_weight(weight_name):
     """API endpoint to delete an engine weight"""
     try:
         weight_name = secure_filename(weight_name)
-        Engine.delete_weight(weight_name)
+        engine.delete_weight(weight_name)
         log.info(f"Deleted engine weight: {weight_name}")
         return jsonify({'success': True, 'deleted': weight_name})
     except FileNotFoundError:
@@ -56,7 +56,7 @@ def install_weight_from_url():
             return jsonify({'success': False, 'error': "Missing 'url' in request"}), 400
 
         url = data['url']
-        Engine.install_weight_from_url(url)
+        engine.install_weight_from_url(url)
 
         return jsonify({'success': True, 'installed_from': url})
     except ValueError as e:
@@ -86,7 +86,7 @@ def install_weight():
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = os.path.join(tmpdir, name)
             uploaded.save(temp_path)
-            Engine.install_weight(temp_path)
+            engine.install_weight(temp_path)
 
         return jsonify({'success': True, 'installed': name})
     except FileExistsError:

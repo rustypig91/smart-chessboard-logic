@@ -7,9 +7,9 @@ from chessboard.thread_safe_variable import ThreadSafeVariable
 from threading import Lock
 
 
-settings.register('led.color.white_square', ColorSetting(150, 150, 150),
+settings.register('led.color.white_square', ColorSetting((150, 150, 150)),
                   "Base color for white squares on the chessboard LEDs")
-settings.register('led.color.black_square', ColorSetting(0, 0, 0),
+settings.register('led.color.black_square', ColorSetting((0, 0, 0)),
                   "Base color for black squares on the chessboard LEDs")
 
 

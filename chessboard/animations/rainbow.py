@@ -20,6 +20,12 @@ class AnimationRainbow(Animation):
                  duration: float = float('inf'),
                  *args,
                  **kwargs) -> None:
+        """  Rainbow animation flowing across the board.
+
+        flow_axis: 'file', 'rank', or 'diag' for direction of rainbow flow.
+        speed: Speed of rainbow flow (higher is faster).
+        duration: Duration of the animation in seconds.
+        """
         super().__init__(*args, **kwargs)
 
         self._flow_axis = flow_axis  # 'file', 'rank', or 'diag'

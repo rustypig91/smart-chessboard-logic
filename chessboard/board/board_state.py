@@ -8,19 +8,19 @@ from chessboard.game.game_state import game_state
 import chessboard.board.led_manager as leds
 
 settings.register('led.color.invalid_piece_placement',
-                  ColorSetting(255, 0, 0),
+                  ColorSetting((255, 0, 0)),
                   'Color to indicate invalid piece placement')
 settings.register('led.color.move_to',
-                  ColorSetting(0, 255, 50),
+                  ColorSetting((0, 255, 50)),
                   'Color to indicate legal move destinations')
 settings.register('led.color.move_from',
-                  ColorSetting(20, 50, 255),
+                  ColorSetting((20, 50, 255)),
                   'Color to indicate the piece being moved')
 settings.register('led.color.capture',
-                  ColorSetting(255, 100, 0),
+                  ColorSetting((255, 100, 0)),
                   'Color to indicate a capture move')
 settings.register('led.color.previous_move',
-                  ColorSetting(170, 188, 14),
+                  ColorSetting((170, 188, 14)),
                   'Color to indicate the squares involved in the previous move')
 
 

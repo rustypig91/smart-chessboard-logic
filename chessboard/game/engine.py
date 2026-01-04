@@ -50,7 +50,8 @@ def _probability_from_engine_score(score: chess.engine.PovScore) -> tuple[float,
     """ Convert engine score to win probabilities for white and black. """
     s_white = score.white()
     if s_white.is_mate():
-        cp = 100000 if (s_white.mate() or 0) > 0 else -100000
+        mate_score = s_white.mate()
+        cp = 100000 if mate_score is not None and mate_score > 0 else -100000
     else:
         cp = s_white.score(mate_score=100000)
     return _cp_to_probs(float(cp))

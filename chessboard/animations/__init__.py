@@ -7,11 +7,11 @@ import chessboard.events as events
 from chessboard.game.game_state import game_state
 from chessboard.settings import settings, ColorSetting
 
-settings.register('animation.check.color', ColorSetting(255, 100, 255), 'Color for when the king is in check')
+settings.register('animation.check.color', ColorSetting((255, 100, 255)), 'Color for when the king is in check')
 
 settings.register('animation.legal_move.enabled', True, 'Enable animations for legal moves detected')
-settings.register('animation.legal_move.color', ColorSetting(102, 204, 255), 'Color for water droplet animation')
-settings.register('animation.hint.color', ColorSetting(0, 255, 0), 'Color for hint pulse animation')
+settings.register('animation.legal_move.color', ColorSetting((102, 204, 255)), 'Color for water droplet animation')
+settings.register('animation.hint.color', ColorSetting((0, 255, 0)), 'Color for hint pulse animation')
 
 _change_side_animation = AnimationChangeSide(
     new_side=chess.WHITE,

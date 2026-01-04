@@ -6,21 +6,19 @@ import chessboard.persistent_storage as persistent_storage
 
 
 class ColorSetting(tuple):
-    def __new__(cls, r: int | tuple[int, int, int] | list[int], g: Optional[int] = None, b: Optional[int] = None):
+    def __new__(cls, rgb: tuple[int, int, int]):
         """ A setting representing an RGB color. 
 
-        r: Red component (0-255) or a tuple/list of (r, g, b)
-        g: Green component (0-255)
-        b: Blue component (0-255)
+        rgb: A tuple of three integers (R, G, B) each in the range 0-255.
         """
-        if isinstance(r, (list, tuple)):
-            if len(r) != 3:
-                raise ValueError("ColorSetting requires 3 components (r, g, b)")
-            r, g, b = r
-        if g is None or b is None:
-            raise TypeError("ColorSetting expects r, g, b values")
-        return super(ColorSetting, cls).__new__(cls, (int(r), int(g), int(b)))
-    typename = "color"
+        if len(rgb) != 3:
+            raise ValueError("ColorSetting requires a tuple of three integers (R, G, B)")
+
+        for c in rgb:
+            if not (isinstance(c, int) and 0 <= c <= 255):
+                raise ValueError("Color components must be integers in the range 0-255")
+
+        return super(ColorSetting, cls).__new__(cls, rgb)
 
     def to_json(self) -> dict:
         return {

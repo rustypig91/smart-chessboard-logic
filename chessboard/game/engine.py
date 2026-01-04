@@ -217,7 +217,7 @@ class _Lc0Engine:
 
     def stop(self) -> None:
         """Stop the engine and its worker thread."""
-        if not self._engine_thread.is_alive():
+        if self._engine_thread.is_alive():
             self._analysis_queue.put(None)
             self._engine_thread.join(timeout=5.0)
 

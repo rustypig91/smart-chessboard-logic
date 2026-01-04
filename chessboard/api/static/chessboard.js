@@ -93,7 +93,8 @@ function _dragendHandler(e) {
     const fromSquareDiv = document.querySelector(`[data-square_index='${fromSquareIndex}']`);
     const toSquareDiv = document.querySelector(`[data-square_index='${toSquareIndex}']`);
 
-    if (toSquareDiv.innerHTML != "" && toSquareDiv != fromSquareDiv) {
+    const targetHasPiece = !!toSquareDiv.querySelector('.chess-piece');
+    if (targetHasPiece && toSquareDiv != fromSquareDiv) {
         console.warn("Dragend: target square already occupied, move cancelled.");
         return;
     }

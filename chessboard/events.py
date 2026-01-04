@@ -1,16 +1,24 @@
-import asyncio
 from collections.abc import Callable
+import enum
+from types import ModuleType
 import chess
 from chessboard.logger import log
 import threading
 import traceback
 import atexit
 import inspect
+import queue
+
+
+@enum.unique
+class PlayerType(enum.Enum):
+    HUMAN = 'human'
+    ENGINE = 'engine'
 
 
 class Event:
     def __init__(self):
-        self.sender = "Unknown"
+        self.sender: ModuleType | None = None
         # Used for blocking publish
         self._sync_event: threading.Event | None = None
 
@@ -34,6 +42,21 @@ class Event:
             return None
         return 'white' if color == chess.WHITE else 'black'
 
+    @staticmethod
+    def _convert_to_json_value(value: object) -> object:
+        if isinstance(value, float):
+            return value if value != float('inf') else "inf"
+        elif isinstance(value, chess.Board):
+            return value.fen()
+        elif isinstance(value, ModuleType):
+            return value.__name__
+        elif isinstance(value, chess.Move):
+            return value.uci()
+        elif isinstance(value, PlayerType):
+            return value.value
+        else:
+            return value
+
     def to_json(self) -> dict:
         json_items = {}
 
@@ -41,10 +64,11 @@ class Event:
             if key.startswith('_'):
                 # Skip private attributes
                 continue
-            elif isinstance(value, float) and value == float('inf'):
-                json_items[key] = 'inf'
+
+            if isinstance(value, list) or isinstance(value, tuple):
+                json_items[key] = [self._convert_to_json_value(v) for v in value]
             else:
-                json_items[key] = value
+                json_items[key] = self._convert_to_json_value(value)
 
         return json_items
 
@@ -52,10 +76,11 @@ class Event:
 class SetSquareColorEvent(Event):
     """ Requests setting the color chess squares to specific RGB values. """
 
-    def __init__(self, color_map: dict[chess.Square, tuple[int, int, int] | None]):
-        """        
+    def __init__(self, color_map: dict[chess.Square, tuple[int, int, int]]):
+        """
         color_map: A dictionary mapping squares to RGB color tuples or None to not change the led
         """
+        super().__init__()
         self.color_map = color_map
 
     def __repr__(self):
@@ -64,6 +89,7 @@ class SetSquareColorEvent(Event):
 
 class SquarePieceStateChangeEvent(Event):
     def __init__(self, squares: list[chess.Square], colors: list[chess.Color | None | str]):
+        super().__init__()
         self.squares = squares
         self.colors = [self._parse_color(color) for color in colors]
 
@@ -78,7 +104,13 @@ class SquarePieceStateChangeEvent(Event):
 
 class TimeButtonPressedEvent(Event):
     def __init__(self, color: chess.Color | str):
-        self.color = self._parse_color(color)
+        super().__init__()
+
+        parsed_color = self._parse_color(color)
+        if parsed_color is None:
+            raise ValueError("Color cannot be None for TimeButtonPressedEvent")
+
+        self.color: chess.Color = parsed_color
 
     def __repr__(self):
         return f"TimeButtonPressedEvent(color={'white' if self.color == chess.WHITE else 'black'})"
@@ -90,8 +122,13 @@ class TimeButtonPressedEvent(Event):
 
 
 class ChessMoveEvent(Event):
-    def __init__(self, move: chess.Move):
+    def __init__(self, move: chess.Move, side: chess.Color | str):
+        super().__init__()
         self.move = move
+        _side = self._parse_color(side)
+        if _side is None:
+            raise ValueError("Side cannot be None for ChessMoveEvent")
+        self.side = _side
 
     def to_json(self):
         return {
@@ -103,40 +140,44 @@ class ChessMoveEvent(Event):
 
 class GameOverEvent(Event):
     def __init__(self, winner: chess.Color | None | str, reason: str):
+        super().__init__()
         self.winner = self._parse_color(winner)
         self.reason = reason
 
 
 class PlayerNotifyEvent(Event):
     def __init__(self, title: str, message: str):
+        super().__init__()
         self.title = title
         self.message = message
 
 
 class GameStartedEvent(Event):
     def __init__(self):
-        pass
+        super().__init__()
 
 
 class GamePausedEvent(Event):
     def __init__(self):
-        pass
+        super().__init__()
 
 
 class GameResumedEvent(Event):
     def __init__(self):
-        pass
+        super().__init__()
 
 
 class SystemShutdownEvent(Event):
     def __init__(self):
-        pass
+        super().__init__()
 
 
 class NewGameEvent(Event):
-    def __init__(self, white_player: str, black_player: str, start_time_seconds: tuple[float, float], increment_seconds: tuple[float, float]):
+    def __init__(self, white_player: PlayerType, black_player: PlayerType, engine_weight: str | None, start_time_seconds: tuple[float, float], increment_seconds: tuple[float, float]):
+        super().__init__()
         self.white_player = white_player
         self.black_player = black_player
+        self.engine_weight = engine_weight
         self.start_time_seconds = start_time_seconds
         self.increment_seconds = increment_seconds
 
@@ -149,6 +190,7 @@ class ChessClockStateChangedEvent(Event):
         white_time_left: float,
         black_time_left: float
     ):
+        super().__init__()
         self.paused = paused
         self.current_player = self._parse_color(current_player)
         self.white_time_left = white_time_left
@@ -171,13 +213,15 @@ class GameStateChangedEvent(Event):
         black_time_elapsed: float,
         white_start_time: float,
         black_start_time: float,
-        white_player: str,
-        black_player: str,
+        white_player: PlayerType,
+        black_player: PlayerType,
         winner: chess.Color | None | str,
         is_game_started: bool = False,
         is_game_paused: bool = False,
     ):
-        self.fen = board.fen()
+        super().__init__()
+
+        self.board = board.copy(stack=1)
 
         self.last_move = board.move_stack[-1].uci() if board.move_stack else None
         self.is_check = board.is_check()
@@ -209,6 +253,44 @@ class GameStateChangedEvent(Event):
         return items
 
 
+class LegalMoveDetectedEvent(Event):
+    def __init__(self, move: chess.Move):
+        super().__init__()
+        self.move = move
+
+    def to_json(self) -> dict:
+        return {
+            "from_square": chess.square_name(self.move.from_square),
+            "to_square": chess.square_name(self.move.to_square),
+            "promotion": chess.piece_symbol(self.move.promotion) if self.move.promotion else None
+        }
+
+
+class EngineAnalysisEvent(Event):
+    """Probability of winning for each side, emitted after each move."""
+
+    def __init__(self, board: chess.Board, weight: str, white_win_prob: float = 0.5, black_win_prob: float = 0.5, pv: list[chess.Move] = [], depth: int = 0, score: int = 0):
+        super().__init__()
+        self.white_win_prob = float(white_win_prob)
+        self.black_win_prob = float(black_win_prob)
+        self.score = score
+        self.pv = pv
+        self.depth = depth
+        self.board = board.copy(stack=False)
+        self.weight = weight
+
+    def __repr__(self):
+        return f"GameWinProbabilityEvent(white={self.white_win_prob:.3f}, black={self.black_win_prob:.3f})"
+
+
+class HintEvent(Event):
+    """ Engine provided hint for the next move. """
+
+    def __init__(self, move: chess.Move):
+        super().__init__()
+        self.move = move
+
+
 class _EventManager:
     def __init__(self):
         self._subscribers: dict[type[Event],
@@ -216,16 +298,12 @@ class _EventManager:
         for event_type in Event.__subclasses__():
             self._subscribers[event_type] = []
 
-        self._event_queue = asyncio.Queue()
-
-        self._event_loop = asyncio.new_event_loop()
-        self._event_task = self._event_loop.create_task(self._main())
+        self._event_queue = queue.Queue()
 
         self._thread = threading.Thread(target=self.main, daemon=True)
         self._thread.start()
 
         log.info("EventManager initialized")
-        self._latest_events: dict[type[Event], Event] = {}
 
     def __del__(self):
         self.stop()
@@ -251,65 +329,52 @@ class _EventManager:
         block: If True, waits until the event has been handled by all subscribers.
         timeout: Maximum time to wait if blocking is enabled.
         """
-        event.sender = inspect.stack()[1].frame.f_globals.get('__name__', 'Unknown')
 
-        sync_event = None
+        event.sender = inspect.getmodule(inspect.stack()[1].frame)
+
         if block:
-            sync_event = threading.Event()
-            event._sync_event = sync_event
+            # Prevent deadlock: ensure blocking publish is not invoked from the event handling thread
+            if threading.current_thread() is self._thread:
+                raise RuntimeError("publish(block=True) cannot be called from the event handling thread")
+            event._sync_event = threading.Event()
 
-        asyncio.run_coroutine_threadsafe(
-            self._event_queue.put(event), self._event_loop)
+        if event is None:
+            raise ValueError("Cannot publish None event")
 
-        self._latest_events[type(event)] = event
+        self._event_queue.put_nowait(event)
 
-        if block and sync_event:
-            sync_event.wait(timeout=timeout)
+        if block and event._sync_event is not None:
+            success = event._sync_event.wait(timeout=timeout)
+            if not success:
+                raise TimeoutError("Timeout waiting for event to be handled")
 
     def _handle_event(self, event: Event):
-        event_type = type(event)
-        if event_type in self._subscribers:
-            for callback in self._subscribers[event_type]:
-                try:
-                    callback(event)
-                except Exception as e:
-                    log.error(f"Error in event callback: {e}")
-                    traceback.print_exc()
+        for callback in self._subscribers.get(type(event), ()):
+            try:
+                callback(event)
+            except Exception as e:
+                log.error(f"Error in event callback: {e}")
+                traceback.print_exc()
         # Signal the event is handled if blocking was requested
-        if hasattr(event, '_sync_event') and event._sync_event is not None:
+        if event._sync_event is not None:
             event._sync_event.set()
 
-    async def _main(self):
+    def main(self):
         while True:
-            try:
-                event = await asyncio.wait_for(self._event_queue.get(), timeout=1.0)
-            except asyncio.TimeoutError:
-                continue
-            except asyncio.CancelledError:
+            event = self._event_queue.get()
+            if event is None:
                 break
 
-            # if not isinstance(event, HalSensorVoltageEvent):
-            #     # Skip logging for high-frequency events
             log.debug(f"{type(event).__name__}: {event.to_json()}")
 
             self._handle_event(event)
             self._event_queue.task_done()
 
-    def main(self):
-        asyncio.set_event_loop(self._event_loop)
-        self._event_loop.run_until_complete(self._event_task)
+        log.info("EventManager main loop exiting")
 
     def stop(self):
-        if self._event_loop.is_running():
-            self._event_task.cancel()
-            self._event_loop.call_soon_threadsafe(self._event_loop.stop)
-            if self._thread is not None and self._thread.is_alive():
-                self._thread.join(timeout=2)
-                self._thread = None
-            log.info("EventManager stopped")
-
-    def get_last_event(self, event_type: type[Event]) -> Event | None:
-        return self._latest_events.get(event_type, None)
+        self._event_queue.put(None)
+        self._thread.join(timeout=2.0)
 
 
 event_manager = _EventManager()

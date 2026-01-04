@@ -1,3 +1,8 @@
+import os
+import shutil
+import tempfile
+from typing import Optional, Literal
+
 from RPi import GPIO  # type: ignore
 import serial
 import serial.tools.list_ports
@@ -10,13 +15,10 @@ from chessboard.settings import settings
 from chessboard.logger import log
 import chessboard.events as events
 import subprocess
-
-import os
-import shutil
-import tempfile
-
+from chessboard.thread_safe_variable import ThreadSafeVariable
 
 settings.register('hal_sensor.offset', 0.10, description="Voltage offset in volts")
+settings.register('hal_sensor.hysteresis', 0.01, description="Voltage hysteresis in volts")
 
 
 class _XiaoInterface:
@@ -24,9 +26,6 @@ class _XiaoInterface:
     BAUDRATE = 115200
     RESET_PIN = 21
     DEVICE_DESC = 'Chessboard console'
-
-    DEFAULT_SENSOR_PIECE_OFFSET_MV = 100
-    CONSECUTIVE_READINGS_REQUIRED = 2
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, 'instance'):
@@ -40,11 +39,12 @@ class _XiaoInterface:
             return
         self._initialized = True
 
-        self._port = None
-        self._monitoring = False
-        self._monitor_thread = None
+        self._port: Optional[serial.Serial] = None
+        self._monitoring: bool = False
+        self._monitor_thread: Optional[Thread] = None
         self._board_piece_colors: list[chess.Color | None | str] = [None] * 64
-        self._board_piece_consecutive_counts: list[int] = [0] * 64
+
+        self._version = ThreadSafeVariable("unknown")
 
         self._monitor_start()
 
@@ -54,25 +54,29 @@ class _XiaoInterface:
 
         events.event_manager.subscribe(events.SystemShutdownEvent, self._handle_shutdown_event)
 
-    def _handle_shutdown_event(self, event: events.SystemShutdownEvent):
+    @property
+    def version(self) -> str:
+        return self._version.value
+
+    def _handle_shutdown_event(self, event: events.SystemShutdownEvent) -> None:
         log.info("Xiao device shutdown started")
         self._shutdown_device()
         log.info("Xiao device shutdown completed")
 
-    def __del__(self):
+    def __del__(self) -> None:
         self._monitor_stop()
         if self._port is not None:
             self._port.close()
 
-    def start(self):
+    def start(self) -> None:
         if not self._monitoring:
             self._monitor_start()
 
-    def stop(self):
+    def stop(self) -> None:
         if self._monitoring:
             self._monitor_stop()
 
-    def flash_firmware(self, firmware_path: str):
+    def flash_firmware(self, firmware_path: str) -> None:
         """Flash new firmware to the Xiao device using the bootloader.
 
         Args:
@@ -113,16 +117,19 @@ class _XiaoInterface:
         self._monitor_start()
 
     @property
-    def port(self):
+    def port(self) -> serial.Serial:
         if self._port is None:
             self._reset_device()
 
+        if self._port is None:
+            raise RuntimeError("Failed to initialize Xiao serial port")
+
         return self._port
 
-    def _set_reset_pin(self, value):
+    def _set_reset_pin(self, value: Literal[0, 1]) -> None:
         GPIO.output(self.RESET_PIN, value)
 
-    def calibrate_sensors(self):
+    def calibrate_sensors(self) -> None:
         """Calibrate the HAL sensors when no pieces are on the board.
 
         Warning: No pieces shall be on the board when this is called.
@@ -161,7 +168,7 @@ class _XiaoInterface:
 
             sleep(0.5)
 
-    def _shutdown_device(self):
+    def _shutdown_device(self) -> None:
         if self._monitoring:
             self._monitor_stop()
 
@@ -183,7 +190,7 @@ class _XiaoInterface:
             sleep(0.1)
             tty_device = self._find_tty_device()
 
-    def _start_bootloader(self):
+    def _start_bootloader(self) -> None:
         self._shutdown_device()
 
         self._set_reset_pin(GPIO.LOW)
@@ -196,7 +203,7 @@ class _XiaoInterface:
         sleep(1)
         log.info("Xiao bootloader started")
 
-    def _reset_device(self):
+    def _reset_device(self) -> None:
         if self._port is not None:
             self._port.close()
             self._port = None
@@ -232,21 +239,25 @@ class _XiaoInterface:
             sleep(0.1)
             tty_device = self._find_tty_device()
 
-        sleep(1)  # Wait for the serial connection to stabilize
+        sleep(0.1)  # Wait for the serial connection to stabilize
         self._port = serial.Serial(
             tty_device, baudrate=self.BAUDRATE, timeout=1)
-        sleep(1)
         self._port.flush()
+        sleep(0.2)
+        self._port.flush()
+        self._send_command('')  # Ensure we have a clean prompt
 
-    def _monitor_start(self):
+        self._version.value = self._send_command('version').strip()
+
+    def _monitor_start(self) -> None:
         if self._monitoring:
             raise RuntimeError("Monitor is already running")
 
         self._monitoring = True
-        self._monitor_thread = Thread(target=self._monitor_thread_func)
+        self._monitor_thread = Thread(target=self._monitor_thread_func, daemon=True)
         self._monitor_thread.start()
 
-    def _monitor_stop(self):
+    def _monitor_stop(self) -> None:
         if not self._monitoring:
             return
 
@@ -257,59 +268,46 @@ class _XiaoInterface:
 
         log.info("HAL sensor monitoring stoped")
 
-    def _monitor_thread_func(self):
-        if self.port is None:
-            return
-
-        self.port.write(b'board monitor offset\n')
+    def _monitor_thread_func(self) -> None:
+        offset = int(settings['hal_sensor.offset'] * 1e3)
+        hysteresis = int(settings['hal_sensor.hysteresis'] * 1e3)
+        self.port.write(f'board monitor threshold -{offset} {offset} {hysteresis}\n'.encode('utf-8'))
 
         log.info("HAL sensor monitoring started")
 
-        # Regular expression to match a line with file and ranks
-        exp_file = r'^(?P<file>[A-H])\|(?P<ranks>( *-?\d+ *\|){7} *-?\d+ *)$'
+        exp = r'^(?P<sign>[\+\- ])(?P<file>[A-H])(?P<rank>[1-8])$'
 
-        first_scan_completed = False
+        # Monitor function will send initial piece states for all squares
+        # This variable tracks whether we need to send initial states for all squares
+        board_piece_state_received: Optional[list[bool]] = [False] * 64
 
         while self._monitoring:
-            line = self.port.readline().decode('utf-8').strip()
-            match = re.match(exp_file, line)
+            line = self.port.readline().decode('utf-8').rstrip()
+            match = re.match(exp, line)
             if match:
-                file_char = match.group('file').strip()
+                file_char = match.group('file')
                 file_index = ord(file_char) - ord('A')
-                ranks = match.group('ranks').strip('|').strip()
-                ranks = ranks.split('|')
+                rank_index = int(match.group('rank')) - 1
+                sign = match.group('sign')
 
-                changed_squares = []
-                for rank_index, value_mv in enumerate([int(x) for x in ranks]):
-                    square = chess.square(file_index, rank_index)
-                    voltage = value_mv * 1e-3
+                square = chess.square(file_index, rank_index)
 
-                    # Require both current and previous voltage to exceed offset
-                    if voltage >= settings['hal_sensor.offset']:
-                        new_color = chess.BLACK
-                    elif voltage <= -settings['hal_sensor.offset']:
-                        new_color = chess.WHITE
-                    else:
-                        new_color = None
+                if sign == '+':
+                    self._board_piece_colors[square] = chess.BLACK
+                elif sign == '-':
+                    self._board_piece_colors[square] = chess.WHITE
+                else:
+                    self._board_piece_colors[square] = None
 
-                    current_color = self._board_piece_colors[square]
-                    if new_color == current_color:
-                        self._board_piece_consecutive_counts[square] += 1
-                    else:
-                        self._board_piece_colors[square] = new_color
-                        self._board_piece_consecutive_counts[square] = 1
-
-                    if self._board_piece_consecutive_counts[square] == self.CONSECUTIVE_READINGS_REQUIRED:
-                        changed_squares.append(square)
-
-                if first_scan_completed:
-                    if len(changed_squares) > 0:
+                if board_piece_state_received is not None:
+                    board_piece_state_received[square] = True
+                    if all(board_piece_state_received):
                         events.event_manager.publish(events.SquarePieceStateChangeEvent(
-                            changed_squares, self._board_piece_colors))
-                elif not first_scan_completed and all(count >= self.CONSECUTIVE_READINGS_REQUIRED for count in self._board_piece_consecutive_counts):
-                    first_scan_completed = True
+                            chess.SQUARES, self._board_piece_colors))
+                        board_piece_state_received = None
+                else:
                     events.event_manager.publish(events.SquarePieceStateChangeEvent(
-                        chess.SQUARES, self._board_piece_colors))
+                        [square], self._board_piece_colors))
 
         self.port.write(b'q')
         self._wait_for_prompt()
@@ -344,7 +342,12 @@ class _XiaoInterface:
         self.port.write(command.encode('utf-8') + b'\n')
         self.port.flush()
 
-        return self._wait_for_prompt()
+        response = self._wait_for_prompt()
+        # Trim echoed command from response
+        if response.startswith(command):
+            response = response[len(command):]
+
+        return response.strip()
 
 
 xiao_interface = _XiaoInterface()

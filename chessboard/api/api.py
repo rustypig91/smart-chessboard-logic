@@ -1,6 +1,6 @@
 import os
-
-from flask import Flask, render_template, send_from_directory, request
+from typing import Any
+from flask import Flask, render_template, send_from_directory, request, Response, url_for
 from flask_socketio import SocketIO
 
 
@@ -10,61 +10,86 @@ from chessboard.api.system.system import api as api_board_system
 from chessboard.api.board.board import api as api_board
 from chessboard.api.settings import api as api_settings
 from chessboard.api.game import api as api_game
+from chessboard.api.system.xiao import api as api_system_xiao
+from chessboard.api.engine import api as api_engine
 from chessboard import is_raspberrypi
+from chessboard.game.game_state import game_state
 
 from chessboard.logger import log
 import traceback
 
-app = Flask(__name__, template_folder="templates", static_url_path='/static')
+app = Flask(__name__, template_folder='templates', static_url_path='/static')
 app.register_blueprint(api_board_wifi, url_prefix='/api/system/wifi', name='wifi')
 app.register_blueprint(api_board_system, url_prefix='/api/system', name='system')
 app.register_blueprint(api_board, url_prefix='/api/board', name='board')
 app.register_blueprint(api_settings, url_prefix='/api/settings', name='settings')
 app.register_blueprint(api_game, url_prefix='/api/game', name='game')
+app.register_blueprint(api_system_xiao, url_prefix='/api/system/xiao/', name='xiao')
+app.register_blueprint(api_engine, url_prefix='/api/engine', name='engine')
 
-if is_raspberrypi:
-    from chessboard.api.system.raspberry_pi import api as api_board_raspberry_pi
-    app.register_blueprint(api_board_raspberry_pi, url_prefix='/api/system', name='raspberry_pi')
+# eventlet.monkey_patch()  # noqa
 
-socketio = SocketIO(app, async_mode="threading")
+socketio = SocketIO(app, async_mode='threading')
+
+
+def has_no_empty_params(rule):
+    defaults = rule.defaults if rule.defaults is not None else ()
+    arguments = rule.arguments if rule.arguments is not None else ()
+    return len(defaults) >= len(arguments)
 
 
 @app.route('/')
-def index():
-    return render_template('index.html')
+def index() -> str:
+    # Provide routes so index.html can render links to all pages
+    links = []
+    for rule in app.url_map.iter_rules():
+        # Filter out rules we can't navigate to in a browser
+        # and rules that require parameters
+        methods = rule.methods or set()
+        if "GET" in methods and has_no_empty_params(rule):
+            url = url_for(rule.endpoint, **(rule.defaults or {}))
+            links.append(url)
+
+    return render_template('index.html', pages=links)
 
 
 @app.route('/display/240x320')
-def home():
+def display() -> str:
     return render_template('display-240x320.html')
 
 
+@app.route('/install_weight')
+def install_weight() -> str:
+    """API endpoint to get the weight installation page"""
+    return render_template('install_weight.html')
+
+
 @app.route('/favicon.ico')
-def favicon():
+def favicon() -> Response:
     return send_from_directory(os.path.join(app.root_path, 'static'),
                                'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
 
 @app.route('/overview')
-def overview():
+def overview() -> str:
     """API endpoint to get board overview status"""
     return render_template('overview.html')
 
 
 @app.route('/simulator')
-def simulator():
+def simulator() -> str:
     """API endpoint to get the board simulator page"""
     return render_template('simulator.html')
 
 
-@app.route('/firmware')
-def firmware_updater():
+@app.route('/xiao_firmware')
+def xiao_firmware() -> str:
     """Firmware updater page"""
-    return render_template('firmware_updater.html')
+    return render_template('xiao_firmware.html')
 
 
 @socketio.on('publish_event')
-def handle_publish_event(data):
+def handle_publish_event(data: dict[str, Any]) -> None:
     """
     Handle events published by clients.
     Expects 'event_type' and 'event_data' in data.
@@ -87,30 +112,10 @@ def handle_publish_event(data):
         return
 
 
-@socketio.on('request_last_event')
-def handle_request_last_event(data):
-    """
-    Handle client request for the last event of a specific type.
-    Expects 'event_type' in data.
-    """
-    event_type = data.get('event_type')
-    if not event_type:
-        log.error("request_last_event missing 'event_type'")
-        return
-
-    try:
-        event_class = getattr(chessboard.events, event_type)
-        last_event = chessboard.events.event_manager.get_last_event(event_class)
-        if last_event:
-            log.debug(f"request_last_event: {event_type}; {last_event.to_json()}")
-            socketio.emit(f'board_event.{event_type}', last_event.to_json(), to=request.sid)
-
-        else:
-            log.debug(f"request_last_event: {event_type}; no last event found")
-    except Exception as e:
-        traceback_lines = "\n    ".join(traceback.format_exc().splitlines())
-        log.error(f"Error handling request_last_event: {e}: \n    {traceback_lines}")
-        return
+@socketio.on('publish_game_state')
+def handle_publish_game_state() -> None:
+    """Handle request to get the current game state"""
+    game_state.publish_game_state()
 
 
 chessboard.events.event_manager.subscribe_all_events(lambda event: emit_event(event))

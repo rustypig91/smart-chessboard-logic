@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Install Engine Weights</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Optional CSRF for frameworks that provide it -->
+    <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined }}">
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            margin: 0;
+            padding: 24px;
+            color: #222;
+        }
+
+        h1 {
+            font-size: 20px;
+            margin: 0 0 16px;
+        }
+
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .row {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .col {
+            flex: 1 1 360px;
+        }
+
+        .dropzone {
+            border: 2px dashed #888;
+            border-radius: 8px;
+            padding: 24px;
+            text-align: center;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .dropzone.drag {
+            background: #f7f9ff;
+            border-color: #3b82f6;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .btn {
+            appearance: none;
+            border: 1px solid #222;
+            background: #111;
+            color: #fff;
+            padding: 10px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .btn.secondary {
+            background: #fff;
+            color: #111;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .progress {
+            height: 8px;
+            background: #eee;
+            border-radius: 999px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .bar {
+            height: 100%;
+            width: 0%;
+            background: #3b82f6;
+        }
+
+        .status {
+            font-size: 12px;
+            color: #555;
+            margin-top: 8px;
+            min-height: 16px;
+        }
+
+        ul.weights {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        ul.weights li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #eee;
+            padding: 10px 0;
+        }
+
+        .meta {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .pill {
+            display: inline-block;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #e5f5e0;
+            color: #246b2b;
+            margin-left: 8px;
+        }
+
+        .actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .inline {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 9px 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+        }
+
+        small.note {
+            color: #777;
+            display: block;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+
+<body data-list-url="{{ weights_list_url|default('/api/engine/weights') }}"
+    data-upload-url="{{ weights_upload_url|default('/api/engine/weights') }}"
+    data-install-url="{{ weights_install_url|default('/api/engine/weights/url') }}"
+    data-delete-url-prefix="{{ weights_delete_url_prefix|default('/api/engine/weights/') }}">
+    <h1>Install Engine Weights</h1>
+
+    <div class="row">
+        <div class="col">
+            <div class="card">
+                <div id="dropzone" class="dropzone" tabindex="0">
+                    <p>Drag & drop a weight file here</p>
+                    <p class="meta"></p>
+                    <button id="browseBtn" class="btn secondary" type="button">Browse…</button>
+                    <input id="fileInput" type="file">
+                    <div class="progress" aria-hidden="true">
+                        <div id="progressBar" class="bar"></div>
+                    </div>
+                    <div id="uploadStatus" class="status"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col">
+            <div class="card">
+                <div class="inline">
+                    <input id="urlInput" type="text" placeholder="https://example.com/engine.nnue">
+                    <button id="installUrlBtn" class="btn" type="button">Install from URL</button>
+                </div>
+                <small class="note">Provide a direct URL to the weight file. The server will download and install
+                    it.</small>
+                <div id="urlStatus" class="status"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <strong>Installed weights</strong>
+        <ul id="weightsList" class="weights"></ul>
+        <div id="listStatus" class="status"></div>
+    </div>
+
+    <script>
+        const cfg = {
+            list: document.body.dataset.listUrl,
+            upload: document.body.dataset.uploadUrl,
+            installUrl: document.body.dataset.installUrl,
+            deletePrefix: document.body.dataset.deleteUrlPrefix,
+        };
+
+        const csrf = (document.querySelector('meta[name="csrf-token"]')?.content || '').trim();
+        function csrfHeaders(h = {}) { if (csrf) h['X-CSRFToken'] = csrf; return h; }
+
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const browseBtn = document.getElementById('browseBtn');
+        const progressBar = document.getElementById('progressBar');
+        const uploadStatus = document.getElementById('uploadStatus');
+
+        const urlInput = document.getElementById('urlInput');
+        const installUrlBtn = document.getElementById('installUrlBtn');
+        const urlStatus = document.getElementById('urlStatus');
+
+        const weightsList = document.getElementById('weightsList');
+        const listStatus = document.getElementById('listStatus');
+
+        browseBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files?.length) uploadFile(fileInput.files[0]);
+        });
+
+        ['dragenter', 'dragover'].forEach(ev =>
+            dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('drag'); })
+        );
+        ['dragleave', 'drop'].forEach(ev =>
+            dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); })
+        );
+        dropzone.addEventListener('drop', e => {
+            const file = e.dataTransfer?.files?.[0];
+            if (file) uploadFile(file);
+        });
+
+        installUrlBtn.addEventListener('click', () => {
+            const url = urlInput.value.trim();
+            if (!url) { urlStatus.textContent = 'Provide a URL.'; return; }
+            installFromUrl(url);
+        });
+
+        function resetProgress() { progressBar.style.width = '0%'; }
+        function setProgress(pct) { progressBar.style.width = `${Math.max(0, Math.min(100, pct))}%`; }
+
+        function uploadFile(file) {
+            uploadStatus.textContent = '';
+            resetProgress();
+
+            if (file.size > 200 * 1024 * 1024) {
+                uploadStatus.textContent = 'File too large (max 200MB).';
+                return;
+            }
+
+            const fd = new FormData();
+            fd.append('file', file);
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', cfg.upload);
+            if (csrf) xhr.setRequestHeader('X-CSRFToken', csrf);
+
+            xhr.upload.onprogress = ev => {
+                if (ev.lengthComputable) setProgress((ev.loaded / ev.total) * 100);
+            };
+            xhr.onerror = () => { uploadStatus.textContent = 'Upload failed.'; resetProgress(); };
+            xhr.onload = () => {
+                try {
+                    const res = JSON.parse(xhr.responseText || '{}');
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        uploadStatus.textContent = res.message || 'Upload complete.';
+                        loadWeights();
+                    } else {
+                        uploadStatus.textContent = res.error || `Error ${xhr.status}.`;
+                    }
+                } catch {
+                    uploadStatus.textContent = xhr.status >= 200 && xhr.status < 300 ? 'Upload complete.' : `Error ${xhr.status}.`;
+                }
+                setTimeout(resetProgress, 800);
+            };
+            xhr.send(fd);
+        }
+
+        async function installFromUrl(url) {
+            urlStatus.textContent = 'Installing…';
+            installUrlBtn.disabled = true;
+            try {
+                const res = await fetch(cfg.installUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+                    body: JSON.stringify({ url })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                urlStatus.textContent = data.message || 'Installed.';
+                loadWeights();
+            } catch (e) {
+                urlStatus.textContent = e.message || 'Install failed.';
+            } finally {
+                installUrlBtn.disabled = false;
+            }
+        }
+
+        async function loadWeights() {
+            listStatus.textContent = 'Loading…';
+            try {
+                const res = await fetch(cfg.list, { headers: csrfHeaders() });
+                const data = await res.json().catch(() => ({}));
+                const items = Array.isArray(data.weights) ? data.weights : (Array.isArray(data) ? data : []);
+                renderWeights(items);
+                listStatus.textContent = items.length ? '' : 'No weights installed.';
+            } catch {
+                listStatus.textContent = 'Failed to load weights.';
+            }
+        }
+
+        function renderWeights(items) {
+            weightsList.innerHTML = '';
+            items.forEach(w => {
+                const li = document.createElement('li');
+                const name = document.createElement('div');
+                const actions = document.createElement('div');
+                name.innerHTML = `
+                    <div>${escapeHtml(w.name || w.filename || 'Unnamed')}
+                    </div>
+                    <div class="meta">
+                        ${formatSize(w.size)} ${w.size ? '·' : ''}
+                        ${w.last_modified ? 'Last modified: ' + formatDate(w.last_modified) : ''}
+                    </div>`;
+                actions.className = 'actions';
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn secondary';
+                deleteBtn.textContent = 'Delete';
+                deleteBtn.onclick = () => deleteWeight(w.id || w.name);
+
+                actions.appendChild(deleteBtn);
+
+                li.appendChild(name);
+                li.appendChild(actions);
+                weightsList.appendChild(li);
+            });
+        }
+
+        async function deleteWeight(id) {
+            if (!id) return;
+            if (!confirm(`Delete ${escapeHtml(id)}?`)) return;
+            try {
+                const res = await fetch(cfg.deletePrefix + encodeURIComponent(id), {
+                    method: 'DELETE',
+                    headers: csrfHeaders()
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                loadWeights();
+            } catch (e) {
+                alert(e.message || 'Delete failed.');
+            }
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
+        }
+        function formatSize(bytes) {
+            if (!bytes && bytes !== 0) return '';
+            const u = ['B', 'KB', 'MB', 'GB']; let i = 0; let b = +bytes;
+            while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+            return `${b.toFixed(b >= 100 ? 0 : 1)} ${u[i]}`;
+        }
+        function formatDate(ts) {
+            try {
+                const d = new Date(Number(ts) * 1000);
+                if (isNaN(d.getTime())) return '';
+                const two = n => String(n).padStart(2, '0');
+                const yyyy = d.getFullYear();
+                const mm = two(d.getMonth() + 1);
+                const dd = two(d.getDate());
+                const HH = two(d.getHours());
+                const MM = two(d.getMinutes());
+                const SS = two(d.getSeconds());
+                return `${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}`; // Non-retarded 24-hour format
+            } catch { return ''; }
+        }
+
+        loadWeights();
+    </script>
+</body>
+
+</html>

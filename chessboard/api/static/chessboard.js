@@ -93,13 +93,18 @@ function _dragendHandler(e) {
     const fromSquareDiv = document.querySelector(`[data-square_index='${fromSquareIndex}']`);
     const toSquareDiv = document.querySelector(`[data-square_index='${toSquareIndex}']`);
 
+    const targetHasPiece = !!toSquareDiv.querySelector('.chess-piece');
+    if (targetHasPiece && toSquareDiv != fromSquareDiv) {
+        console.warn("Dragend: target square already occupied, move cancelled.");
+        return;
+    }
 
     if (fromSquareDiv && toSquareDiv && pieceDiv) {
         fromSquareDiv.innerHTML = "";
-        toSquareDiv.innerHTML = "";
-        toSquareDiv.appendChild(pieceDiv);
-        pieceDiv.dataset.current_square_index = toSquareIndex;
         if (toSquareIndex < 64) {
+            toSquareDiv.innerHTML = "";
+            toSquareDiv.appendChild(pieceDiv);
+            pieceDiv.dataset.current_square_index = toSquareIndex;
             _sendBoardState(parseInt(toSquareIndex));
         }
     }
@@ -108,8 +113,40 @@ function _dragendHandler(e) {
     }
 }
 
+function getMissingPieces() {
+    // Returns an object with counts of missing pieces for each type and color
+    const startingPieces = {
+        "♔": 1, "♕": 1, "♖": 2, "♗": 2, "♘": 2, "♙": 8, // White
+        "♚": 1, "♛": 1, "♜": 2, "♝": 2, "♞": 2, "♟": 8  // Black
+    };
 
-function _createPieceDiv(pieceSymbol, squareIndex) {
+    let currentCounts = {
+        "♔": 0, "♕": 0, "♖": 0, "♗": 0, "♘": 0, "♙": 0,
+        "♚": 0, "♛": 0, "♜": 0, "♝": 0, "♞": 0, "♟": 0
+    };
+
+    document.querySelectorAll('.chess-square').forEach(pieceDiv => {
+        const piece = pieceDiv.querySelector('.chess-piece');
+        if (piece) {
+            const symbol = piece.innerHTML;
+            if (symbol in currentCounts) {
+                currentCounts[symbol] += 1;
+            }
+        }
+    });
+
+    let missing = {};
+    for (const [piece, startCount] of Object.entries(startingPieces)) {
+        const diff = startCount - currentCounts[piece];
+        if (diff > 0) {
+            missing[piece] = diff;
+        }
+    }
+    return missing;
+}
+
+
+function createPieceDiv(pieceSymbol, squareIndex) {
     let pieceDiv = document.createElement("div");
     pieceDiv.className = "chess-piece";
     pieceDiv.dataset.current_square_index = squareIndex;
@@ -132,7 +169,7 @@ function updateBoardState() {
             console.log("Fetched piece map data:", data);
             const pieceMap = data.board_state;
 
-            // Clear all pieces from board and storage
+            // Clear all pieces from board
             document.querySelectorAll('.chess-square').forEach(square => {
                 square.innerHTML = '';
             });
@@ -141,7 +178,7 @@ function updateBoardState() {
             Object.entries(pieceMap).forEach(([squareIndex, pieceSymbol]) => {
                 const squareDiv = document.querySelector(`[data-square_index='${squareIndex}']`);
                 if (squareDiv) {
-                    const pieceDiv = _createPieceDiv(pieceSymbol, squareIndex);
+                    const pieceDiv = createPieceDiv(pieceSymbol, squareIndex);
                     squareDiv.appendChild(pieceDiv);
                 }
                 else {

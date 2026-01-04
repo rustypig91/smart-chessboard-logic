@@ -1,13 +1,29 @@
 import json
 import os
-from typing import Any
+from typing import Any, Optional
 from chessboard.logger import log
+import chessboard.persistent_storage as persistent_storage
 
 
 class ColorSetting(tuple):
-    def __new__(cls, r: int, g: int, b: int):
-        return super(ColorSetting, cls).__new__(cls, (r, g, b))
-    typename = "color"
+    def __new__(cls, rgb: tuple[int, int, int]):
+        """ A setting representing an RGB color. 
+
+        rgb: A tuple of three integers (R, G, B) each in the range 0-255.
+        """
+        if len(rgb) != 3:
+            raise ValueError("ColorSetting requires a tuple of three integers (R, G, B)")
+
+        for c in rgb:
+            if not (isinstance(c, int) and 0 <= c <= 255):
+                raise ValueError("Color components must be integers in the range 0-255")
+
+        return super(ColorSetting, cls).__new__(cls, rgb)
+
+    def to_json(self) -> dict:
+        return {
+            'value': (self[0], self[1], self[2])
+        }
 
 
 class _Setting:
@@ -16,7 +32,7 @@ class _Setting:
         self._default = default
         self.value = default
         self.description = description
-        self.type = type(default).__name__
+        self.type = type(default)
 
     @property
     def default(self) -> Any:
@@ -28,14 +44,15 @@ class _Setting:
             'value': self.value,
             'default': self.default,
             'description': self.description,
-            'type': self.type
+            'type': self.type.__name__
         }
 
 
 class _Settings:
-    def __init__(self, settings_file: str = '/var/lib/chessboard/settings.yaml'):
+    def __init__(self, settings_file: str = 'settings.json'):
         self._settings: dict[str, _Setting] = {}
         self._settings_file: str = settings_file
+        self._loaded_settings: dict[str, Any] = {}
         self._load()
 
     def __getitem__(self, key: str) -> Any:
@@ -60,6 +77,11 @@ class _Settings:
             raise KeyError(f"Setting '{key}' is already registered")
 
         self._settings[key] = _Setting(key, default, description)
+
+        if key in self._loaded_settings:
+            self._settings[key].value = self._loaded_settings[key]
+            log.info(f"Loaded setting '{key}' with value '{self._loaded_settings[key]}' from file")
+
         log.info(f"Registered setting '{key}' with default '{default}'")
 
     def set(self, key: str, value: object):
@@ -71,21 +93,31 @@ class _Settings:
         self._save()
 
     def _save(self):
-        os.makedirs(os.path.dirname(self._settings_file), exist_ok=True)
+        filename = persistent_storage.get_filename(self._settings_file)
 
-        with open(self._settings_file, 'w') as f:
-            json.dump(self._settings, f, indent=4)
+        save_data = {}
+        for key, setting in self._settings.items():
+            if setting.value is not None and setting.value != setting.default:
+                save_data[key] = setting.value
+
+        with open(filename, 'w') as f:
+            json.dump(save_data, f, indent=4)
+        log.info(f"Saved settings to {filename}")
 
     def _load(self):
-        self._settings = {}
+        filename = persistent_storage.get_filename(self._settings_file)
         try:
-            with open(self._settings_file, 'r') as f:
-                if os.stat(self._settings_file).st_size == 0:
-                    return
-                self._settings.update(json.load(f))
-                log.info(f"Loaded settings from {self._settings_file}")
+            with open(filename, 'r') as f:
+                self._loaded_settings = json.load(f)
+                log.info(f"Loaded settings from {filename}")
         except FileNotFoundError:
-            log.info(f"Settings file {self._settings_file} not found, using defaults")
+            log.info(f"Settings file {filename} not found, using defaults")
+
+    def restore_defaults(self):
+        for _, setting in self._settings.items():
+            setting.value = setting.default
+        log.info("Restored all settings to default values")
+        self._save()
 
 
 settings = _Settings()

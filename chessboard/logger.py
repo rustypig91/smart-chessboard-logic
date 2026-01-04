@@ -19,7 +19,7 @@ class ColoredFormatter(logging.Formatter):
 
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.WARNING)
 
 log_format = ColoredFormatter(
     '%(asctime)s %(levelname)s (%(threadName)s): %(message)s'
@@ -30,4 +30,5 @@ console_handler.setLevel(logging.DEBUG)
 console_handler.setFormatter(log_format)
 
 log.addHandler(console_handler)
-print("Logger initialized")
+
+log.info("Logger initialized")

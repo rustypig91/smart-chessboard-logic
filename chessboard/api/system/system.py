@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, request
 import psutil
 import time
 import chessboard.events as events
-
+import threading
 api = Blueprint('api', __name__, template_folder='templates')
 
 
@@ -36,8 +36,7 @@ def info():
         'kernel': f"{os.uname().sysname} {os.uname().release}",
         'architecture': os.uname().machine,
         'hostname': os.popen('hostname').read().strip(),
-        'uptime': time.time() - psutil.boot_time(),
-        'process_uptime': time.time() - psutil.Process().create_time(),
+        'system_uptime': time.time() - psutil.boot_time(),
         'load_average': {
             '1min': loadavg[0],
             '5min': loadavg[1],
@@ -49,16 +48,25 @@ def info():
             'total': memory.total,
             'used': memory.used,
             'free': memory.available,
-            'percent_used': memory.percent,
-            'percent_free': 100 - memory.percent
+            'percent_used_%': memory.percent,
+            'percent_free_%': 100 - memory.percent
         },
         'disk_usage': {
             'total': disk_usage.total,
             'used': disk_usage.used,
             'free': disk_usage.free,
-            'percent_used': disk_usage.percent,
-            'percent_free': 100 - disk_usage.percent
-        }
+            'used_%': disk_usage.percent,
+            'free_%': 100 - disk_usage.percent
+        },
+        'threads': [{'name': t.name, 'id': t.ident} for t in threading.enumerate()],
+        'process': {
+            'pid': os.getpid(),
+            'memory_info': psutil.Process().memory_info()._asdict(),
+            'cpu_times': psutil.Process().cpu_times()._asdict(),
+            'process_uptime': time.time() - psutil.Process().create_time(),
+            'num_threads': psutil.Process().num_threads(),
+            'threads': [t._asdict() for t in psutil.Process().threads()],
+        },
     })
 
 

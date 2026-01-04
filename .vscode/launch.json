@@ -7,6 +7,16 @@
             "request": "launch",
             "python": "${workspaceFolder}/.venv/bin/python",
             "module": "chessboard",
+            "args": ["--new-game", "--debug"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Animation",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "module": "chessboard.animations",
+            "args": [],
             "cwd": "${workspaceFolder}"
         }
     ]

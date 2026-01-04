@@ -92,12 +92,6 @@
                             <p>Configure LED brightness, colors</p>
                         </div>
                     </div>
-                    <div class="submenu-item" data-action="display-settings">
-                        <div>
-                            <h4>Display Settings</h4>
-                            <p>Adjust screen preferences</p>
-                        </div>
-                    </div>
                     <div class="submenu-item" data-action="about">
                         <div>
                             <h4>About</h4>
@@ -191,45 +185,36 @@
                             <p>Begin a new chess game</p>
                         </div>
                     </div>
-                    <div class="menu-item" data-next-view="select-opponent-view">
+                    <div class="menu-item" data-next-view="select-engine-view">
                         <div>
-                            <h3>Opponent</h3>
-                            <p id="opponent-type">Human</p>
+                            <h3>Engine</h3>
+                            <p id="engine-name"></p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-next-view="select-engine-color-view">
+                        <div>
+                            <h3>Engine Color</h3>
+                            <p id="engine-color">Black</p>
                         </div>
                     </div>
                     <div class="menu-item" data-action="set-time">
                         <div>
                             <h3>Time</h3>
-
                             <p id="time-setting">No limit</p>
                         </div>
                     </div>
-                </div>
-            </div>
-
-
-            <!-- New Game -> Select Opponent View -->
-            <div id="select-opponent-view" class="view">
-                <div class="view-header">Select Opponent</div>
-                <div class="menu">
-                    <div class="menu-item selected" data-action="set-opponent-human">
+                    <div class="menu-item" data-action="set-increment">
                         <div>
-                            <h3>Human</h3>
-                            <p>Play against another person</p>
-                        </div>
-                    </div>
-                    <div class="menu-item" data-next-view="display-computers-view">
-                        <div>
-                            <h3>Computer</h3>
-                            <p>Play against AI</p>
+                            <h3>Increment</h3>
+                            <p id="increment-setting">0 sec</p>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- New Game -> Select Opponent -> Computers View -->
-            <div id="display-computers-view" class="view">
-                <div class="view-header">Select Computer Opponent</div>
+            <!-- New Game -> Engine -->
+            <div id="select-engine-view" class="view">
+                <div class="view-header">Select Engine</div>
                 <div id="computers-menu" class="menu">
                 </div>
             </div>
@@ -241,8 +226,8 @@
                             const item = document.createElement('div');
                             item.className = 'menu-item';
                             if (index === 0) item.classList.add('selected');
-                            item.dataset.action = 'set-opponent-computer';
-                            item.dataset.computerLevel = bot;
+                            item.dataset.action = 'set-engine';
+                            item.dataset.engineName = bot;
                             item.innerHTML = `
                                     <div>
                                         <h3>${bot}</h3>
@@ -255,10 +240,41 @@
                 });
             </script>
 
+            <!-- New Game -> Engine Color -->
+            <div id="select-engine-color-view" class="view">
+                <div class="view-header">Select Engine Color</div>
+                <div class="menu">
+                    <div class="menu-item selected" data-action="set-engine-color" data-engine-color="Black">
+                        <div>
+                            <h3>Black</h3>
+                            <p>Engine plays as Black</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-action="set-engine-color" data-engine-color="White">
+                        <div>
+                            <h3>White</h3>
+                            <p>Engine plays as White</p>
+                        </div>
+                    </div>
+                    <div class="menu-item" data-action="set-engine-color" data-engine-color="No engine">
+                        <div>
+                            <h3>No engine</h3>
+                            <p>Play human vs human</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- New Game -> Start Game -> Game Overview View -->
             <div id="game-overview-view" class="view">
                 <div class="view-header">Game Overview</div>
-                <div style="padding:6px; display:flex; flex-direction:column; gap:8px; position:relative;">
+                <div style="padding:6px 6px 6px 18px; display:flex; flex-direction:column; gap:8px; position:relative;">
+                    <!-- Win Probability Bar (left side) -->
+                    <div id="win-prob-bar" aria-label="Win probability" title="Win Probability"
+                        style="position:absolute; left:6px; top:0; bottom:0; width:8px; border-radius:4px; overflow:hidden; display:flex; flex-direction:column; background:#222; pointer-events:none;">
+                        <div id="prob-black" style="background:#444; height:50%;"></div>
+                        <div id="prob-white" style="background:#eaeaea; height:50%;"></div>
+                    </div>
                     <div id="pause-overlay"
                         style="display:none; position:absolute; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.45); z-index:10; align-items:center; justify-content:center;">
                         <div style="font-size:48px; color:#fff; line-height:1;">⏸</div>
@@ -281,7 +297,8 @@
                         </div>
                     </div>
 
-                    <div style="text-align:center; font-size:12px; color:#fff; margin-top:2px;" id="last-move">Last: -
+                    <div style="text-align:center; font-size:12px; color:#fff; margin-top:2px;" id="last-move">Last:
+                        -
                     </div>
                 </div>
             </div>
@@ -336,6 +353,48 @@
 
                 addBoardEventListener('GameStateChangedEvent', handleGameStateEvent)
 
+                function hideProbabilityBar(hidden) {
+                    const bar = document.getElementById('win-prob-bar');
+                    if (bar) {
+                        if (hidden) bar.style.display = 'none';
+                        else bar.style.display = 'flex';
+                    }
+                }
+
+                function toggleProbabilityBar() {
+                    const bar = document.getElementById('win-prob-bar');
+                    if (bar) {
+                        if (bar.style.display === 'none') {
+                            bar.style.display = 'flex';
+                        } else {
+                            bar.style.display = 'none';
+                        }
+                    }
+                }
+
+                // Win Probability updates
+                function updateWinProbabilityBar(whiteProb, blackProb) {
+                    const w = Math.max(0, Math.min(1, Number(whiteProb || 0)));
+                    const b = Math.max(0, Math.min(1, Number(blackProb || (1 - w))));
+                    const sum = w + b;
+                    const wn = sum > 0 ? (w / sum) : 0.5;
+                    const bn = 1 - wn;
+
+                    const wEl = document.getElementById('prob-white');
+                    const bEl = document.getElementById('prob-black');
+                    if (wEl && bEl) {
+                        wEl.style.height = Math.round(wn * 100) + '%';
+                        bEl.style.height = Math.round(bn * 100) + '%';
+                        // Optional: subtle color shift with probability
+                        wEl.style.background = '#eaeaea';
+                        bEl.style.background = '#444';
+                    }
+                }
+
+                addBoardEventListener('EngineAnalysisEvent', function (data) {
+                    updateWinProbabilityBar(data.white_win_prob, data.black_win_prob);
+                });
+
                 document.addEventListener("DOMContentLoaded", () => {
                     setInterval(() => {
                         if (currentView !== 'game-overview-view') return;
@@ -364,6 +423,12 @@
                             blackTime = lastGameState.black_time_elapsed + (dt * (lastGameState.turn === 'black' && !lastGameState.clock_paused ? 1 : 0));
                         }
 
+                        const wSign = whiteTime < 0 ? '-' : '';
+                        const bSign = blackTime < 0 ? '-' : '';
+
+                        whiteTime = Math.abs(whiteTime);
+                        blackTime = Math.abs(blackTime);
+
                         const wMin = Math.floor((whiteTime || 0) / 60);
                         const wSec = ((whiteTime || 0) % 60).toFixed(1);
                         const bMin = Math.floor((blackTime || 0) / 60);
@@ -372,18 +437,24 @@
                         const wEl = document.getElementById('white-clock');
                         const bEl = document.getElementById('black-clock');
 
-                        if (wEl) wEl.textContent = `${padStart(String(wMin), 2, '0')}:${padStart(String(wSec), 2, '0')}`;
-                        if (bEl) bEl.textContent = `${padStart(String(bMin), 2, '0')}:${padStart(String(bSec), 2, '0')}`;
+                        if (wEl) {
+                            wEl.textContent = `${wSign}${String(wMin)}:${padStart(String(wSec), 4, '0')}`;
+                        }
+                        if (bEl) {
+                            bEl.textContent = `${bSign}${String(bMin)}:${padStart(String(bSec), 4, '0')}`;
+                        }
+
+
 
                     }, 100);
 
-                    socket.emit("request_last_event", { event_type: "GameStateChangedEvent" })
+                    socket.emit("publish_game_state")
                 });
 
             </script>
 
             <!-- Color Picker View -->
-            <div id="color-picker-view" class="view">
+            <div id="color-picker-view" class="view" data-on-view-exit="clearColorPreview()">
                 <div class="view-header">Pick Color (RGB)</div>
                 <div class="menu" id="color-picker-menu">
                     <div class="submenu-item selected" data-keyboard-numeric-output="color-r"
@@ -393,24 +464,41 @@
                             <div class="input-field" id="color-r" style="margin-left: 10px;"></div>
                         </div>
                     </div>
-                    <div class=" submenu-item" data-keyboard-numeric-output="color-g"
-                        data-keyboard-title="Enter G (0-255)">
+                    <div class="submenu-item" data-keyboard-numeric-output="color-g"
+                        data-keyboard-title="Enter G (0-255)" data-on-keyboard-done="updateColorPreview()">
                         <div style="display: flex; align-items: center;">
                             <h4 style="margin: 0;">Green</h4>
                             <div class="input-field" id="color-g" style="margin-left: 10px;"></div>
                         </div>
                     </div>
-                    <div class=" submenu-item" data-keyboard-numeric-output="color-b"
-                        data-keyboard-title="Enter B (0-255)">
+                    <div class="submenu-item" data-keyboard-numeric-output="color-b"
+                        data-keyboard-title="Enter B (0-255)" data-on-keyboard-done="updateColorPreview()">
                         <div style="display: flex; align-items: center;">
                             <h4 style="margin: 0;">Blue</h4>
                             <div class="input-field" id="color-b" style="margin-left: 10px;"></div>
                         </div>
                     </div>
-                    <div class=" submenu-item" data-action="color-picker-apply">
+                    <div class="submenu-item" data-action="apply-settings">
                         <div>
                             <h4>Apply</h4>
                             <p>Save selected color</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Boolean Picker View -->
+            <div id="boolean-picker-view" class="view">
+                <div class="view-header" id="boolean-picker-title">Select Value</div>
+                <div class="menu" id="boolean-picker-menu">
+                    <div class="submenu-item selected" data-action="apply-settings">
+                        <div>
+                            <h4>True</h4>
+                        </div>
+                    </div>
+                    <div class="submenu-item" data-action="apply-settings">
+                        <div>
+                            <h4>False</h4>
                         </div>
                     </div>
                 </div>
@@ -510,6 +598,10 @@
             apiCall('/api/game/resign', {});
         }
 
+        function getHint() {
+            apiCall('/api/game/hint', {});
+        }
+
         let menuButtonFunctions = [
             { short: menuGoBack, shortHint: 'Back', long: menuReset, longHint: 'Reset' },
             { short: menuUp, shortHint: '↑', long: null, longHint: '' },
@@ -526,8 +618,8 @@
 
         let gameOverviewButtonFunctions = [
             { short: menuGoBack, shortHint: 'Back', long: null, longHint: '' },
-            { short: null, shortHint: '-', long: regretLastMove, longHint: 'Regret' },
-            { short: null, shortHint: '-', long: resignGame, longHint: 'Resign' },
+            { short: toggleProbabilityBar, shortHint: 'Toggle Prob', long: regretLastMove, longHint: 'Regret' },
+            { short: getHint, shortHint: 'hint', long: resignGame, longHint: 'Resign' },
             { short: gameResume, shortHint: '▶', long: gamePause, longHint: '⏸' },
         ];
 
@@ -557,7 +649,7 @@
         // Track selectedIndex for each view
         const viewSelectedIndices = {};
 
-        function showView(viewId) {
+        function showView(viewId, selectIndex = 0) {
             // Save current selectedIndex before leaving
             if (currentView == viewId) {
                 return; // Already in requested view
@@ -575,7 +667,7 @@
                 viewStack.push(viewId);
                 currentView = viewId;
                 // Restore previous selectedIndex for this view, or default to 0
-                selectedIndex = 0;
+                selectedIndex = selectIndex;
                 menuUpdateSelection();
                 buttonsUpdate(viewButtonsConfig[viewId] || menuButtonFunctions);
 
@@ -602,7 +694,7 @@
                     return data;
                 }).catch(error => {
                     loadingHide();
-                    showMessageView('Error', endpoint + ' call error: ' + (error.message || error));
+                    showMessageView('Error', endpoint + ' call error: ' + (error.message || "Unknown error"));
                     throw error;
                 });
         }
@@ -613,6 +705,15 @@
                 if (currentView) {
                     viewSelectedIndices[currentView] = null;
                 }
+
+                const menuEl = document.getElementById(currentView);
+                console.log('Going back from:', currentView, menuEl);
+
+                if (menuEl && menuEl.dataset.onViewExit) {
+                    eval(menuEl.dataset.onViewExit);
+                    console.log('Called onViewExit for', currentView);
+                }
+
                 // Remove current view
                 viewStack.pop();
 
@@ -820,6 +921,42 @@
 
         // Store pending color path for picker
         let pendingColorPath = null;
+        let pendingBooleanPath = null;
+
+        function applyPendingSettings() {
+            if (pendingColorPath) {
+                const r = parseInt(document.getElementById('color-r').textContent) || 0;
+                const g = parseInt(document.getElementById('color-g').textContent) || 0;
+                const b = parseInt(document.getElementById('color-b').textContent) || 0;
+                const colorValue = [r, g, b];
+
+                loadingShow('Applying Color');
+                apiCall('/api/settings/' + pendingColorPath, { value: colorValue }, function (data) {
+                    if (data.success) {
+                        showMessageView('Success', data.message || 'Color setting updated successfully!');
+                    } else {
+                        showMessageView('Error', 'Failed to update color setting: ' + (data.error || 'Unknown error'));
+                    }
+                    pendingColorPath = null;
+                });
+            }
+
+            if (pendingBooleanPath) {
+                const boolValue = selectedIndex === 0; // True if first item selected, else False
+
+                loadingShow('Applying Setting');
+                apiCall('/api/settings/' + pendingBooleanPath, { value: boolValue }, function (data) {
+                    if (data.success) {
+                        showMessageView('Success', data.message || 'Setting updated successfully!');
+                    } else {
+                        showMessageView('Error', 'Failed to update setting: ' + (data.error || 'Unknown error'));
+                    }
+                    pendingBooleanPath = null;
+                });
+            }
+            loadBoardSettings();
+        }
+
 
         function loadBoardSettings() {
             loadingShow('Loading Settings');
@@ -843,6 +980,18 @@
                     boardSettingsView.appendChild(item);
                 });
 
+                // Append Restore Defaults button at the bottom
+                const restoreItem = document.createElement('div');
+                restoreItem.className = 'submenu-item';
+                restoreItem.dataset.action = 'restore-defaults';
+                restoreItem.innerHTML = `
+                        <div>
+                            <h4>Restore Defaults</h4>
+                            <p>Reset all settings to their default values</p>
+                        </div>
+                    `;
+                boardSettingsView.appendChild(restoreItem);
+
                 selectedIndex = 0;
                 menuUpdateSelection();
             });
@@ -860,10 +1009,10 @@
                 if (setting.type === 'ColorSetting') {
                     // Open color picker with current value
                     // const rgb = setting.value.match(/\d+/g).map(Number);
-                    pendingColorPath = settingKey;
                     openColorPicker(settingKey, setting.value);
                 } else {
-                    showMessageView('Error', 'Unsupported setting type: ' + setting.type);
+                    // Open boolean picker
+                    openBooleanPicker(settingKey, setting.value);
                 }
             });
         }
@@ -880,10 +1029,28 @@
                 time_minutes = 0.0;
             }
 
+            let increment_setting = document.getElementById('increment-setting').textContent
+            const inc_match = /([\d.]+)\s*sec/i.exec(increment_setting || '');
+            let increment_seconds = 0.0;
+            if (inc_match) {
+                increment_seconds = parseFloat(inc_match[1]);
+            }
+
+            let engine_name = document.getElementById('engine-name').textContent;
+            if (engine_name === '') {
+                engine_name = null;
+            }
+
+            let engine_color = document.getElementById('engine-color').textContent;
+            if (engine_color.toLowerCase() === 'no engine' || engine_color === '') {
+                engine_color = null;
+            }
+
             post_data = {
-                opponent: document.getElementById('opponent-type').textContent || 'Human',
+                engine_name: engine_name,
+                engine_color: engine_color,
                 start_time_seconds: time_minutes * 60.0,  // Convert minutes to seconds
-                increment_seconds: 0.0,
+                increment_seconds: increment_seconds,
             };
 
             apiCall('/api/game/new', post_data, function (data) {
@@ -952,34 +1119,56 @@
                     case 'set-board-setting':
                         showBoardSettingView(selectedItem.dataset.settingKey);
                         break;
-                    case 'display-settings':
-                        // Add your display settings logic here
-                        break;
                     case 'change-board-setting':
                         loadBoardSettings();
+                        break;
+                    case 'restore-defaults':
+                        loadingShow('Restoring Defaults');
+                        apiCall('/api/settings/restore_defaults', {}, function (data) {
+                            if (data.success) {
+                                showMessageView('Settings', 'Defaults restored successfully.');
+                                loadBoardSettings();
+                            } else {
+                                showMessageView('Error', 'Failed to restore defaults: ' + (data.error || 'Unknown error'));
+                            }
+                        });
                         break;
                     case 'about':
                         // Add your about page logic here
                         break;
-                    case 'set-opponent-human':
-                        document.getElementById('opponent-type').textContent = 'Human';
-                        setCookie('opponent', 'Human');
-                        menuGoBack();
-                        break;
-                    case 'set-opponent-computer':
-                        document.getElementById('opponent-type').textContent = selectedItem.dataset.computerLevel;
-                        setCookie('opponent', selectedItem.dataset.computerLevel);
-                        menuGoBack();
+                    case 'set-engine':
+                        document.getElementById('engine-name').textContent = selectedItem.dataset.engineName;
+                        setCookie('engine-name', selectedItem.dataset.engineName);
                         menuGoBack(); // Go back to New Game view
+                        break;
+                    case 'set-engine-color':
+                        document.getElementById('engine-color').textContent = selectedItem.dataset.engineColor;
+                        setCookie('engine-color', selectedItem.dataset.engineColor);
+                        menuGoBack(); // Go back to New Game view
+                        break;
+                    case 'apply-settings':
+                        applyPendingSettings();
+                        menuGoBack();
                         break;
                     case 'set-time':
                         keyboardShow('Enter Minutes (blank=no limit)', '', function (inputText) {
                             if (inputText && !isNaN(inputText) && Number(inputText) > 0) {
                                 document.getElementById('time-setting').textContent = inputText + ' min';
-                                setCookie('time', inputText + ' min');
+                                setCookie('time-setting', inputText + ' min');
                             } else {
                                 document.getElementById('time-setting').textContent = 'No limit';
-                                setCookie('time', 'No limit');
+                                setCookie('time-setting', 'No limit');
+                            }
+                        }, true);
+                        break;
+                    case 'set-increment':
+                        keyboardShow('Enter Increment Seconds', '', function (inputText) {
+                            if (inputText && !isNaN(inputText) && Number(inputText) >= 0) {
+                                document.getElementById('increment-setting').textContent = inputText + ' sec';
+                                setCookie('increment-setting', inputText + ' sec');
+                            } else {
+                                document.getElementById('increment-setting').textContent = '0 sec';
+                                setCookie('increment-setting', '0 sec');
                             }
                         }, true);
                         break;
@@ -1002,6 +1191,18 @@
             }
         }
 
+        function clearColorPreview() {
+            console.log('Clearing color preview');
+            fetch(`/api/board/square/color_preview`, {
+                method: 'DELETE',
+            }).then(response => response.json())
+                .then(data => {
+                    console.log('Color preview cleared response:', data);
+                }).catch(error => {
+                    console.error('Error clearing color preview:', error);
+                });
+        }
+
         // Update color preview box when inputs change
         function updateColorPreview() {
             const r = parseInt(document.getElementById('color-r').textContent || '0', 10) || 0;
@@ -1012,23 +1213,38 @@
             const rr = clamp(r), gg = clamp(g), bb = clamp(b);
 
             console.log('Color preview updated to:', rr, gg, bb);
-            sendEvent('SetSquareColorEvent', {
-                color_map: {
-                    27: [rr, gg, bb],
-                    28: [rr, gg, bb],
-                    35: [rr, gg, bb],
-                    36: [rr, gg, bb],
-                }
-            });
+            fetch(`/api/board/square/color_preview`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ color: [rr, gg, bb] }),
+            }).then(response => response.json())
+                .then(data => {
+                    console.log('Color preview set response:', data);
+                }).catch(error => {
+                    console.error('Error setting color preview:', error);
+                });
         }
 
         // Expose a function to open color picker with initial RGB and path
         function openColorPicker(path, initialRGB) {
+            pendingColorPath = path;
             document.getElementById('color-r').textContent = (initialRGB && initialRGB[0] != null) ? initialRGB[0] : '0';
             document.getElementById('color-g').textContent = (initialRGB && initialRGB[1] != null) ? initialRGB[1] : '0';
             document.getElementById('color-b').textContent = (initialRGB && initialRGB[2] != null) ? initialRGB[2] : '0';
             updateColorPreview();
             showView('color-picker-view');
+        }
+
+        function openBooleanPicker(path, initialValue) {
+            pendingBooleanPath = path;
+
+            document.getElementById('boolean-picker-title').textContent = path;
+
+            let index = 1;
+            if (initialValue === true || initialValue === 'true') {
+                index = 0;
+            }
+            showView('boolean-picker-view', index);
         }
 
         function menuReset() {
@@ -1045,6 +1261,7 @@
             d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
             const expires = 'expires=' + d.toUTCString();
             document.cookie = name + '=' + encodeURIComponent(value) + ';' + expires + ';path=/';
+            console.debug('Cookie set:', name, value);
         }
 
         function getCookie(name) {
@@ -1059,13 +1276,22 @@
 
         // --- Load settings from cookies on page load ---
         function loadSettingsFromCookies() {
-            const opponent = getCookie('opponent');
-            if (opponent) {
-                document.getElementById('opponent-type').textContent = opponent;
-            }
-            const time = getCookie('time');
-            if (time) {
-                document.getElementById('time-setting').textContent = time;
+            const decodedCookie = decodeURIComponent(document.cookie);
+            const ca = decodedCookie.split(';');
+            for (let i = 0; i < ca.length; i++) {
+                let c = ca[i].trim();
+                if (!c) continue;
+
+                const eqIdx = c.indexOf('=');
+                if (eqIdx < 0) continue;
+
+                const key = c.substring(0, eqIdx);
+                const value = c.substring(eqIdx + 1);
+
+                const el = document.getElementById(key);
+                if (el) {
+                    el.textContent = value;
+                }
             }
         }
 

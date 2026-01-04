@@ -8,3 +8,4 @@ rpi-ws281x==5.0.0
 RPi.GPIO==0.7.1
 simple-websocket==1.1.0
 psutil==7.0.0
+requests==2.32.5

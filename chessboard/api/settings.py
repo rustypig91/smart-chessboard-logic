@@ -21,6 +21,14 @@ def settings():
     return jsonify(success=True, settings=_settings)
 
 
+@api.route('/restore_defaults', methods=['POST'])
+def restore_defaults():
+    """API endpoint to restore all settings to their default values"""
+    chessboard_settings.restore_defaults()
+    log.info("All settings restored to default values")
+    return jsonify(success=True)
+
+
 @api.route('/<key>', methods=['GET'])
 def get_setting(key):
     """API endpoint to get a specific setting"""
@@ -41,10 +49,11 @@ def update_setting(key):
         return jsonify(success=False, error="Missing 'value' in request"), 400
     try:
         setting = chessboard_settings.get(key)
-        old_value = setting.value
-        setting.value = data['value']
-        log.debug(f"Setting '{key}' changed from {old_value} to {setting.value}")
-        return jsonify(success=True, setting=setting.to_json())
+        chessboard_settings.set(key, setting.type(data['value']))
+        new_value = chessboard_settings[key]
+
+        log.info(f"Setting '{key}' changed from {setting.value} to {new_value}")
+        return jsonify(success=True, message=f"Setting '{key}' updated to {new_value}", new_value=new_value)
     except KeyError:
         log.error(f"Setting '{key}' not found")
         return jsonify(success=False, error="Setting not found"), 404

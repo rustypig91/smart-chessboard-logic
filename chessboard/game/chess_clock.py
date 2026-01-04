@@ -47,8 +47,6 @@ class Stopwatch:
     def decrement(self, seconds: float):
         with self._lock:
             self._elapsed -= seconds
-            if self._elapsed < 0:
-                self._elapsed = 0.0
 
     @property
     def paused(self) -> bool:
@@ -141,26 +139,14 @@ class ChessClock:
     def start(self):
         self.clocks[self.current_player].run()
 
-    def _send_update_event(self):
-        events.event_manager.publish(
-            events.ChessClockStateChangedEvent(
-                paused=self.paused,
-                current_player=self.current_player,
-                white_time_left=self.white_time_left,
-                black_time_left=self.black_time_left
-            )
-        )
-
     def pause(self):
         self.clocks[self.current_player].pause()
-        self._send_update_event()
 
     def reset(self):
         self.clocks[chess.WHITE].reset()
         self.clocks[chess.BLACK].reset()
 
         self.current_player = chess.WHITE
-        self._send_update_event()
 
     def set_player(self, color: chess.Color):
         if self.current_player == color:
@@ -168,12 +154,11 @@ class ChessClock:
 
         current_player = self.clocks[self.current_player]
         current_player.pause()
-        current_player.increment(self.get_increment(self.current_player))
+        current_player.decrement(self.get_increment(self.current_player))
 
         self.current_player = color
         next_player = self.clocks[self.current_player]
         next_player.run()
-        self._send_update_event()
 
     def get_time_left(self, color: chess.Color) -> float:
         return max(0.0, self.get_initial_time(color) - self.clocks[color].elapsed)
@@ -217,6 +202,14 @@ class ChessClock:
     @property
     def black_start_time(self) -> float:
         return self._initial_time_seconds[chess.BLACK]
+
+    @property
+    def white_increment_time(self) -> float:
+        return self._increment_seconds[chess.WHITE]
+
+    @property
+    def black_increment_time(self) -> float:
+        return self._increment_seconds[chess.BLACK]
 
 
 if __name__ == "__main__":

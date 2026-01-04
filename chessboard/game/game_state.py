@@ -1,21 +1,21 @@
-import os
 import chess
 import chess.engine
 
 import pickle
-from chessboard.game.engine import Engine
+from chessboard.game.engine import engine
 from chessboard.game.chess_clock import ChessClock
 from chessboard.logger import log
 import chessboard.events as events
+import chessboard.persistent_storage as persistent_storage
+from chessboard.thread_safe_variable import ThreadSafeVariable
 
 
 class GameState:
-    SAVE_FILE = os.path.join(os.path.dirname(__file__), ".saved_game.pkl")
+    SAVE_FILE = "saved_game.pkl"
 
     def __init__(self):
         self.board = chess.Board()
         self.chess_clock = ChessClock()
-        self.engine: Engine | None = None
 
         self._event_listeners_setup = False
         self._setup_event_listeners()
@@ -26,12 +26,47 @@ class GameState:
             chess.BLACK: False
         }
 
+        self._players: dict[chess.Color, events.PlayerType] = {
+            chess.WHITE: events.PlayerType.HUMAN,
+            chess.BLACK: events.PlayerType.HUMAN
+        }
+        self._engine_play_weight: str | None = None
+
+        self._latest_analysis: ThreadSafeVariable[events.EngineAnalysisEvent | None] = ThreadSafeVariable(None)
+
     def _setup_event_listeners(self):
         if not self._event_listeners_setup:
             self._event_listeners_setup = True
             events.event_manager.subscribe(events.ChessMoveEvent, self._handle_move)
             events.event_manager.subscribe(events.GameOverEvent, self._handle_game_over)
             events.event_manager.subscribe(events.SquarePieceStateChangeEvent, self._handle_piece_move)
+            events.event_manager.subscribe(events.EngineAnalysisEvent, self._handle_engine_analysis)
+
+    def _handle_engine_analysis(self, event: events.EngineAnalysisEvent):
+        self._latest_analysis.set(event)
+
+    def get_hint(self) -> chess.Move | None:
+        """ Get a hint move from the engine for the current position """
+        latest_analysis = self._latest_analysis.get()
+        if latest_analysis is None or latest_analysis.board.fen() != self.board.fen():
+            return None  # Analysis is for a different position
+
+        best_move = latest_analysis.pv[0] if len(latest_analysis.pv) > 0 else None
+
+        if best_move is not None:
+            events.event_manager.publish(events.HintEvent(move=best_move))
+
+        return best_move
+
+    @property
+    def engine_color(self) -> chess.Color | None:
+        if self._players[chess.WHITE] == events.PlayerType.ENGINE:
+            return chess.WHITE
+
+        if self._players[chess.BLACK] == events.PlayerType.ENGINE:
+            return chess.BLACK
+
+        return None
 
     def pause_game(self):
         """ Pause the game """
@@ -43,26 +78,26 @@ class GameState:
             self.chess_clock.pause()
             log.info("Game paused")
             events.event_manager.publish(events.GamePausedEvent())
-            self._send_game_state_event()
+            self.publish_game_state()
 
     def resume_game(self):
         """ Continue a paused game """
         if not self.is_game_started:
-            log.warning("Cannot resume a game that hasn't started")
+            self.start_game()
         elif not self.is_game_paused:
             log.warning("Game is not paused")
         else:
             self.chess_clock.start()
             log.info("Game continued")
             events.event_manager.publish(events.GameResumedEvent())
-            self._send_game_state_event()
+            self.publish_game_state()
 
     def start_game(self):
         """ Start the game """
         self.chess_clock.start()
         events.event_manager.publish(events.GameStartedEvent())
         log.info("Game started")
-        self._send_game_state_event()
+        self.publish_game_state()
 
     def resign_game(self):
         """ Resign the current game """
@@ -75,8 +110,6 @@ class GameState:
         log.info(f"{'White' if self.board.turn == chess.WHITE else 'Black'} resigned the game")
         events.event_manager.publish(events.GameOverEvent(winner=self.winner, reason="Resignation"))
 
-        self._send_game_state_event()
-
     def regret_last_move(self):
         """ Regret the last move """
         if len(self.board.move_stack) == 0:
@@ -85,20 +118,12 @@ class GameState:
 
         self.board.pop()
 
-        if self.engine is not None and self.engine.color == self.board.turn and len(self.board.move_stack) > 0:
+        if self._players[self.board.turn] != events.PlayerType.HUMAN and len(self.board.move_stack) > 0:
             self.board.pop()
 
         self.chess_clock.set_player(self.board.turn)
 
-        self.save()
-        self._send_game_state_event()
-
-    @property
-    def players(self) -> dict[chess.Color, str]:
-        return {
-            chess.WHITE: self.engine.name if self.engine is not None and self.engine.color == chess.WHITE else 'Human',
-            chess.BLACK: self.engine.name if self.engine is not None and self.engine.color == chess.BLACK else 'Human',
-        }
+        self.publish_game_state()
 
     @property
     def is_game_over(self) -> bool:
@@ -129,45 +154,56 @@ class GameState:
         return self.chess_clock.paused and self.is_game_started
 
     def save(self) -> None:
-        with open(GameState.SAVE_FILE, "wb") as f:
-            log.info(f"Saving game state to {GameState.SAVE_FILE}")
-            pickle.dump(self, f)
+        savefile = persistent_storage.get_filename(GameState.SAVE_FILE)
+        new_bytes = pickle.dumps(self)
+
+        try:
+            with open(savefile, "rb") as f:
+                old_bytes = f.read()
+            if old_bytes == new_bytes:
+                return  # No changes, skip writing and logging
+        except FileNotFoundError:
+            pass
+
+        with open(savefile, "wb") as f:
+            f.write(new_bytes)
 
         log.info(
-            f"Saved game state from {GameState.SAVE_FILE}:\n"
+            f"Saved game state to {savefile}:\n"
             f"  FEN: {self.board.fen()}\n"
             f"  White time left: {self.chess_clock.white_time_left}\n"
             f"  Black time left: {self.chess_clock.black_time_left}\n"
             f"  White player increment: {self.chess_clock.get_increment(chess.WHITE)}\n"
             f"  Black player increment: {self.chess_clock.get_increment(chess.BLACK)}\n"
             f"  Clock paused: {self.chess_clock.paused}\n"
-            f"  Black player: {self.engine.name if self.engine is not None and self.engine.color == chess.BLACK else 'Human'}\n"
-            f"  White player: {self.engine.name if self.engine is not None and self.engine.color == chess.WHITE else 'Human'}"
+            f"  Black player: {self._players[chess.BLACK]}\n"
+            f"  White player: {self._players[chess.WHITE]}"
         )
 
     @staticmethod
     def load() -> 'GameState':
         try:
-            with open(GameState.SAVE_FILE, "rb") as f:
+            savefile = persistent_storage.get_filename(GameState.SAVE_FILE)
+            with open(savefile, "rb") as f:
                 loaded_game: GameState = pickle.load(f)
 
             if loaded_game.is_game_over:
                 loaded_game.reset()
 
             log.info(
-                f"Loaded game state from {GameState.SAVE_FILE}:\n"
+                f"Loaded game state from {savefile}:\n"
                 f"  FEN: {loaded_game.board.fen()}\n"
                 f"  White time left: {loaded_game.chess_clock.white_time_left}\n"
                 f"  Black time left: {loaded_game.chess_clock.black_time_left}\n"
                 f"  White player increment: {loaded_game.chess_clock.get_increment(chess.WHITE)}\n"
                 f"  Black player increment: {loaded_game.chess_clock.get_increment(chess.BLACK)}\n"
                 f"  Clock paused: {loaded_game.chess_clock.paused}\n"
-                f"  Black player: {loaded_game.engine.name if loaded_game.engine is not None and loaded_game.engine.color == chess.BLACK else 'Human'}\n"
-                f"  White player: {loaded_game.engine.name if loaded_game.engine is not None and loaded_game.engine.color == chess.WHITE else 'Human'}"
+                f"  Black player: {loaded_game._players[chess.BLACK]}\n"
+                f"  White player: {loaded_game._players[chess.WHITE]}"
             )
 
             loaded_game._event_listeners_setup = False
-            loaded_game._send_game_state_event()
+            loaded_game.publish_game_state()
 
             return loaded_game
         except Exception as e:
@@ -185,13 +221,12 @@ class GameState:
             winner=not color,
             reason="Time Out"
         ))
-        self._send_game_state_event()
 
     def new_game(self,
                  start_time_seconds: float | tuple[float, float] = float('inf'),
                  increment_seconds: float | tuple[float, float] = 0.0,
                  engine_weight: str | None = None,
-                 engine_color: chess.Color = chess.BLACK) -> None:
+                 engine_color: chess.Color | None = None) -> None:
         """ Start a new game """
         self.reset()
 
@@ -200,34 +235,38 @@ class GameState:
             increment_seconds=increment_seconds,
             timeout_callback=self._clock_timeout_callback)
 
-        if engine_weight is not None:
-            self.engine = Engine(weight=engine_weight, color=engine_color)
-        else:
-            self.engine = None
+        if engine_color is not None and engine_weight is None:
+            log.warning("Engine color specified but no engine weight provided; engine will not play")
+            engine_color = None
 
-        self.save()
+        self._players[chess.WHITE] = events.PlayerType.HUMAN if engine_color != chess.WHITE else events.PlayerType.ENGINE
+        self._players[chess.BLACK] = events.PlayerType.HUMAN if engine_color != chess.BLACK else events.PlayerType.ENGINE
+
+        self._engine_play_weight = engine_weight
 
         log.info(
             f"New game started\n"
             f"  Time control: {start_time_seconds}+{increment_seconds} seconds\n"
-            f"  Engine: {engine_weight if engine_weight is not None else 'None'} as {'black' if engine_color == chess.BLACK else 'white'}"
+            f"  White player: {self._players[chess.WHITE]}\n"
+            f"  Black player: {self._players[chess.BLACK]}"
         )
 
-        new_game_event = events.NewGameEvent(
-            white_player=self.players[chess.WHITE],
-            black_player=self.players[chess.BLACK],
+        # new_game_event =
+        events.event_manager.publish(events.NewGameEvent(
+            white_player=self._players[chess.WHITE],
+            black_player=self._players[chess.BLACK],
+            engine_weight=engine_weight,
             start_time_seconds=(
-                self.chess_clock.get_initial_time(chess.WHITE),
-                self.chess_clock.get_initial_time(chess.BLACK)
+                self.chess_clock.white_start_time,
+                self.chess_clock.black_start_time
             ),
             increment_seconds=(
-                self.chess_clock.get_increment(chess.WHITE),
-                self.chess_clock.get_increment(chess.BLACK)
+                self.chess_clock.white_increment_time,
+                self.chess_clock.black_increment_time
             )
-        )
-        events.event_manager.publish(new_game_event)
+        ))
 
-        self._send_game_state_event()
+        self.publish_game_state()
 
     def reset(self) -> None:
         self._resigned = {
@@ -237,10 +276,8 @@ class GameState:
 
         self.board.reset()
         self.chess_clock.reset()
-        self.save()
-        self._send_game_state_event()
 
-    def _send_game_state_event(self):
+    def publish_game_state(self):
         events.event_manager.publish(
             events.GameStateChangedEvent(
                 board=self.board,
@@ -251,31 +288,35 @@ class GameState:
                 black_time_elapsed=self.chess_clock.black_time_elapsed,
                 white_start_time=self.chess_clock.white_start_time,
                 black_start_time=self.chess_clock.black_start_time,
-                white_player=self.players[chess.WHITE],
-                black_player=self.players[chess.BLACK],
+                white_player=self._players[chess.WHITE],
+                black_player=self._players[chess.BLACK],
                 winner=self.winner,
                 is_game_started=self.is_game_started,
                 is_game_paused=self.is_game_paused
             )
         )
+        self.save()
 
     def _handle_piece_move(self, event: events.SquarePieceStateChangeEvent):
         if self.is_game_over:
             return
 
+        is_legal_move = False
+        for move in self.board.legal_moves:
+            if move.from_square in event.squares or move.to_square in event.squares:
+                is_legal_move = True
+                break
+
+        if not is_legal_move:
+            return
+
         if self.is_game_paused:
             self.resume_game()
-
         elif not self.is_game_started:
             self.start_game()
 
-    def _handle_engine_move(self, result: chess.engine.PlayResult):
-        assert self.engine is not None
-
-        if result.resigned:
-            log.info("Engine resigned the game")
-            events.event_manager.publish(events.GameOverEvent(winner=not self.engine.color, reason="Resignation"))
-            return
+    def _handle_engine_move(self, result: chess.engine.PlayResult) -> None:
+        assert self.engine_color is not None  # Engine must be playing
 
         if result.draw_offered:
             log.info("Engine offered a draw")
@@ -294,7 +335,7 @@ class GameState:
             log.error("Engine did not return a valid move")
             return
 
-        events.event_manager.publish(events.ChessMoveEvent(move=result.move))
+        events.event_manager.publish(events.ChessMoveEvent(move=result.move, side=self.engine_color))
 
     def _handle_move(self, event: events.ChessMoveEvent):
         log.info(f"Handling move event: {event.move.uci()}")
@@ -302,12 +343,6 @@ class GameState:
         self.board.push(event.move)
 
         log.info(f"Move {event.move.uci()} registered")
-
-        self.chess_clock.set_player(self.board.turn)
-
-        self.save()
-
-        self._send_game_state_event()
 
         outcome = self.board.outcome()
         if outcome is not None:
@@ -318,8 +353,18 @@ class GameState:
             )
             return
 
-        if self.engine is not None and self.engine.color == self.board.turn:
-            self.engine.get_move_async(self.board, self._handle_engine_move)
+        if self.is_game_paused:
+            self.resume_game()
+
+        self.chess_clock.set_player(self.board.turn)
+        self.publish_game_state()
+
+        engine_color = self.engine_color
+
+        if engine_color is not None and engine_color == self.board.turn:
+            assert self._engine_play_weight is not None
+
+            engine.get_move_async(self._engine_play_weight, self.board, self._handle_engine_move)
 
     def _handle_game_over(self, event: events.GameOverEvent):
         self.chess_clock.pause()
@@ -330,7 +375,7 @@ class GameState:
             message=f"Game over! {winner} by {event.reason.lower()}."
         ))
 
-        self._send_game_state_event()
+        self.publish_game_state()
 
     def __getstate__(self):
         return (
@@ -342,25 +387,23 @@ class GameState:
             self.chess_clock.black_start_time,
             self.chess_clock.get_increment(chess.WHITE),
             self.chess_clock.get_increment(chess.BLACK),
-            self.engine
+            self._players,
+            self._engine_play_weight,
         )
 
     def __setstate__(self, state):
         (
-            board,
-            resigned,
+            self.board,
+            self._resigned,
             white_time_elapsed,
             black_time_elapsed,
             white_start_time,
             black_start_time,
             white_increment,
             black_increment,
-            engine
+            self._players,
+            self._engine_play_weight
         ) = state
-
-        self.board = board
-        self._resigned = resigned
-        self.engine = engine
 
         self.chess_clock = ChessClock(
             initial_time_seconds=(white_start_time, black_start_time),
@@ -370,6 +413,8 @@ class GameState:
         self.chess_clock.white_time_elapsed = white_time_elapsed
         self.chess_clock.black_time_elapsed = black_time_elapsed
         self.chess_clock.current_player = self.board.turn
+
+        self._latest_analysis = ThreadSafeVariable(None)
 
         self._event_listeners_setup = False
         self._setup_event_listeners()

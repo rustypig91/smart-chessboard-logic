@@ -1,19 +1,20 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
 import subprocess
 from chessboard.logger import log
+from typing import Any, Optional
 
 api = Blueprint('api', __name__, template_folder='templates')
 
 
 @api.route('/info')
-def info():
+def info() -> Response:
     """API endpoint to get WiFi status"""
     wifi_info = get_wifi_info()
     return jsonify(wifi_info)
 
 
 @api.route('/connect', methods=['POST'])
-def connect():
+def connect() -> Response | tuple[Response, int]:
     """API endpoint to connect to a WiFi network"""
     data = request.get_json()
     ssid = data.get('ssid', '').strip()
@@ -33,9 +34,9 @@ def connect():
 
 
 @api.route('/scan')
-def scan():
+def scan() -> Response:
     """API endpoint to scan for available WiFi networks"""
-    networks = []
+    networks: list[dict[str, str]] = []
     try:
         result = subprocess.run(
             ['nmcli', '-t', '-f', 'SSID,SIGNAL,SECURITY', 'dev', 'wifi', 'list'],
@@ -83,7 +84,7 @@ def add_new_wifi_network(ssid: str, password: str) -> bool:
         return False
 
 
-def get_default_interface():
+def get_default_interface() -> str:
     """Get the default gateway IP address"""
     try:
         result = subprocess.run(
@@ -108,7 +109,7 @@ def get_default_interface():
     return 'N/A'
 
 
-def get_ip_address():
+def get_ip_address() -> str:
     """Get the current IP address of the default interface interface"""
     try:
 
@@ -134,7 +135,7 @@ def get_ip_address():
     return 'N/A'
 
 
-def get_wifi_info():
+def get_wifi_info() -> dict[str, Any]:
     """Get current WiFi connection information"""
     try:
         # Try using nmcli (NetworkManager command line)

@@ -1,8 +1,8 @@
 import chess
 from flask import Blueprint, jsonify, request
-from chessboard.game.engine import Engine
 from chessboard.game.game_state import game_state
-
+from chessboard.logger import log
+import chessboard.game.engine as engine
 
 api = Blueprint('api', __name__, template_folder='templates')
 
@@ -11,7 +11,7 @@ api = Blueprint('api', __name__, template_folder='templates')
 def get_available_bots():
     """API endpoint to get a list of available computer opponents"""
 
-    available_bots = Engine.get_available_weights()
+    available_bots = engine.get_available_weights()
 
     return jsonify({'success': True, 'bots': available_bots})
 
@@ -20,21 +20,33 @@ def get_available_bots():
 def start_new_game():
     """API endpoint to start a new game against a computer opponent"""
     data = request.get_json()
-    opponent = data.get('opponent', 'Human')
+    engine_name = data.get('engine_name', None)
+    engine_color = data.get('engine_color', None)
     start_time_seconds = data.get('start_time_seconds', float('inf'))
     increment_seconds = data.get('increment_seconds', 0.0)
 
-    engine_weight = None
-    if opponent != 'Human':
-        engine_weight = opponent
+    if not engine_color:
+        engine_name = None
+        engine_color = None
+    elif engine_color.lower() in ('white', 'black'):
+        engine_color = chess.WHITE if engine_color.lower() == 'white' else chess.BLACK
+    else:
+        log.warning(f"Invalid engine color specified: {engine_color}")
+        return jsonify({'success': False, 'error': 'Invalid engine color specified'}), 400
 
-    if engine_weight is not None and engine_weight not in Engine.get_available_weights():
+    if engine_name and engine_name not in engine.get_available_weights():
+        log.warning(f"Attempted to start game with unavailable opponent: '{engine_name}'")
         return jsonify({'success': False, 'error': 'Selected opponent not available'}), 400
+    elif engine_name and engine.get_weight_file(engine_name, try_download=True) is None:
+        log.warning(f"Engine weight file for '{engine_name}' not found")
+        return jsonify({'success': False, 'error': 'Selected opponent weight file not found'}), 400
 
     if type(start_time_seconds) not in (float, int) or start_time_seconds < 0:
+        log.warning(f"Invalid start time specified: {start_time_seconds}")
         return jsonify({'success': False, 'error': f'Invalid start time specified'}), 400
 
     if type(increment_seconds) not in (float, int) or increment_seconds < 0:
+        log.warning(f"Invalid increment specified: {increment_seconds}")
         return jsonify({'success': False, 'error': 'Invalid increment specified'}), 400
 
     if start_time_seconds == 0.0:
@@ -43,12 +55,12 @@ def start_new_game():
     game_state.new_game(
         start_time_seconds=start_time_seconds,
         increment_seconds=increment_seconds,
-        engine_weight=engine_weight,
-        engine_color=chess.BLACK)
+        engine_weight=engine_name,
+        engine_color=engine_color)
 
     # Here you would typically set up the game state with the engine
     # For this example, we'll just return success
-    return jsonify({'success': True, 'message': f'Game started against {opponent} with {start_time_seconds}s per move'})
+    return jsonify({'success': True, 'message': f'Game started'})
 
 
 @api.route('/pause', methods=['POST'])
@@ -99,6 +111,17 @@ def get_game_state():
             'black_time_left': game_state.chess_clock.black_time_left if game_state.chess_clock.black_time_left != float('inf') else None,
             'paused': game_state.chess_clock.paused
         },
-        'white_player': game_state.players[chess.WHITE],
-        'black_player': game_state.players[chess.BLACK],
+        'white_player': game_state._players[chess.WHITE],
+        'black_player': game_state._players[chess.BLACK]
     })
+
+
+@api.route('/hint', methods=['POST'])
+def get_hint():
+    """API endpoint to get a hint for the next move from the engine"""
+    move = game_state.get_hint()
+
+    if move is None:
+        return jsonify({'success': False, 'error': 'No hint available'}), 400
+
+    return jsonify({'success': True, 'move': move.uci()})

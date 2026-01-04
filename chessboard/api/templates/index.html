@@ -2,560 +2,90 @@
 <html lang="en">
 
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Smart Chessboard Interface</title>
+    <meta charset="utf-8">
+    <title>Smart Chessboard — Index</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
     <style>
         :root {
-            --sq: 64px;
-            --light: #f0d9b5;
-            --dark: #b58863;
-            --accent: #1f6feb;
-            --warn: #ff7b72;
+            color-scheme: light dark;
         }
 
         body {
-            font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
             margin: 0;
-            padding: 16px;
-            color: #24292f;
-            background: #ffffff;
+            padding: 2rem;
         }
 
         header {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 12px;
+            margin-bottom: 1.5rem;
         }
 
         h1 {
-            font-size: 18px;
-            margin: 0;
+            font-size: 1.5rem;
+            margin: 0 0 .5rem;
         }
 
-        #status {
-            font-size: 12px;
-            color: #6e7781;
+        #filter {
+            width: 100%;
+            max-width: 28rem;
+            padding: .5rem .75rem;
+            border: 1px solid #ccc;
+            border-radius: .375rem;
         }
 
-        .controls {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(240px, 1fr));
-            gap: 12px;
-            margin-bottom: 12px;
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 1rem 0 0;
         }
 
-        .card {
-            border: 1px solid #d0d7de;
-            border-radius: 8px;
-            padding: 12px;
+        li {
+            margin: .25rem 0;
         }
 
-        .card h2 {
-            font-size: 14px;
-            margin: 0 0 8px 0;
-            color: #57606a;
+        a {
+            text-decoration: none;
+            color: #0b6;
         }
 
-        .row {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            align-items: center;
+        a:hover {
+            text-decoration: underline;
         }
 
-        button,
-        input[type="text"],
-        input[type="color"],
-        select {
-            font: inherit;
-            padding: 6px 10px;
-            border: 1px solid #d0d7de;
-            border-radius: 6px;
-            background: #f6f8fa;
-        }
-
-        button {
-            background: #f6f8fa;
-            cursor: pointer;
-        }
-
-        button.primary {
-            background: #1f6feb;
-            color: white;
-            border-color: #1f6feb;
-        }
-
-        button:disabled {
-            opacity: .6;
-            cursor: not-allowed;
-        }
-
-        #board-wrap {
-            display: flex;
-            gap: 16px;
-            align-items: flex-start;
-        }
-
-        #board {
-            width: calc(var(--sq) * 8);
-            height: calc(var(--sq) * 8);
-            display: grid;
-            grid-template-columns: repeat(8, var(--sq));
-            grid-template-rows: repeat(8, var(--sq));
-            border: 2px solid #111;
-            border-radius: 8px;
-            overflow: hidden;
-            background: #0002;
-            transition: transform .2s ease;
-            user-select: none;
-        }
-
-        .sq {
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: calc(var(--sq) * .64);
-        }
-
-        .sq.light {
-            background: var(--light);
-        }
-
-        .sq.dark {
-            background: var(--dark);
-        }
-
-        .sq .piece {
-            pointer-events: none;
-        }
-
-        .sq.selected {
-            outline: 3px solid var(--accent);
-            outline-offset: -3px;
-        }
-
-        .sq.last {
-            box-shadow: inset 0 0 0 3px rgba(255, 230, 0, .8);
-        }
-
-        .sq.sensor {
-            box-shadow: inset 0 0 0 3px rgba(31, 111, 235, .8);
-        }
-
-        .sq.led::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background: var(--led, rgba(31, 111, 235, .25));
-            mix-blend-mode: multiply;
-        }
-
-        #right-panel {
-            width: 280px;
-        }
-
-        #log {
-            font-size: 12px;
-            border: 1px solid #d0d7de;
-            border-radius: 8px;
-            padding: 8px;
-            height: 140px;
-            overflow: auto;
-            white-space: pre-line;
-        }
-
-        .small {
-            font-size: 12px;
-            color: #6e7781;
-        }
-
-        .spacer {
-            flex: 1 1 auto;
+        .empty {
+            opacity: .7;
         }
     </style>
 </head>
 
 <body>
     <header>
-        <h1>Smart Chessboard</h1>
-        <span id="status">Initializing…</span>
-        <span class="spacer"></span>
-        <button id="refresh">Refresh</button>
+        <h1>Smart Chessboard — Available Pages</h1>
+        <input id="filter" type="search" placeholder="Filter pages…" aria-label="Filter pages">
     </header>
 
-    <div class="controls">
-        <div class="card">
-            <h2>Board Control</h2>
-            <div class="row">
-                <button id="connect">Connect</button>
-                <button id="calibrate">Calibrate</button>
-                <button id="scan">Scan Sensors</button>
-                <button id="reset">Reset</button>
-                <button id="flip">Flip</button>
-            </div>
-            <div class="row" style="margin-top:8px">
-                <button id="newGame" class="primary">New Game</button>
-                <button id="stopGame">Stop</button>
-            </div>
-        </div>
-
-        <div class="card">
-            <h2>Move</h2>
-            <div class="row">
-                <input id="moveUci" type="text" placeholder="e2e4, g7g8q…" />
-                <select id="promotion">
-                    <option value="">Promotion</option>
-                    <option value="q">Queen</option>
-                    <option value="r">Rook</option>
-                    <option value="b">Bishop</option>
-                    <option value="n">Knight</option>
-                </select>
-                <button id="sendMove">Send</button>
-            </div>
-            <div class="small">Tip: Click two squares on the board to populate the move.</div>
-        </div>
-
-        <div class="card">
-            <h2>LEDs</h2>
-            <div class="row">
-                <input id="ledSquares" type="text" placeholder="e2,e4,a1…" />
-                <input id="ledColor" type="color" value="#1f6feb" />
-                <button id="setLeds">Set</button>
-                <button id="clearLeds">Clear</button>
-            </div>
-        </div>
-
-        <div class="card">
-            <h2>Engine</h2>
-            <div class="row">
-                <button id="engineStart">Start</button>
-                <button id="engineStop">Stop</button>
-                <button id="engineSuggest">Suggest Move</button>
-            </div>
-            <div class="small" id="engineInfo"></div>
-        </div>
-    </div>
-
-    <div id="board-wrap">
-        <div id="board" aria-label="Chessboard"></div>
-        <div id="right-panel">
-            <div class="card">
-                <h2>State</h2>
-                <div class="small">Turn: <span id="turn">-</span></div>
-                <div class="small">FEN:</div>
-                <div id="fen" class="small"></div>
-            </div>
-            <div class="card" style="margin-top:12px">
-                <h2>Log</h2>
-                <div id="log"></div>
-            </div>
-        </div>
-    </div>
+    <main>
+        <ul id="page-list">
+            {% for p in pages %}
+            <li><a href="{{ p }}">{{ p }}</a></li>
+            {% endfor %}
+        </ul>
+    </main>
 
     <script>
-        // Basic board + API UI for a physical chessboard.
-        const API = {
-            state: '/api/state',
-            move: '/api/move',
-            calibrate: '/api/calibrate',
-            sensors: '/api/sensors',
-            leds: '/api/leds',
-            clear_leds: '/api/leds/clear',
-            reset: '/api/reset',
-            game_new: '/api/game/new',
-            game_stop: '/api/game/stop',
-            engine_start: '/api/engine/start',
-            engine_stop: '/api/engine/stop',
-            engine_suggest: '/api/engine/suggest',
-            status: '/api/status'
-        };
-
-        const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-        const PIECES = { P: '♙', N: '♘', B: '♗', R: '♖', Q: '♕', K: '♔', p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' };
-
-        const state = {
-            orientation: 'white',
-            selectedFrom: null,
-            lastMove: null,
-            fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
-        };
-
-        const el = {
-            board: document.getElementById('board'),
-            status: document.getElementById('status'),
-            turn: document.getElementById('turn'),
-            fen: document.getElementById('fen'),
-            log: document.getElementById('log'),
-            moveUci: document.getElementById('moveUci'),
-            promotion: document.getElementById('promotion'),
-            refresh: document.getElementById('refresh'),
-            connect: document.getElementById('connect'),
-            calibrate: document.getElementById('calibrate'),
-            scan: document.getElementById('scan'),
-            reset: document.getElementById('reset'),
-            flip: document.getElementById('flip'),
-            newGame: document.getElementById('newGame'),
-            stopGame: document.getElementById('stopGame'),
-            sendMove: document.getElementById('sendMove'),
-            ledSquares: document.getElementById('ledSquares'),
-            ledColor: document.getElementById('ledColor'),
-            setLeds: document.getElementById('setLeds'),
-            clearLeds: document.getElementById('clearLeds'),
-            engineStart: document.getElementById('engineStart'),
-            engineStop: document.getElementById('engineStop'),
-            engineSuggest: document.getElementById('engineSuggest'),
-            engineInfo: document.getElementById('engineInfo'),
-        };
-
-        function log(msg) {
-            const time = new Date().toLocaleTimeString();
-            el.log.textContent = `[${time}] ${msg}\n` + el.log.textContent;
-        }
-
-        async function fetchJSON(url, options = {}) {
-            try {
-                const res = await fetch(url, options);
-                if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-                return await res.json();
-            } catch (e) {
-                log(`Error: ${url} - ${e.message}`);
-                throw e;
-            }
-        }
-
-        function buildBoard() {
-            el.board.innerHTML = '';
-            for (let r = 8; r >= 1; r--) {
-                for (let f = 0; f < 8; f++) {
-                    const sq = document.createElement('div');
-                    const square = `${files[f]}${r}`;
-                    sq.className = `sq ${(r + f) % 2 === 0 ? 'dark' : 'light'}`;
-                    sq.dataset.square = square;
-                    sq.setAttribute('role', 'button');
-                    sq.setAttribute('aria-label', square);
-                    const piece = document.createElement('div');
-                    piece.className = 'piece';
-                    sq.appendChild(piece);
-                    sq.addEventListener('click', onSquareClick);
-                    el.board.appendChild(sq);
-                }
-            }
-        }
-
-        function clearHighlights() {
-            document.querySelectorAll('.sq.selected,.sq.last,.sq.sensor,.sq.led').forEach(sq => {
-                sq.classList.remove('selected', 'last', 'sensor', 'led');
-                sq.style.setProperty('--led', '');
-            });
-        }
-
-        function setLastMoveHighlight(move) {
-            if (!move || move.length < 4) return;
-            const from = move.slice(0, 2), to = move.slice(2, 4);
-            const a = document.querySelector(`.sq[data-square="${from}"]`);
-            const b = document.querySelector(`.sq[data-square="${to}"]`);
-            a && a.classList.add('last');
-            b && b.classList.add('last');
-        }
-
-        function renderFEN(fen) {
-            state.fen = fen;
-            el.fen.textContent = fen;
-            clearHighlights();
-            document.querySelectorAll('.sq .piece').forEach(p => p.textContent = '');
-            const placement = fen.split(' ')[0];
-            const rows = placement.split('/');
-            for (let i = 0; i < 8; i++) {
-                const rank = 8 - i;
-                let fileIndex = 0;
-                for (const ch of rows[i]) {
-                    if (/\d/.test(ch)) {
-                        fileIndex += parseInt(ch, 10);
-                    } else {
-                        const file = files[fileIndex];
-                        const sqEl = document.querySelector(`.sq[data-square="${file}${rank}"] .piece`);
-                        sqEl.textContent = PIECES[ch] || '';
-                        fileIndex++;
-                    }
-                }
-            }
-        }
-
-        function onSquareClick(e) {
-            const square = e.currentTarget.dataset.square;
-            if (!state.selectedFrom) {
-                state.selectedFrom = square;
-                document.querySelector(`.sq[data-square="${square}"]`)?.classList.add('selected');
-                el.moveUci.value = square;
-            } else {
-                const from = state.selectedFrom;
-                if (from === square) {
-                    state.selectedFrom = null;
-                    document.querySelector(`.sq[data-square="${square}"]`)?.classList.remove('selected');
-                    el.moveUci.value = '';
-                    return;
-                }
-                let uci = from + square;
-                // Basic promotion auto-prompt if pawn reaches last rank
-                const fromRank = parseInt(from[1], 10);
-                const toRank = parseInt(square[1], 10);
-                const maybePromotion = (fromRank === 7 && toRank === 8) || (fromRank === 2 && toRank === 1);
-                const promo = el.promotion.value;
-                if (maybePromotion && promo) uci += promo;
-                el.moveUci.value = uci;
-                state.selectedFrom = null;
-                document.querySelectorAll('.sq.selected').forEach(s => s.classList.remove('selected'));
-            }
-        }
-
-        async function refreshState() {
-            try {
-                const s = await fetchJSON(API.state);
-                if (s?.fen) renderFEN(s.fen);
-                if (s?.turn) el.turn.textContent = s.turn;
-                if (s?.last_move) { state.lastMove = s.last_move; setLastMoveHighlight(s.last_move); }
-                if (s?.leds?.length) applyLeds(s.leds);
-                setStatus('Online');
-            } catch {
-                setStatus('Offline');
-            }
-        }
-
-        function setStatus(text) {
-            el.status.textContent = text;
-        }
-
-        async function sendMove(uci) {
-            if (!uci || uci.length < 4) return;
-            try {
-                const res = await fetchJSON(API.move, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ uci })
+        (function () {
+            const input = document.getElementById('filter');
+            const list = document.getElementById('page-list');
+            if (!input || !list) return;
+            const items = Array.from(list.querySelectorAll('li'));
+            input.addEventListener('input', () => {
+                const q = input.value.trim().toLowerCase();
+                items.forEach(li => {
+                    const text = (li.textContent || '').toLowerCase();
+                    li.style.display = !q || text.includes(q) ? '' : 'none';
                 });
-                log(`Move sent: ${uci}`);
-                if (res?.fen) renderFEN(res.fen);
-                if (res?.last_move) { state.lastMove = res.last_move; setLastMoveHighlight(res.last_move); }
-                await refreshState();
-            } catch (e) { }
-        }
-
-        function parseSquares(input) {
-            return (input || '')
-                .split(/[,\s]+/)
-                .map(s => s.trim().toLowerCase())
-                .filter(s => /^[a-h][1-8]$/.test(s));
-        }
-
-        function applyLeds(items) {
-            clearLedClasses();
-            for (const it of items) {
-                const sq = typeof it === 'string' ? it : it.square;
-                const color = typeof it === 'string' ? null : it.color;
-                const elSq = document.querySelector(`.sq[data-square="${sq}"]`);
-                if (elSq) {
-                    elSq.classList.add('led');
-                    if (color) elSq.style.setProperty('--led', hexOrRgba(color));
-                }
-            }
-        }
-
-        function clearLedClasses() {
-            document.querySelectorAll('.sq.led').forEach(sq => {
-                sq.classList.remove('led');
-                sq.style.setProperty('--led', '');
             });
-        }
-
-        function hexOrRgba(color) {
-            if (!color) return 'rgba(31,111,235,.25)';
-            if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color)) return color + '40'; // add alpha if possible
-            return color;
-        }
-
-        // Wire up controls
-        el.refresh.addEventListener('click', refreshState);
-        el.connect.addEventListener('click', async () => {
-            try { await fetchJSON(API.status); setStatus('Online'); log('Connected'); refreshState(); } catch { }
-        });
-        el.calibrate.addEventListener('click', async () => {
-            try { await fetchJSON(API.calibrate, { method: 'POST' }); log('Calibrated'); } catch { }
-        });
-        el.scan.addEventListener('click', async () => {
-            try {
-                const s = await fetchJSON(API.sensors);
-                clearHighlights();
-                const squares = Array.isArray(s) ? s : s?.squares || [];
-                for (const sq of squares) {
-                    document.querySelector(`.sq[data-square="${sq}"]`)?.classList.add('sensor');
-                }
-                log(`Sensors: ${squares.join(', ') || 'none'}`);
-            } catch { }
-        });
-        el.reset.addEventListener('click', async () => {
-            try { await fetchJSON(API.reset, { method: 'POST' }); log('Reset'); refreshState(); } catch { }
-        });
-        el.flip.addEventListener('click', () => {
-            state.orientation = state.orientation === 'white' ? 'black' : 'white';
-            el.board.style.transform = state.orientation === 'white' ? 'none' : 'rotate(180deg)';
-        });
-        el.newGame.addEventListener('click', async () => {
-            try { await fetchJSON(API.game_new, { method: 'POST' }); log('New game'); refreshState(); } catch { }
-        });
-        el.stopGame.addEventListener('click', async () => {
-            try { await fetchJSON(API.game_stop, { method: 'POST' }); log('Game stopped'); } catch { }
-        });
-        el.sendMove.addEventListener('click', () => {
-            const base = el.moveUci.value.trim();
-            const promo = el.promotion.value;
-            const uci = base && promo && base.length === 4 ? base + promo : base;
-            sendMove(uci);
-        });
-        el.setLeds.addEventListener('click', async () => {
-            const squares = parseSquares(el.ledSquares.value);
-            const color = el.ledColor.value;
-            if (!squares.length) return;
-            try {
-                await fetchJSON(API.leds, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ squares, color })
-                });
-                applyLeds(squares.map(sq => ({ square: sq, color })));
-                log(`LEDs set on ${squares.join(', ')}`);
-            } catch { }
-        });
-        el.clearLeds.addEventListener('click', async () => {
-            try { await fetchJSON(API.clear_leds, { method: 'POST' }); clearLedClasses(); log('LEDs cleared'); } catch { }
-        });
-        el.engineStart.addEventListener('click', async () => {
-            try { const r = await fetchJSON(API.engine_start, { method: 'POST' }); el.engineInfo.textContent = r?.status || 'Engine started'; } catch { }
-        });
-        el.engineStop.addEventListener('click', async () => {
-            try { const r = await fetchJSON(API.engine_stop, { method: 'POST' }); el.engineInfo.textContent = r?.status || 'Engine stopped'; } catch { }
-        });
-        el.engineSuggest.addEventListener('click', async () => {
-            try {
-                const r = await fetchJSON(API.engine_suggest);
-                if (r?.uci) {
-                    el.engineInfo.textContent = `Suggest: ${r.uci}`;
-                    el.moveUci.value = r.uci;
-                    setLastMoveHighlight(r.uci);
-                } else {
-                    el.engineInfo.textContent = 'No suggestion';
-                }
-            } catch { }
-        });
-
-        // Init
-        buildBoard();
-        renderFEN(state.fen);
-        setStatus('Ready');
-        refreshState();
-        setInterval(refreshState, 3000);
+        }());
     </script>
 </body>
 

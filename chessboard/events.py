@@ -2,6 +2,7 @@ from collections.abc import Callable
 import enum
 from types import ModuleType
 import chess
+import chess.engine
 from chessboard.logger import log
 import threading
 import traceback
@@ -279,8 +280,23 @@ class EngineAnalysisEvent(Event):
         self.board = board.copy(stack=False)
         self.weight = weight
 
-    def __repr__(self):
-        return f"GameWinProbabilityEvent(white={self.white_win_prob:.3f}, black={self.black_win_prob:.3f})"
+
+class EngineMoveEvent(Event):
+    """ Engine made a move. """
+
+    def __init__(self, result: chess.engine.PlayResult):
+        super().__init__()
+        self.result = result
+
+    def to_json(self) -> dict:
+        return {
+            "move": {
+                "from_square": chess.square_name(self.result.move.from_square),
+                "to_square": chess.square_name(self.result.move.to_square),
+                "promotion": chess.piece_symbol(self.result.move.promotion) if self.result.move.promotion else None
+            },
+            "depth": self.result.info.get("depth"),
+        }
 
 
 class HintEvent(Event):

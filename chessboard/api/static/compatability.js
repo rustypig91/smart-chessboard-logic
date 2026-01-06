@@ -68,11 +68,20 @@ function getKey(e) {
     }
 }
 
-
 function padStart(str, targetLength, padString) {
     str = String(str);
     while (str.length < targetLength) {
         str = padString + str;
     }
     return str;
+}
+
+// Polyfill for Object.entries for older JS environments
+if (!Object.entries) {
+    Object.entries = function (obj) {
+        var ownProps = Object.keys(obj), i = ownProps.length, resArray = new Array(i);
+        while (i--)
+            resArray[i] = [ownProps[i], obj[ownProps[i]]];
+        return resArray;
+    };
 }

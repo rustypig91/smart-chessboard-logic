@@ -4,8 +4,7 @@ import chess
 import chess.engine
 from chessboard.logger import log
 from chessboard.settings import settings
-from threading import Thread, Event
-from typing import Callable
+from threading import Thread
 from random import choice
 import chessboard.persistent_storage as persistent_storage
 import shutil
@@ -17,9 +16,9 @@ from chessboard.thread_safe_variable import ThreadSafeVariable
 
 import atexit
 
-settings.register("engine.player.time_limit", 10.0, "Time limit for engine analysis in seconds")
+settings.register("engine.player.time_limit", 20.0, "Time limit for engine analysis in seconds")
 
-settings.register("engine.analysis.time_limit", 15.0, "Time limit for analysis in seconds")
+settings.register("engine.analysis.time_limit", 25.0, "Time limit for analysis in seconds")
 settings.register("engine.analysis.depth_limit", 25, "Depth limit for analysis")
 settings.register("engine.analysis.weight", "maia-1900.pb.gz", "Default engine weight file for analysis")
 
@@ -71,10 +70,15 @@ def _probability_from_engine_score(score: chess.engine.PovScore) -> tuple[float,
 
 
 class _EngineGetMoveRequest:
-    def __init__(self, weight: str, board: chess.Board, callback: Callable[[chess.engine.PlayResult], None]):
+    def __init__(self, weight: str, board: chess.Board, min_depth: int, max_depth: int):
         self.weight = weight
-        self.board = board
-        self.callback = callback
+        self.board = board.copy()
+        self.min_depth = min_depth
+        self.max_depth = max_depth
+        if self.min_depth < 1:
+            self.min_depth = 1
+        if self.max_depth < self.min_depth:
+            self.max_depth = self.min_depth
 
 
 class _EngineStartAnalysisRequest:
@@ -227,19 +231,23 @@ class _Lc0Engine:
             self._engine_thread = Thread(target=self._engine_worker, daemon=True)
             self._engine_thread.start()
 
-    def get_move_async(self, weight: str, board: chess.Board, callback: Callable[[chess.engine.PlayResult], None]) -> None:
+    def get_move_async(self, weight: str, board: chess.Board, min_depth: int = 2, max_depth: int = 4) -> None:
         """Request the engine to select a move for the given board position."""
-        self._analysis_queue.put(_EngineGetMoveRequest(weight, board, callback))
+        self._analysis_queue.put(_EngineGetMoveRequest(weight, board, min_depth, max_depth))
 
-    def _get_move(self, engine: chess.engine.SimpleEngine, enboard: chess.Board, callback: Callable[[chess.engine.PlayResult], None]) -> None:
-        depth = choice([2, 3, 4])  # Randomize depth for variability
+    def _get_move(self, engine: chess.engine.SimpleEngine, enboard: chess.Board, min_depth: int, max_depth: int) -> None:
+        depth = choice(range(min_depth, max_depth + 1))
         try:
-            result = engine.play(enboard, chess.engine.Limit(
-                time=settings['engine.player.time_limit'], depth=depth))
+            event = events.EngineMoveEvent(
+                result=engine.play(enboard, chess.engine.Limit(
+                    time=settings['engine.player.time_limit'], depth=depth),
+                    info=chess.engine.INFO_BASIC
+                )
+            )
 
-            log.info(f"Engine selected move: {result}")
+            log.info(f"Engine selected move: {event.result}")
 
-            callback(result)
+            events.event_manager.publish(event)
 
         except Exception as e:
             log.exception(f"Error during engine play: {e}")
@@ -286,8 +294,9 @@ class _Lc0Engine:
                     self._set_weight(engine, event.weight)
                     self._start_analysis(engine, event.board)
                 elif isinstance(event, _EngineGetMoveRequest):
+                    time.sleep(5)
                     self._set_weight(engine, event.weight)
-                    self._get_move(engine, event.board, event.callback)
+                    self._get_move(engine, event.board, event.min_depth, event.max_depth)
             except Exception as e:
                 log.exception(f"Error in engine worker: {e}")
 

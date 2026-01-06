@@ -235,19 +235,17 @@ class _Lc0Engine:
         """Request the engine to select a move for the given board position."""
         self._analysis_queue.put(_EngineGetMoveRequest(weight, board, min_depth, max_depth))
 
-    def _get_move(self, engine: chess.engine.SimpleEngine, enboard: chess.Board, min_depth: int, max_depth: int) -> None:
+    def _get_move(self, engine: chess.engine.SimpleEngine, board: chess.Board, min_depth: int, max_depth: int) -> None:
         depth = choice(range(min_depth, max_depth + 1))
         try:
-            event = events.EngineMoveEvent(
-                result=engine.play(enboard, chess.engine.Limit(
-                    time=settings['engine.player.time_limit'], depth=depth),
-                    info=chess.engine.INFO_BASIC
-                )
-            )
+            result = engine.play(
+                board=board,
+                limit=chess.engine.Limit(time=settings['engine.player.time_limit'], depth=depth),
+                info=chess.engine.INFO_BASIC)
 
-            log.info(f"Engine selected move: {event.result}")
+            log.info(f"Engine selected move: {result}")
 
-            events.event_manager.publish(event)
+            events.event_manager.publish(events.EngineMoveEvent(result))
 
         except Exception as e:
             log.exception(f"Error during engine play: {e}")

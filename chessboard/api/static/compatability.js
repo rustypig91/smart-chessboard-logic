@@ -1,7 +1,12 @@
 /**
-    * Fetch function for Qt5 using XMLHttpRequest.
-    * Usage: fetchQt5(url, options).then(response => ...).catch(error => ...);
-    */
+ * Compatibility utilities for older JavaScript environments (e.g., Qt5).
+ */
+
+
+/**
+ * Fetch function for Qt5 using XMLHttpRequest.
+ * Usage: fetchQt5(url, options).then(response => ...).catch(error => ...);
+ */
 function fetchQt5(url, options = {}) {
     return new Promise(function (resolve, reject) {
         var xhr = new XMLHttpRequest();
@@ -45,17 +50,17 @@ function fetchQt5(url, options = {}) {
     });
 }
 
+/** Polyfill for fetch if not available */
 if (typeof fetch === 'undefined') {
     window.fetch = fetchQt5;
 }
 
-// Key event listener compatibility for Qt5
+/* Key event listener compatibility */
 function getKey(e) {
     if (e.key) {
         // Modern browsers
         return e.key;
     }
-    // Older browsers/Qt5
     switch (e.keyCode || e.which) {
         case 37: return 'ArrowLeft';
         case 38: return 'ArrowUp';
@@ -68,6 +73,7 @@ function getKey(e) {
     }
 }
 
+/* Polyfill for String.prototype.padStart */
 function padStart(str, targetLength, padString) {
     str = String(str);
     while (str.length < targetLength) {
@@ -76,7 +82,7 @@ function padStart(str, targetLength, padString) {
     return str;
 }
 
-// Polyfill for Object.entries for older JS environments
+/* Polyfill for Object.entries for older JS environments */
 if (!Object.entries) {
     Object.entries = function (obj) {
         var ownProps = Object.keys(obj);

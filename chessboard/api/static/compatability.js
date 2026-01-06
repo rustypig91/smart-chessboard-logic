@@ -79,7 +79,9 @@ function padStart(str, targetLength, padString) {
 // Polyfill for Object.entries for older JS environments
 if (!Object.entries) {
     Object.entries = function (obj) {
-        var ownProps = Object.keys(obj), i = ownProps.length, resArray = new Array(i);
+        var ownProps = Object.keys(obj);
+        var i = ownProps.length;
+        var resArray = new Array(i);
         while (i--)
             resArray[i] = [ownProps[i], obj[ownProps[i]]];
         return resArray;

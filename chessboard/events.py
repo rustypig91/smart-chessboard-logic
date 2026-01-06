@@ -289,11 +289,12 @@ class EngineMoveEvent(Event):
         self.result = result
 
     def to_json(self) -> dict:
+
         return {
             "move": {
-                "from_square": chess.square_name(self.result.move.from_square),
-                "to_square": chess.square_name(self.result.move.to_square),
-                "promotion": chess.piece_symbol(self.result.move.promotion) if self.result.move.promotion else None
+                "from_square": chess.square_name(self.result.move.from_square) if self.result.move else None,
+                "to_square": chess.square_name(self.result.move.to_square) if self.result.move else None,
+                "promotion": chess.piece_symbol(self.result.move.promotion) if self.result.move and self.result.move.promotion else None
             },
             "depth": self.result.info.get("depth"),
         }

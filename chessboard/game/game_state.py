@@ -333,6 +333,7 @@ class GameState:
 
     def _handle_engine_move(self, event: events.EngineMoveEvent) -> None:
         assert self.engine_color is not None  # Engine must be playing
+        assert self._engine_play_weight is not None
 
         if self.board.turn != self.engine_color:
             log.warning("It's not the engine's turn to move, ignoring engine move")
@@ -360,7 +361,7 @@ class GameState:
                 self.resign_game()
             else:
                 log.warning(f"Engine did not return a valid move trying again with more depth ({depth} -> {depth + 1})")
-                engine.get_move_async(self._engine_play_weight, self.board, self._handle_engine_move,
+                engine.get_move_async(self._engine_play_weight, self.board,
                                       min_depth=self._engine_depth_range[1] + 1, max_depth=self._engine_depth_range[1] + 2)
             return
 

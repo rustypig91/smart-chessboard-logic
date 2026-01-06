@@ -241,7 +241,15 @@ class GameState:
                  engine_min_depth: int = 3,
                  engine_max_depth: int = 5
                  ) -> None:
-        """ Start a new game """
+        """ Start a new game 
+
+        start_time_seconds: Initial time for each player in seconds (or tuple for white and black)
+        increment_seconds: Increment time per move in seconds (or tuple for white and black)
+        engine_weight: Name of the engine weight to use for the engine player (None for no engine)
+        engine_color: Color for the engine player (None for no engine)
+        engine_min_depth: Minimum search depth for the engine
+        engine_max_depth: Maximum search depth for the engine
+        """
         self.reset()
 
         self._engine_depth_range = (engine_min_depth, engine_max_depth)
@@ -356,13 +364,14 @@ class GameState:
             if depth is None:
                 log.error("Engine did not return a valid move and depth is unknown, resigning the game")
                 self.resign_game()
-            elif depth > self._engine_depth_range[1]:
+            elif depth >= self._engine_depth_range[1]:
                 log.error("Engine did not return a valid move even at maximum depth, resigning the game")
                 self.resign_game()
             else:
-                log.warning(f"Engine did not return a valid move trying again with more depth ({depth} -> {depth + 1})")
+                log.warning(
+                    f"Engine did not return a valid move, trying again with more depth ({depth} -> {depth + 1})")
                 engine.get_move_async(self._engine_play_weight, self.board,
-                                      min_depth=self._engine_depth_range[1] + 1, max_depth=self._engine_depth_range[1] + 2)
+                                      min_depth=depth + 1, max_depth=self._engine_depth_range[1])
             return
 
         events.event_manager.publish(events.ChessMoveEvent(move=event.result.move, side=self.engine_color))

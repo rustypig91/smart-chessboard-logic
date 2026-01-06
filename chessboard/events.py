@@ -55,6 +55,18 @@ class Event:
             return value.uci()
         elif isinstance(value, PlayerType):
             return value.value
+        elif isinstance(value, chess.Move):
+            return {
+                "uci": value.uci(),
+                "from_square": chess.square_name(value.from_square),
+                "to_square": chess.square_name(value.to_square),
+                "promotion": chess.piece_symbol(value.promotion) if value.promotion else None
+            }
+        elif isinstance(value, chess.engine.PlayResult):
+            return {
+                "move": Event._convert_to_json_value(value.move),
+                "depth": value.info.get('depth'),
+            }
         else:
             return value
 
@@ -132,11 +144,9 @@ class ChessMoveEvent(Event):
         self.side = _side
 
     def to_json(self):
-        return {
-            "from_square": chess.square_name(self.move.from_square),
-            "to_square": chess.square_name(self.move.to_square),
-            "promotion": chess.piece_symbol(self.move.promotion) if self.move.promotion else None
-        }
+        items = super().to_json()
+        items['side'] = self._color_to_str(self.side)
+        return items
 
 
 class GameOverEvent(Event):
@@ -259,13 +269,6 @@ class LegalMoveDetectedEvent(Event):
         super().__init__()
         self.move = move
 
-    def to_json(self) -> dict:
-        return {
-            "from_square": chess.square_name(self.move.from_square),
-            "to_square": chess.square_name(self.move.to_square),
-            "promotion": chess.piece_symbol(self.move.promotion) if self.move.promotion else None
-        }
-
 
 class EngineAnalysisEvent(Event):
     """Probability of winning for each side, emitted after each move."""
@@ -287,17 +290,6 @@ class EngineMoveEvent(Event):
     def __init__(self, result: chess.engine.PlayResult):
         super().__init__()
         self.result = result
-
-    def to_json(self) -> dict:
-
-        return {
-            "move": {
-                "from_square": chess.square_name(self.result.move.from_square) if self.result.move else None,
-                "to_square": chess.square_name(self.result.move.to_square) if self.result.move else None,
-                "promotion": chess.piece_symbol(self.result.move.promotion) if self.result.move and self.result.move.promotion else None
-            },
-            "depth": self.result.info.get("depth"),
-        }
 
 
 class HintEvent(Event):

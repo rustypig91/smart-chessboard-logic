@@ -294,7 +294,6 @@ class _Lc0Engine:
                     self._set_weight(engine, event.weight)
                     self._start_analysis(engine, event.board)
                 elif isinstance(event, _EngineGetMoveRequest):
-                    time.sleep(5)
                     self._set_weight(engine, event.weight)
                     self._get_move(engine, event.board, event.min_depth, event.max_depth)
             except Exception as e:

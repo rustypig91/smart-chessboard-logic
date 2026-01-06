@@ -1323,11 +1323,7 @@
         addBoardEventListener("ChessMoveEvent", (data) => {
             const lm = document.getElementById('last-move');
             if (!lm) return;
-            const from = data.from_square || '';
-            const to = data.to_square || '';
-            const promo = data.promotion || '';
-            const uci = from + to + (promo || '');
-            lm.textContent = 'Last: ' + (uci || '-');
+            lm.textContent = 'Last: ' + (data.move.uci || '-');
         });
     </script>
 </body>

@@ -2,6 +2,7 @@ from collections.abc import Callable
 import enum
 from types import ModuleType
 import chess
+import chess.engine
 from chessboard.logger import log
 import threading
 import traceback
@@ -54,6 +55,18 @@ class Event:
             return value.uci()
         elif isinstance(value, PlayerType):
             return value.value
+        elif isinstance(value, chess.Move):
+            return {
+                "uci": value.uci(),
+                "from_square": chess.square_name(value.from_square),
+                "to_square": chess.square_name(value.to_square),
+                "promotion": chess.piece_symbol(value.promotion) if value.promotion else None
+            }
+        elif isinstance(value, chess.engine.PlayResult):
+            return {
+                "move": Event._convert_to_json_value(value.move),
+                "depth": value.info.get('depth'),
+            }
         else:
             return value
 
@@ -131,11 +144,9 @@ class ChessMoveEvent(Event):
         self.side = _side
 
     def to_json(self):
-        return {
-            "from_square": chess.square_name(self.move.from_square),
-            "to_square": chess.square_name(self.move.to_square),
-            "promotion": chess.piece_symbol(self.move.promotion) if self.move.promotion else None
-        }
+        items = super().to_json()
+        items['side'] = self._color_to_str(self.side)
+        return items
 
 
 class GameOverEvent(Event):
@@ -258,13 +269,6 @@ class LegalMoveDetectedEvent(Event):
         super().__init__()
         self.move = move
 
-    def to_json(self) -> dict:
-        return {
-            "from_square": chess.square_name(self.move.from_square),
-            "to_square": chess.square_name(self.move.to_square),
-            "promotion": chess.piece_symbol(self.move.promotion) if self.move.promotion else None
-        }
-
 
 class EngineAnalysisEvent(Event):
     """Probability of winning for each side, emitted after each move."""
@@ -279,8 +283,13 @@ class EngineAnalysisEvent(Event):
         self.board = board.copy(stack=False)
         self.weight = weight
 
-    def __repr__(self):
-        return f"GameWinProbabilityEvent(white={self.white_win_prob:.3f}, black={self.black_win_prob:.3f})"
+
+class EngineMoveEvent(Event):
+    """ Engine made a move. """
+
+    def __init__(self, result: chess.engine.PlayResult):
+        super().__init__()
+        self.result = result
 
 
 class HintEvent(Event):

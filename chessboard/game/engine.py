@@ -277,8 +277,7 @@ class _Lc0Engine:
 
             else:
                 log.error(f"Engine move selection failed for event {event}")
-                result = chess.engine.PlayResult(move=None, ponder=None, info={"depth": depth})
-                result.resigned = True
+                result = chess.engine.PlayResult(move=None, ponder=None, info={"depth": depth}, resigned=True)
 
         if result is not None:
             events.event_manager.publish(events.EngineMoveEvent(result))

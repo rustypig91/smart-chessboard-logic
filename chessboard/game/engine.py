@@ -289,17 +289,12 @@ class _Lc0Engine:
                     info=chess.engine.INFO_BASIC)
 
                 if result.resigned:
-                    # Engine resigned
-                    pass
-                elif result.move is not None and result.move in event.board.legal_moves:
-                    # Valid move selected
-                    pass
+                    log.info(f"Engine resigned (result={result})")
+                elif result.move is not None and event.board.is_legal(result.move):
+                    log.info(f"Engine selected move {result.move.uci()} (result={result})")
                 else:
-                    # Invalid move or no move selected
-                    log.error(f"Engine did not resign or return a valid move at depth {depth}: {result}")
+                    log.warning(f"Engine returned invalid move at depth {depth} for event {event}: {result}")
                     result = None
-
-                log.info(f"Engine selected move: {result}")
 
             except Exception:
                 log.exception(f"Error during engine play: (event={event})")

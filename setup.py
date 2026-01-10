@@ -19,7 +19,8 @@ setup(
     classifiers=[
         "Programming Language :: Python :: 3",
         "Operating System :: POSIX :: Linux",
-        "License :: Free for non-commercial use"
+        "License :: Free for non-commercial use",
+        "Private :: Do Not Upload"
     ],
     include_package_data=True,
 )

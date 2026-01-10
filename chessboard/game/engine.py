@@ -282,6 +282,9 @@ class _Lc0Engine:
         depth = choice(range(event.min_depth, event.max_depth + 1))
         result = None
         while result is None:
+            if self._engine_stop.is_set():
+                return
+
             try:
                 result = self._engine.play(
                     board=event.board,
@@ -293,7 +296,7 @@ class _Lc0Engine:
             except SystemExit:
                 raise
             except Exception:
-                if self._engine_stop.is_set():
+                if not self._engine_stop.is_set():
                     log.exception(f"Error during engine play: (event={event})")
 
             if result is not None:

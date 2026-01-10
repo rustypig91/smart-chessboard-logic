@@ -3,7 +3,7 @@
 const buttonTimers = {};
 const LONG_PRESS_DURATION = 300; // ms
 
-buttonDown = [false, false, false, false]; // Track button states
+const buttonDown = [false, false, false, false]; // Track button states
 
 let buttonFunctions = [
     { short: null, shortHint: '', long: null, longHint: '' },
@@ -71,7 +71,7 @@ document.addEventListener('keydown', function (e) {
     // Prevent repeat firing
     if (e.repeat) return;
 
-    key = getKey(e);
+    const key = getKey(e);
     let index = getButtonIndexFromKey(key);
     if ((index === null) || buttonDown[index]) {
         return;
@@ -83,7 +83,7 @@ document.addEventListener('keydown', function (e) {
 });
 
 document.addEventListener('keyup', function (e) {
-    key = getKey(e);
+    const key = getKey(e);
     let index = getButtonIndexFromKey(key);
 
     if (index != null) {

@@ -8,7 +8,7 @@ setup(
     install_requires=[
         line.strip() for line in open("requirements.txt") if line.strip() and not line.startswith("#")
     ],
-    python_requires=">=3.7",
+    python_requires=">=3.10",
     author="Christoffer Zakrisson",
     author_email="rustypig91@gmail.com",
     description="Chessboard API and Web Interface for my raspberry pi chessboard project not intended for public use",
@@ -18,8 +18,8 @@ setup(
     url="https://github.com/rustypig91/chessboard",
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
-        "Operating System :: OS Independent",
+        "Operating System :: POSIX :: Linux",
+        "License :: Free for non-commercial use"
     ],
     include_package_data=True,
 )

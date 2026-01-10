@@ -80,14 +80,6 @@ class _EngineGetMoveRequest:
         if self.max_depth < self.min_depth:
             self.max_depth = self.min_depth
 
-    def copy(self) -> "_EngineGetMoveRequest":
-        return _EngineGetMoveRequest(
-            weight=self.weight,
-            board=self.board,
-            min_depth=self.min_depth,
-            max_depth=self.max_depth
-        )
-
     def __repr__(self):
         return (f"_EngineGetMoveRequest(weight={self.weight}, "
                 f"board_fen={self.board.fen()}, "
@@ -338,8 +330,9 @@ class _Lc0Engine:
                 for info in analysis:
                     score = info.get('score')
                     if score is not None:
-                        analysis_event.white_win_prob, analysis_event.black_win_prob = _probability_from_engine_score(
-                            score)
+                        (analysis_event.white_win_prob,
+                         analysis_event.black_win_prob) = _probability_from_engine_score(score)
+
                         analysis_event.score = score.white().score(mate_score=100000)
 
                     analysis_event.pv = info.get('pv', [])

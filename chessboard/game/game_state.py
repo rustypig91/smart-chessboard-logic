@@ -179,7 +179,7 @@ class GameState:
         with open(savefile, "wb") as f:
             f.write(new_bytes)
 
-        log.info(
+        log.debug(
             f"Saved game state to {savefile}:\n"
             f"  FEN: {self.board.fen()}\n"
             f"  White time left: {self.chess_clock.white_time_left}\n"
@@ -357,28 +357,13 @@ class GameState:
         if event.result.resigned:
             log.info("Engine resigned the game")
             self.resign_game()
-            return
-
-        if event.result.move is None or event.result.move not in self.board.legal_moves:
-            depth = event.result.info.get("depth")
-            if depth is None:
-                log.error("Engine did not return a valid move and depth is unknown, resigning the game")
-                self.resign_game()
-            elif depth >= self._engine_depth_range[1]:
-                log.error("Engine did not return a valid move even at maximum depth, resigning the game")
-                self.resign_game()
-            else:
-                log.warning(
-                    f"Engine did not return a valid move, trying again with more depth ({depth} -> {depth + 1})")
-                engine.get_move_async(self._engine_play_weight, self.board,
-                                      min_depth=depth + 1, max_depth=self._engine_depth_range[1])
-            return
-
-        events.event_manager.publish(events.ChessMoveEvent(move=event.result.move, side=self.engine_color))
+        elif event.result.move is not None and self.board.is_legal(event.result.move):
+            events.event_manager.publish(events.ChessMoveEvent(move=event.result.move, side=self.engine_color))
+        else:
+            log.error(f"Engine did not return a valid move, resigning the game (result={event.result})")
+            self.resign_game()
 
     def _handle_move(self, event: events.ChessMoveEvent):
-        log.info(f"Handling move event: {event.move.uci()}")
-
         self.board.push(event.move)
 
         log.info(f"Move {event.move.uci()} registered")

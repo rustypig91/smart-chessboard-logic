@@ -374,7 +374,7 @@
                 const HH = two(d.getHours());
                 const MM = two(d.getMinutes());
                 const SS = two(d.getSeconds());
-                return `${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}`; // Non-retarded 24-hour format
+                return `${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}`; // ISO-like 24-hour format
             } catch { return ''; }
         }
 

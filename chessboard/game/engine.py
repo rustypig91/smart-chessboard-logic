@@ -4,7 +4,7 @@ import chess
 import chess.engine
 from chessboard.logger import log
 from chessboard.settings import settings
-from threading import Thread
+from threading import Thread, Event
 from random import choice
 import chessboard.persistent_storage as persistent_storage
 import shutil
@@ -181,6 +181,8 @@ class _Lc0Engine:
 
         self._current_weight = ThreadSafeVariable[str | None](None)
 
+        self._engine_stop = Event()
+
         self._engine_thread = Thread(target=self._engine_worker, daemon=True)
         self._engine_thread.start()
 
@@ -222,12 +224,13 @@ class _Lc0Engine:
     def stop(self) -> None:
         """Stop the engine and its worker thread."""
         if self._engine_thread.is_alive():
-            self._analysis_queue.put(None)
+            self._engine_stop.set()
             self._engine_thread.join(timeout=5.0)
 
     def start(self) -> None:
         """Start the engine worker thread."""
         if not self._engine_thread.is_alive():
+            self._engine_stop.clear()
             self._engine_thread = Thread(target=self._engine_worker, daemon=True)
             self._engine_thread.start()
 
@@ -274,43 +277,50 @@ class _Lc0Engine:
                 events.event_manager.publish(analysis_event)
 
                 # Cancel if a newer request arrived
-                if not self._analysis_queue.empty():
+                if not self._analysis_queue.empty() or self._engine_stop.is_set():
                     break
 
     def _engine_worker(self) -> None:
         engine = None
-        max_start_attempts = 5
+
+        max_start_attempts = 10
         start_attempts = 0
-        while True and start_attempts < max_start_attempts:
+        next_start_delay = 1.0
+        while not self._engine_stop.is_set() and start_attempts < max_start_attempts:
             if engine is None or engine.protocol.returncode.done():
                 try:
                     engine = chess.engine.SimpleEngine.popen_uci([_Lc0Engine.ENGINE_COMMAND])
                     self._set_weight(engine, settings['engine.analysis.weight'])
                     log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' initialized")
-                    start_attempts = 0
+                    start_attempts = 0  # Reset attempts on successful start
                 except Exception:
                     start_attempts += 1
-                    log.exception(f"Failed to start engine '{_Lc0Engine.ENGINE_COMMAND}'")
+                    log.exception(
+                        f"Failed to start engine '{_Lc0Engine.ENGINE_COMMAND}', attempt {start_attempts}/{max_start_attempts}")
+                    time.sleep(next_start_delay)
                     continue
 
             event = self._analysis_queue.get()
             try:
-                if event is None:
-                    break
-                elif isinstance(event, _EngineStartAnalysisRequest):
+                if isinstance(event, _EngineStartAnalysisRequest):
                     self._set_weight(engine, event.weight)
                     self._start_analysis(engine, event.board)
                 elif isinstance(event, _EngineGetMoveRequest):
                     self._set_weight(engine, event.weight)
                     self._get_move(engine, event.board, event.min_depth, event.max_depth)
             except Exception as e:
-                log.exception(f"Error in engine worker: {e}")
+                if not self._engine_stop.is_set():
+                    log.exception(f"Error in engine worker: {e}")
 
-        if engine is not None:
+        if engine is not None and not engine.protocol.returncode.done():
             engine.quit()
             engine.close()
 
-        log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' shut down")
+        if start_attempts >= max_start_attempts:
+            log.error(
+                f"Engine '{_Lc0Engine.ENGINE_COMMAND}' failed to start after {max_start_attempts} attempts and is shutting down")
+        else:
+            log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' shut down")
 
 
 engine = _Lc0Engine()

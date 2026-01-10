@@ -31,6 +31,7 @@ class GameState:
             chess.BLACK: events.PlayerType.HUMAN
         }
         self._engine_play_weight: str | None = None
+        self._engine_depth_range: tuple[int, int] = (3, 5)
 
         self._latest_analysis: ThreadSafeVariable[events.EngineAnalysisEvent | None] = ThreadSafeVariable(None)
 
@@ -41,6 +42,7 @@ class GameState:
             events.event_manager.subscribe(events.GameOverEvent, self._handle_game_over)
             events.event_manager.subscribe(events.SquarePieceStateChangeEvent, self._handle_piece_move)
             events.event_manager.subscribe(events.EngineAnalysisEvent, self._handle_engine_analysis)
+            events.event_manager.subscribe(events.EngineMoveEvent, self._handle_engine_move)
 
     def _handle_engine_analysis(self, event: events.EngineAnalysisEvent):
         self._latest_analysis.set(event)
@@ -80,6 +82,13 @@ class GameState:
             events.event_manager.publish(events.GamePausedEvent())
             self.publish_game_state()
 
+    def _engine_play_if_needed(self):
+        engine_color = self.engine_color
+        if engine_color is not None and engine_color == self.board.turn:
+            assert self._engine_play_weight is not None
+            engine.get_move_async(self._engine_play_weight, self.board,
+                                  min_depth=self._engine_depth_range[0], max_depth=self._engine_depth_range[1])
+
     def resume_game(self):
         """ Continue a paused game """
         if not self.is_game_started:
@@ -91,6 +100,7 @@ class GameState:
             log.info("Game continued")
             events.event_manager.publish(events.GameResumedEvent())
             self.publish_game_state()
+            self._engine_play_if_needed()
 
     def start_game(self):
         """ Start the game """
@@ -98,6 +108,7 @@ class GameState:
         events.event_manager.publish(events.GameStartedEvent())
         log.info("Game started")
         self.publish_game_state()
+        self._engine_play_if_needed()
 
     def resign_game(self):
         """ Resign the current game """
@@ -226,9 +237,22 @@ class GameState:
                  start_time_seconds: float | tuple[float, float] = float('inf'),
                  increment_seconds: float | tuple[float, float] = 0.0,
                  engine_weight: str | None = None,
-                 engine_color: chess.Color | None = None) -> None:
-        """ Start a new game """
+                 engine_color: chess.Color | None = None,
+                 engine_min_depth: int = 3,
+                 engine_max_depth: int = 5
+                 ) -> None:
+        """ Start a new game 
+
+        start_time_seconds: Initial time for each player in seconds (or tuple for white and black)
+        increment_seconds: Increment time per move in seconds (or tuple for white and black)
+        engine_weight: Name of the engine weight to use for the engine player (None for no engine)
+        engine_color: Color for the engine player (None for no engine)
+        engine_min_depth: Minimum search depth for the engine
+        engine_max_depth: Maximum search depth for the engine
+        """
         self.reset()
+
+        self._engine_depth_range = (engine_min_depth, engine_max_depth)
 
         self.chess_clock = ChessClock(
             initial_time_seconds=start_time_seconds,
@@ -315,27 +339,42 @@ class GameState:
         elif not self.is_game_started:
             self.start_game()
 
-    def _handle_engine_move(self, result: chess.engine.PlayResult) -> None:
+    def _handle_engine_move(self, event: events.EngineMoveEvent) -> None:
         assert self.engine_color is not None  # Engine must be playing
+        assert self._engine_play_weight is not None
 
-        if result.draw_offered:
+        if self.board.turn != self.engine_color:
+            log.warning("It's not the engine's turn to move, ignoring engine move")
+            return
+
+        if event.result.draw_offered:
             log.info("Engine offered a draw")
-            # For simplicity, we accept all draw offers from the engine
             events.event_manager.publish(events.PlayerNotifyEvent(
                 title="Draw Offered",
-                message="The engine has offered a draw. The draw is accepted."
+                message="The engine has offered a draw."
             ))
 
-        if result.resigned:
+        if event.result.resigned:
             log.info("Engine resigned the game")
             self.resign_game()
             return
 
-        if result.move is None:
-            log.error("Engine did not return a valid move")
+        if event.result.move is None or event.result.move not in self.board.legal_moves:
+            depth = event.result.info.get("depth")
+            if depth is None:
+                log.error("Engine did not return a valid move and depth is unknown, resigning the game")
+                self.resign_game()
+            elif depth >= self._engine_depth_range[1]:
+                log.error("Engine did not return a valid move even at maximum depth, resigning the game")
+                self.resign_game()
+            else:
+                log.warning(
+                    f"Engine did not return a valid move, trying again with more depth ({depth} -> {depth + 1})")
+                engine.get_move_async(self._engine_play_weight, self.board,
+                                      min_depth=depth + 1, max_depth=self._engine_depth_range[1])
             return
 
-        events.event_manager.publish(events.ChessMoveEvent(move=result.move, side=self.engine_color))
+        events.event_manager.publish(events.ChessMoveEvent(move=event.result.move, side=self.engine_color))
 
     def _handle_move(self, event: events.ChessMoveEvent):
         log.info(f"Handling move event: {event.move.uci()}")
@@ -358,13 +397,7 @@ class GameState:
 
         self.chess_clock.set_player(self.board.turn)
         self.publish_game_state()
-
-        engine_color = self.engine_color
-
-        if engine_color is not None and engine_color == self.board.turn:
-            assert self._engine_play_weight is not None
-
-            engine.get_move_async(self._engine_play_weight, self.board, self._handle_engine_move)
+        self._engine_play_if_needed()
 
     def _handle_game_over(self, event: events.GameOverEvent):
         self.chess_clock.pause()
@@ -389,6 +422,7 @@ class GameState:
             self.chess_clock.get_increment(chess.BLACK),
             self._players,
             self._engine_play_weight,
+            self._engine_depth_range
         )
 
     def __setstate__(self, state):
@@ -402,7 +436,8 @@ class GameState:
             white_increment,
             black_increment,
             self._players,
-            self._engine_play_weight
+            self._engine_play_weight,
+            self._engine_depth_range
         ) = state
 
         self.chess_clock = ChessClock(

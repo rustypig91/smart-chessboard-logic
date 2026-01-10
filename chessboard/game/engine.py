@@ -256,10 +256,14 @@ class _Lc0Engine:
             if (depth < max_depth) and (self._current_weight.value is not None):
                 # Retry with increased depth
                 log.info(f"Retrying engine move selection with increased depth: {depth + 1}")
+
+                # Call async instead of _get_move makes sure engine is restarted if it has crashed
                 self.get_move_async(self._current_weight.value, board, depth + 1, max_depth)
+
             else:
                 log.error(f"Engine move selection failed")
                 result = chess.engine.PlayResult(None, None)
+                result.resigned = True
 
         if result is not None:
             events.event_manager.publish(events.EngineMoveEvent(result))

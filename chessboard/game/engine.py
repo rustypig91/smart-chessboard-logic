@@ -307,7 +307,7 @@ class _Lc0Engine:
                 log.info(f"Retrying engine move selection with increased depth: {depth}")
             elif result is None:
                 log.error(
-                    f"Engine move selection failed for event {event} event at max depth {depth}")
+                    f"Engine move selection failed for event {event} at max depth {depth}")
                 result = chess.engine.PlayResult(move=None, ponder=None, info={"depth": depth}, resigned=True)
 
         events.event_manager.publish(events.EngineMoveEvent(result))

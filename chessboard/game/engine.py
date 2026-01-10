@@ -295,7 +295,10 @@ class _Lc0Engine:
                 else:
                     log.warning(f"Engine returned invalid move at depth {depth} for event {event}: {result}")
                     result = None
-
+            except KeyboardInterrupt:
+                raise
+            except SystemExit:
+                raise
             except Exception:
                 log.exception(f"Error during engine play: (event={event})")
 
@@ -353,7 +356,10 @@ class _Lc0Engine:
                     continue  # Continue to check for stop signal
                 else:
                     log.error(f"Unknown engine request type: {type(event)}")
-
+            except KeyboardInterrupt:
+                raise
+            except SystemExit:
+                raise
             except Exception as e:
                 if not self._engine_stop.is_set():
                     log.exception(f"Error in engine worker: {e}")

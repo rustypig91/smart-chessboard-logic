@@ -357,12 +357,12 @@ class _Lc0Engine:
                 else:
                     log.error(f"Unknown engine request type: {type(event)}")
             except KeyboardInterrupt:
-                raise
+                break
             except SystemExit:
-                raise
-            except Exception as e:
+                break
+            except Exception:
                 if not self._engine_stop.is_set():
-                    log.exception(f"Error in engine worker: {e}")
+                    log.exception(f"Error in engine worker: (event={event})")
 
         log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' shut down")
 

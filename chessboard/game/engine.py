@@ -225,6 +225,7 @@ class _Lc0Engine:
         """Stop the engine and its worker thread."""
         if self._engine_thread.is_alive():
             self._engine_stop.set()
+            self._analysis_queue.put(None)  # Unblock the queue
             self._engine_thread.join(timeout=5.0)
 
     def start(self) -> None:
@@ -308,6 +309,11 @@ class _Lc0Engine:
                 elif isinstance(event, _EngineGetMoveRequest):
                     self._set_weight(engine, event.weight)
                     self._get_move(engine, event.board, event.min_depth, event.max_depth)
+                elif event is None:
+                    continue  # Shutdown signal
+                else:
+                    log.error(f"Unknown engine request type: {type(event)}")
+
             except Exception as e:
                 if not self._engine_stop.is_set():
                     log.exception(f"Error in engine worker: {e}")

@@ -215,8 +215,8 @@ class _Lc0Engine:
 
     def stop(self) -> None:
         """Stop the engine and its worker thread."""
+        self._engine_stop.set()
         if self._engine_thread.is_alive():
-            self._engine_stop.set()
             self._analysis_queue.put(None)  # Unblock the queue
             self._engine_thread.join(timeout=5.0)
 
@@ -288,6 +288,15 @@ class _Lc0Engine:
                     limit=chess.engine.Limit(time=settings['engine.player.time_limit'], depth=depth),
                     info=chess.engine.INFO_BASIC)
 
+            except KeyboardInterrupt:
+                raise
+            except SystemExit:
+                raise
+            except Exception:
+                if self._engine_stop.is_set():
+                    log.exception(f"Error during engine play: (event={event})")
+
+            if result is not None:
                 if result.resigned:
                     log.info(f"Engine resigned (result={result})")
                 elif result.move is not None and event.board.is_legal(result.move):
@@ -295,17 +304,12 @@ class _Lc0Engine:
                 else:
                     log.warning(f"Engine returned invalid move at depth {depth} for event {event}: {result}")
                     result = None
-            except KeyboardInterrupt:
-                raise
-            except SystemExit:
-                raise
-            except Exception:
-                log.exception(f"Error during engine play: (event={event})")
 
             if result is None and depth < event.max_depth:
                 depth += 1
                 log.info(f"Retrying engine move selection with increased depth: {depth}")
             elif result is None:
+                # Max depth reached without valid move
                 log.error(
                     f"Engine move selection failed for event {event} at max depth {depth}")
                 result = chess.engine.PlayResult(move=None, ponder=None, info={"depth": depth}, resigned=True)
@@ -326,22 +330,30 @@ class _Lc0Engine:
 
         analysis_event = events.EngineAnalysisEvent(event.board, event.weight)
         analysis_event.white_win_prob, analysis_event.black_win_prob = _probability_from_material(event.board)
+        try:
+            with self._engine.analysis(event.board, limit, info=chess.engine.INFO_ALL) as analysis:
+                for info in analysis:
+                    score = info.get('score')
+                    if score is not None:
+                        analysis_event.white_win_prob, analysis_event.black_win_prob = _probability_from_engine_score(
+                            score)
+                        analysis_event.score = score.white().score(mate_score=100000)
 
-        with self._engine.analysis(event.board, limit, info=chess.engine.INFO_ALL) as analysis:
-            for info in analysis:
-                score = info.get('score')
-                if score is not None:
-                    analysis_event.white_win_prob, analysis_event.black_win_prob = _probability_from_engine_score(score)
-                    analysis_event.score = score.white().score(mate_score=100000)
+                    analysis_event.pv = info.get('pv', [])
+                    analysis_event.depth = info.get('depth', 0)
 
-                analysis_event.pv = info.get('pv', [])
-                analysis_event.depth = info.get('depth', 0)
+                    events.event_manager.publish(analysis_event)
 
-                events.event_manager.publish(analysis_event)
-
-                # Cancel if a newer request arrived
-                if not self._analysis_queue.empty() or self._engine_stop.is_set():
-                    break
+                    # Cancel if a newer request arrived
+                    if not self._analysis_queue.empty() or self._engine_stop.is_set():
+                        break
+        except KeyboardInterrupt:
+            raise
+        except SystemExit:
+            raise
+        except Exception:
+            if not self._engine_stop.is_set():
+                log.exception("Engine terminated unexpectedly during analysis")
 
     def _engine_worker(self) -> None:
         while not self._engine_stop.is_set():

@@ -279,15 +279,18 @@ class _Lc0Engine:
 
     def _engine_worker(self) -> None:
         engine = None
-        while True:
-            if engine is None or not engine.protocol.loop.is_running():
+        max_start_attempts = 5
+        start_attempts = 0
+        while True and start_attempts < max_start_attempts:
+            if engine is None or engine.protocol.returncode.done():
                 try:
-                    engine = chess.engine.SimpleEngine.popen_uci(_Lc0Engine.ENGINE_COMMAND)
+                    engine = chess.engine.SimpleEngine.popen_uci([_Lc0Engine.ENGINE_COMMAND])
                     self._set_weight(engine, settings['engine.analysis.weight'])
                     log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' initialized")
-                except Exception as e:
-                    log.exception(f"Failed to start engine '{_Lc0Engine.ENGINE_COMMAND}': {e}")
-                    time.sleep(5.0)
+                    start_attempts = 0
+                except Exception:
+                    start_attempts += 1
+                    log.exception(f"Failed to start engine '{_Lc0Engine.ENGINE_COMMAND}'")
                     continue
 
             event = self._analysis_queue.get()
@@ -303,8 +306,9 @@ class _Lc0Engine:
             except Exception as e:
                 log.exception(f"Error in engine worker: {e}")
 
-        engine.quit()
-        engine.close()
+        if engine is not None:
+            engine.quit()
+            engine.close()
 
         log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' shut down")
 

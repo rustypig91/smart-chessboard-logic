@@ -4,7 +4,7 @@ import chess
 import chess.engine
 from chessboard.logger import log
 from chessboard.settings import settings
-from threading import Thread, Event
+from threading import Thread, Event, current_thread
 from random import choice
 import chessboard.persistent_storage as persistent_storage
 import shutil
@@ -80,11 +80,20 @@ class _EngineGetMoveRequest:
         if self.max_depth < self.min_depth:
             self.max_depth = self.min_depth
 
+    def __repr__(self):
+        return (f"_EngineGetMoveRequest(weight={self.weight}, "
+                f"board_fen={self.board.fen()}, "
+                f"min_depth={self.min_depth}, max_depth={self.max_depth})")
+
 
 class _EngineStartAnalysisRequest:
     def __init__(self, weight: str, board: chess.Board):
         self.weight = weight
-        self.board = board
+        self.board = board.copy()
+
+    def __repr__(self):
+        return (f"_EngineStartAnalysisRequest(weight={self.weight}, "
+                f"board_fen={self.board.fen()})")
 
 
 def install_weight(weight_file: str) -> None:
@@ -179,6 +188,7 @@ class _Lc0Engine:
 
         events.event_manager.subscribe(events.GameStateChangedEvent, self._handle_chess_move_event)
 
+        self.__engine = None
         self._current_weight = ThreadSafeVariable[str | None](None)
 
         self._engine_stop = Event()
@@ -186,47 +196,25 @@ class _Lc0Engine:
         self._engine_thread = Thread(target=self._engine_worker, daemon=True)
         self._engine_thread.start()
 
-    def _find_weight_file(self) -> str | None:
-        weight_dir = persistent_storage.get_directory('weights')
-        candidates = [
-            f for f in os.listdir(weight_dir)
-            if os.path.isfile(os.path.join(weight_dir, f))
-        ]
-
-        if not candidates:
-            return None
-
-        latest = max(candidates, key=lambda f: os.path.getmtime(os.path.join(weight_dir, f)))
-        return latest
-
     def _handle_chess_move_event(self, event: events.GameStateChangedEvent) -> None:
         self._analysis_queue.put(_EngineStartAnalysisRequest(
             weight=settings['engine.analysis.weight'],
-            board=event.board.copy()
+            board=event.board
         ))
-
-    def _set_weight(self, engine: chess.engine.SimpleEngine, weight: str) -> None:
-        weight_path = get_weight_file(weight, try_download=True)
-        if weight_path is None:
-            raise FileNotFoundError(f"Engine weights file not found: {weight_path}")
-
-        if self._current_weight.value == weight:
-            return
-
-        engine.configure({"WeightsFile": weight_path})
-        self._current_weight.value = weight
-
-        log.info(f"Engine weight set to: {weight}")
 
     def __del__(self):
         self.stop()
 
     def stop(self) -> None:
         """Stop the engine and its worker thread."""
+        self._engine_stop.set()
         if self._engine_thread.is_alive():
-            self._engine_stop.set()
             self._analysis_queue.put(None)  # Unblock the queue
             self._engine_thread.join(timeout=5.0)
+
+            if self.__engine is not None and not self.__engine.protocol.returncode.done():
+                self.__engine.quit()
+                self.__engine.close()
 
     def start(self) -> None:
         """Start the engine worker thread."""
@@ -239,94 +227,152 @@ class _Lc0Engine:
         """Request the engine to select a move for the given board position."""
         self._analysis_queue.put(_EngineGetMoveRequest(weight, board, min_depth, max_depth))
 
-    def _get_move(self, engine: chess.engine.SimpleEngine, board: chess.Board, min_depth: int, max_depth: int) -> None:
-        depth = choice(range(min_depth, max_depth + 1))
-        try:
-            result = engine.play(
-                board=board,
-                limit=chess.engine.Limit(time=settings['engine.player.time_limit'], depth=depth),
-                info=chess.engine.INFO_BASIC)
+    @property
+    def _engine(self) -> chess.engine.SimpleEngine:
+        """Get the current engine instance or initialize it if not running.
 
-            log.info(f"Engine selected move: {result}")
+        Note: Only allowed to be called from the engine worker thread.
 
-            events.event_manager.publish(events.EngineMoveEvent(result))
+        Returns:
+            chess.engine.SimpleEngine: The engine instance.
+        """
+        if current_thread() != self._engine_thread:
+            raise RuntimeError("_engine must be called from the engine worker thread")
 
-        except Exception as e:
-            log.exception(f"Error during engine play: {e}")
+        if self.__engine is None or self.__engine.protocol.returncode.done():
+            self.__engine = chess.engine.SimpleEngine.popen_uci([_Lc0Engine.ENGINE_COMMAND])
+            log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' initialized")
 
-    def _start_analysis(self, engine: chess.engine.SimpleEngine, board: chess.Board) -> None:
+        return self.__engine
+
+    def _set_weight(self, weight: str) -> None:
+        """Set the engine weight file to use.
+
+        Note: Only allowed to be called from the engine worker thread.
+        """
+
+        weight_path = get_weight_file(weight, try_download=True)
+        if weight_path is None:
+            raise FileNotFoundError(f"Engine weights file not found: {weight_path}")
+
+        if self._current_weight.value == weight:
+            return
+
+        self._engine.configure({"WeightsFile": weight_path})
+        self._current_weight.value = weight
+
+        log.info(f"Engine weight set to: {weight}")
+
+    def _get_move(self, event: _EngineGetMoveRequest) -> None:
+        """Get the engine move for the given request.
+
+        Note: Only allowed to be called from the engine worker thread.
+        """
+
+        self._set_weight(event.weight)
+
+        depth = choice(range(event.min_depth, event.max_depth + 1))
+        result = None
+        while result is None:
+            if self._engine_stop.is_set():
+                return
+
+            try:
+                result = self._engine.play(
+                    board=event.board,
+                    limit=chess.engine.Limit(time=settings['engine.player.time_limit'], depth=depth),
+                    info=chess.engine.INFO_BASIC)
+
+            except KeyboardInterrupt:
+                raise
+            except SystemExit:
+                raise
+            except Exception:
+                if not self._engine_stop.is_set():
+                    log.exception(f"Error during engine play: (event={event})")
+
+            if result is not None:
+                if result.resigned:
+                    log.info(f"Engine resigned (result={result})")
+                elif result.move is not None and event.board.is_legal(result.move):
+                    log.info(f"Engine selected move {result.move.uci()} (result={result})")
+                else:
+                    log.warning(f"Engine returned invalid move at depth {depth} for event {event}: {result}")
+                    result = None
+
+            if result is None and depth < event.max_depth:
+                depth += 1
+                log.info(f"Retrying engine move selection with increased depth: {depth}")
+            elif result is None:
+                # Max depth reached without valid move
+                log.error(
+                    f"Engine move selection failed for event {event} at max depth {depth}")
+                result = chess.engine.PlayResult(move=None, ponder=None, info={"depth": depth}, resigned=True)
+
+        events.event_manager.publish(events.EngineMoveEvent(result))
+
+    def _start_analysis(self, event: _EngineStartAnalysisRequest) -> None:
+        """Start engine analysis for the given request.
+
+        Note: Only allowed to be called from the engine worker thread.
+        """
+
         total_limit = settings['engine.analysis.time_limit']
         depth_limit = settings['engine.analysis.depth_limit']
         limit = chess.engine.Limit(time=total_limit, depth=depth_limit)
 
-        current_weight = self._current_weight.value
-        assert current_weight is not None
+        self._set_weight(event.weight)
 
-        analysis_event = events.EngineAnalysisEvent(board, current_weight)
-        analysis_event.white_win_prob, analysis_event.black_win_prob = _probability_from_material(board)
+        analysis_event = events.EngineAnalysisEvent(event.board, event.weight)
+        analysis_event.white_win_prob, analysis_event.black_win_prob = _probability_from_material(event.board)
+        try:
+            with self._engine.analysis(event.board, limit, info=chess.engine.INFO_ALL) as analysis:
+                for info in analysis:
+                    score = info.get('score')
+                    if score is not None:
+                        (analysis_event.white_win_prob,
+                         analysis_event.black_win_prob) = _probability_from_engine_score(score)
 
-        with engine.analysis(board, limit, info=chess.engine.INFO_ALL) as analysis:
-            for info in analysis:
-                score = info.get('score')
-                if score is not None:
-                    analysis_event.white_win_prob, analysis_event.black_win_prob = _probability_from_engine_score(score)
-                    analysis_event.score = score.white().score(mate_score=100000)
+                        analysis_event.score = score.white().score(mate_score=100000)
 
-                analysis_event.pv = info.get('pv', [])
-                analysis_event.depth = info.get('depth', 0)
+                    analysis_event.pv = info.get('pv', [])
+                    analysis_event.depth = info.get('depth', 0)
 
-                events.event_manager.publish(analysis_event)
+                    events.event_manager.publish(analysis_event)
 
-                # Cancel if a newer request arrived
-                if not self._analysis_queue.empty() or self._engine_stop.is_set():
-                    break
+                    # Cancel if a newer request arrived
+                    if not self._analysis_queue.empty() or self._engine_stop.is_set():
+                        break
+        except KeyboardInterrupt:
+            raise
+        except SystemExit:
+            raise
+        except Exception:
+            if not self._engine_stop.is_set():
+                log.exception("Engine terminated unexpectedly during analysis")
 
     def _engine_worker(self) -> None:
-        engine = None
-
-        max_start_attempts = 10
-        start_attempts = 0
-        next_start_delay = 1.0
-        while not self._engine_stop.is_set() and start_attempts < max_start_attempts:
-            if engine is None or engine.protocol.returncode.done():
-                try:
-                    engine = chess.engine.SimpleEngine.popen_uci([_Lc0Engine.ENGINE_COMMAND])
-                    self._set_weight(engine, settings['engine.analysis.weight'])
-                    log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' initialized")
-                    start_attempts = 0  # Reset attempts on successful start
-                except Exception:
-                    start_attempts += 1
-                    log.exception(
-                        f"Failed to start engine '{_Lc0Engine.ENGINE_COMMAND}', attempt {start_attempts}/{max_start_attempts}")
-                    time.sleep(next_start_delay)
-                    continue
+        while not self._engine_stop.is_set():
 
             event = self._analysis_queue.get()
             try:
                 if isinstance(event, _EngineStartAnalysisRequest):
-                    self._set_weight(engine, event.weight)
-                    self._start_analysis(engine, event.board)
+                    self._start_analysis(event)
                 elif isinstance(event, _EngineGetMoveRequest):
-                    self._set_weight(engine, event.weight)
-                    self._get_move(engine, event.board, event.min_depth, event.max_depth)
+                    self._get_move(event)
                 elif event is None:
                     continue  # Continue to check for stop signal
                 else:
                     log.error(f"Unknown engine request type: {type(event)}")
-
-            except Exception as e:
+            except KeyboardInterrupt:
+                break
+            except SystemExit:
+                break
+            except Exception:
                 if not self._engine_stop.is_set():
-                    log.exception(f"Error in engine worker: {e}")
+                    log.exception(f"Error in engine worker: (event={event})")
 
-        if engine is not None and not engine.protocol.returncode.done():
-            engine.quit()
-            engine.close()
-
-        if start_attempts >= max_start_attempts:
-            log.error(
-                f"Engine '{_Lc0Engine.ENGINE_COMMAND}' failed to start after {max_start_attempts} attempts and is shutting down")
-        else:
-            log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' shut down")
+        log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' shut down")
 
 
 engine = _Lc0Engine()

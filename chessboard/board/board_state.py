@@ -61,7 +61,7 @@ class BoardState:
 
         move = self._scan_board(self._latest_board)
         if move is None:
-            log.error("No valid move detected on time button press")
+            log.warning("No valid move detected on time button press")
             return
 
         log.info(f"Time button pressed, registering move: {move.uci()}")

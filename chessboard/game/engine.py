@@ -310,7 +310,7 @@ class _Lc0Engine:
                     self._set_weight(engine, event.weight)
                     self._get_move(engine, event.board, event.min_depth, event.max_depth)
                 elif event is None:
-                    continue  # Shutdown signal
+                    continue  # Continue to check for stop signal
                 else:
                     log.error(f"Unknown engine request type: {type(event)}")
 

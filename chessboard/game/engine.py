@@ -241,6 +241,7 @@ class _Lc0Engine:
 
     def _get_move(self, engine: chess.engine.SimpleEngine, board: chess.Board, min_depth: int, max_depth: int) -> None:
         depth = choice(range(min_depth, max_depth + 1))
+        result = None
         try:
             result = engine.play(
                 board=board,
@@ -249,10 +250,19 @@ class _Lc0Engine:
 
             log.info(f"Engine selected move: {result}")
 
-            events.event_manager.publish(events.EngineMoveEvent(result))
+        except Exception:
+            log.exception(f"Error during engine play")
 
-        except Exception as e:
-            log.exception(f"Error during engine play: {e}")
+            if (depth < max_depth) and (self._current_weight.value is not None):
+                # Retry with increased depth
+                log.info(f"Retrying engine move selection with increased depth: {depth + 1}")
+                self.get_move_async(self._current_weight.value, board, depth + 1, max_depth)
+            else:
+                log.error(f"Engine move selection failed")
+                result = chess.engine.PlayResult(None, None)
+
+        if result is not None:
+            events.event_manager.publish(events.EngineMoveEvent(result))
 
     def _start_analysis(self, engine: chess.engine.SimpleEngine, board: chess.Board) -> None:
         total_limit = settings['engine.analysis.time_limit']

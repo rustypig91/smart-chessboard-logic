@@ -359,8 +359,8 @@ class GameState:
             self.resign_game()
             return
 
-        if event.result.move is None or event.result.move not in self.board.legal_moves:
-            log.error("Engine did not return a valid move, resigning the game")
+        if event.result.move is None or not self.board.is_legal(event.result.move):
+            log.error(f"Engine did not return a valid move, resigning the game (result={event.result})")
             self.resign_game()
             return
 

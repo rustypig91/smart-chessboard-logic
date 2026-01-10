@@ -15,7 +15,7 @@ setup(
     long_description=open("README.md").read(
     ) if os.path.exists("README.md") else "",
     long_description_content_type="text/markdown",
-    url="https://github.com/rustypig91/chessboard",
+    url="https://github.com/rustypig91/smart-chessboard-rpi-image",
     classifiers=[
         "Programming Language :: Python :: 3",
         "Operating System :: POSIX :: Linux",

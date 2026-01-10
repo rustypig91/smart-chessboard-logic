@@ -357,14 +357,11 @@ class GameState:
         if event.result.resigned:
             log.info("Engine resigned the game")
             self.resign_game()
-            return
-
-        if event.result.move is None or not self.board.is_legal(event.result.move):
+        elif event.result.move is not None and self.board.is_legal(event.result.move):
+            events.event_manager.publish(events.ChessMoveEvent(move=event.result.move, side=self.engine_color))
+        else:
             log.error(f"Engine did not return a valid move, resigning the game (result={event.result})")
             self.resign_game()
-            return
-
-        events.event_manager.publish(events.ChessMoveEvent(move=event.result.move, side=self.engine_color))
 
     def _handle_move(self, event: events.ChessMoveEvent):
         self.board.push(event.move)

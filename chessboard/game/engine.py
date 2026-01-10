@@ -299,7 +299,7 @@ class _Lc0Engine:
                 log.info(f"Engine selected move: {result}")
 
             except Exception:
-                log.exception(f"Error during engine play")
+                log.exception(f"Error during engine play: (event={event})")
                 if depth < event.max_depth:
                     # Retry with increased depth
                     log.info(f"Retrying engine move selection with increased depth: {depth + 1}")

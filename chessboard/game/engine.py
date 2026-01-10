@@ -80,11 +80,20 @@ class _EngineGetMoveRequest:
         if self.max_depth < self.min_depth:
             self.max_depth = self.min_depth
 
+    def __repr__(self):
+        return (f"_EngineGetMoveRequest(weight={self.weight}, "
+                f"board_fen={self.board.fen()}, "
+                f"min_depth={self.min_depth}, max_depth={self.max_depth})")
+
 
 class _EngineStartAnalysisRequest:
     def __init__(self, weight: str, board: chess.Board):
         self.weight = weight
-        self.board = board
+        self.board = board.copy()
+
+    def __repr__(self):
+        return (f"_EngineStartAnalysisRequest(weight={self.weight}, "
+                f"board_fen={self.board.fen()})")
 
 
 def install_weight(weight_file: str) -> None:
@@ -179,6 +188,7 @@ class _Lc0Engine:
 
         events.event_manager.subscribe(events.GameStateChangedEvent, self._handle_chess_move_event)
 
+        self.__engine = None
         self._current_weight = ThreadSafeVariable[str | None](None)
 
         self._engine_stop = Event()
@@ -202,10 +212,10 @@ class _Lc0Engine:
     def _handle_chess_move_event(self, event: events.GameStateChangedEvent) -> None:
         self._analysis_queue.put(_EngineStartAnalysisRequest(
             weight=settings['engine.analysis.weight'],
-            board=event.board.copy()
+            board=event.board
         ))
 
-    def _set_weight(self, engine: chess.engine.SimpleEngine, weight: str) -> None:
+    def _set_weight(self, weight: str) -> None:
         weight_path = get_weight_file(weight, try_download=True)
         if weight_path is None:
             raise FileNotFoundError(f"Engine weights file not found: {weight_path}")
@@ -213,7 +223,7 @@ class _Lc0Engine:
         if self._current_weight.value == weight:
             return
 
-        engine.configure({"WeightsFile": weight_path})
+        self._engine.configure({"WeightsFile": weight_path})
         self._current_weight.value = weight
 
         log.info(f"Engine weight set to: {weight}")
@@ -228,6 +238,10 @@ class _Lc0Engine:
             self._analysis_queue.put(None)  # Unblock the queue
             self._engine_thread.join(timeout=5.0)
 
+            if self.__engine is not None and not self.__engine.protocol.returncode.done():
+                self.__engine.quit()
+                self.__engine.close()
+
     def start(self) -> None:
         """Start the engine worker thread."""
         if not self._engine_thread.is_alive():
@@ -239,12 +253,14 @@ class _Lc0Engine:
         """Request the engine to select a move for the given board position."""
         self._analysis_queue.put(_EngineGetMoveRequest(weight, board, min_depth, max_depth))
 
-    def _get_move(self, engine: chess.engine.SimpleEngine, board: chess.Board, min_depth: int, max_depth: int) -> None:
-        depth = choice(range(min_depth, max_depth + 1))
+    def _get_move(self, event: _EngineGetMoveRequest) -> None:
+        self._set_weight(event.weight)
+
+        depth = choice(range(event.min_depth, event.max_depth + 1))
         result = None
         try:
-            result = engine.play(
-                board=board,
+            result = self._engine.play(
+                board=event.board,
                 limit=chess.engine.Limit(time=settings['engine.player.time_limit'], depth=depth),
                 info=chess.engine.INFO_BASIC)
 
@@ -253,33 +269,31 @@ class _Lc0Engine:
         except Exception:
             log.exception(f"Error during engine play")
 
-            if (depth < max_depth) and (self._current_weight.value is not None):
+            if depth < event.max_depth:
                 # Retry with increased depth
                 log.info(f"Retrying engine move selection with increased depth: {depth + 1}")
-
-                # Call async instead of _get_move makes sure engine is restarted if it has crashed
-                self.get_move_async(self._current_weight.value, board, depth + 1, max_depth)
+                event.min_depth = depth + 1
+                self._get_move(event)
 
             else:
-                log.error(f"Engine move selection failed")
-                result = chess.engine.PlayResult(None, None)
+                log.error(f"Engine move selection failed for event {event}")
+                result = chess.engine.PlayResult(move=None, ponder=None, info={"depth": depth})
                 result.resigned = True
 
         if result is not None:
             events.event_manager.publish(events.EngineMoveEvent(result))
 
-    def _start_analysis(self, engine: chess.engine.SimpleEngine, board: chess.Board) -> None:
+    def _start_analysis(self, event: _EngineStartAnalysisRequest) -> None:
         total_limit = settings['engine.analysis.time_limit']
         depth_limit = settings['engine.analysis.depth_limit']
         limit = chess.engine.Limit(time=total_limit, depth=depth_limit)
 
-        current_weight = self._current_weight.value
-        assert current_weight is not None
+        self._set_weight(event.weight)
 
-        analysis_event = events.EngineAnalysisEvent(board, current_weight)
-        analysis_event.white_win_prob, analysis_event.black_win_prob = _probability_from_material(board)
+        analysis_event = events.EngineAnalysisEvent(event.board, event.weight)
+        analysis_event.white_win_prob, analysis_event.black_win_prob = _probability_from_material(event.board)
 
-        with engine.analysis(board, limit, info=chess.engine.INFO_ALL) as analysis:
+        with self._engine.analysis(event.board, limit, info=chess.engine.INFO_ALL) as analysis:
             for info in analysis:
                 score = info.get('score')
                 if score is not None:
@@ -295,34 +309,24 @@ class _Lc0Engine:
                 if not self._analysis_queue.empty() or self._engine_stop.is_set():
                     break
 
-    def _engine_worker(self) -> None:
-        engine = None
+    @property
+    def _engine(self) -> chess.engine.SimpleEngine:
+        """Get the current engine instance if running, else None."""
+        if self.__engine is None or self.__engine.protocol.returncode.done():
+            self.__engine = chess.engine.SimpleEngine.popen_uci([_Lc0Engine.ENGINE_COMMAND])
+            log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' initialized")
 
-        max_start_attempts = 10
-        start_attempts = 0
-        next_start_delay = 1.0
-        while not self._engine_stop.is_set() and start_attempts < max_start_attempts:
-            if engine is None or engine.protocol.returncode.done():
-                try:
-                    engine = chess.engine.SimpleEngine.popen_uci([_Lc0Engine.ENGINE_COMMAND])
-                    self._set_weight(engine, settings['engine.analysis.weight'])
-                    log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' initialized")
-                    start_attempts = 0  # Reset attempts on successful start
-                except Exception:
-                    start_attempts += 1
-                    log.exception(
-                        f"Failed to start engine '{_Lc0Engine.ENGINE_COMMAND}', attempt {start_attempts}/{max_start_attempts}")
-                    time.sleep(next_start_delay)
-                    continue
+        return self.__engine
+
+    def _engine_worker(self) -> None:
+        while not self._engine_stop.is_set():
 
             event = self._analysis_queue.get()
             try:
                 if isinstance(event, _EngineStartAnalysisRequest):
-                    self._set_weight(engine, event.weight)
-                    self._start_analysis(engine, event.board)
+                    self._start_analysis(event)
                 elif isinstance(event, _EngineGetMoveRequest):
-                    self._set_weight(engine, event.weight)
-                    self._get_move(engine, event.board, event.min_depth, event.max_depth)
+                    self._get_move(event)
                 elif event is None:
                     continue  # Continue to check for stop signal
                 else:
@@ -332,15 +336,7 @@ class _Lc0Engine:
                 if not self._engine_stop.is_set():
                     log.exception(f"Error in engine worker: {e}")
 
-        if engine is not None and not engine.protocol.returncode.done():
-            engine.quit()
-            engine.close()
-
-        if start_attempts >= max_start_attempts:
-            log.error(
-                f"Engine '{_Lc0Engine.ENGINE_COMMAND}' failed to start after {max_start_attempts} attempts and is shutting down")
-        else:
-            log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' shut down")
+        log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' shut down")
 
 
 engine = _Lc0Engine()

@@ -360,18 +360,8 @@ class GameState:
             return
 
         if event.result.move is None or event.result.move not in self.board.legal_moves:
-            depth = event.result.info.get("depth")
-            if depth is None:
-                log.error("Engine did not return a valid move and depth is unknown, resigning the game")
-                self.resign_game()
-            elif depth >= self._engine_depth_range[1]:
-                log.error("Engine did not return a valid move even at maximum depth, resigning the game")
-                self.resign_game()
-            else:
-                log.warning(
-                    f"Engine did not return a valid move, trying again with more depth ({depth} -> {depth + 1})")
-                engine.get_move_async(self._engine_play_weight, self.board,
-                                      min_depth=depth + 1, max_depth=self._engine_depth_range[1])
+            log.error("Engine did not return a valid move, resigning the game")
+            self.resign_game()
             return
 
         events.event_manager.publish(events.ChessMoveEvent(move=event.result.move, side=self.engine_color))

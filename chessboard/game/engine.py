@@ -80,6 +80,14 @@ class _EngineGetMoveRequest:
         if self.max_depth < self.min_depth:
             self.max_depth = self.min_depth
 
+    def copy(self) -> "_EngineGetMoveRequest":
+        return _EngineGetMoveRequest(
+            weight=self.weight,
+            board=self.board,
+            min_depth=self.min_depth,
+            max_depth=self.max_depth
+        )
+
     def __repr__(self):
         return (f"_EngineGetMoveRequest(weight={self.weight}, "
                 f"board_fen={self.board.fen()}, "
@@ -258,29 +266,36 @@ class _Lc0Engine:
 
         depth = choice(range(event.min_depth, event.max_depth + 1))
         result = None
-        try:
-            result = self._engine.play(
-                board=event.board,
-                limit=chess.engine.Limit(time=settings['engine.player.time_limit'], depth=depth),
-                info=chess.engine.INFO_BASIC)
+        while result is None and depth <= event.max_depth:
+            try:
+                result = self._engine.play(
+                    board=event.board,
+                    limit=chess.engine.Limit(time=settings['engine.player.time_limit'], depth=depth),
+                    info=chess.engine.INFO_BASIC)
 
-            log.info(f"Engine selected move: {result}")
+                if result.resigned:
+                    break
+                elif result.move is not None and result.move in event.board.legal_moves:
+                    break
+                else:
+                    log.error(f"Engine did not resign or return a valid move at depth {depth}: {result}")
+                    result = None
 
-        except Exception:
-            log.exception(f"Error during engine play")
+                log.info(f"Engine selected move: {result}")
 
-            if depth < event.max_depth:
-                # Retry with increased depth
-                log.info(f"Retrying engine move selection with increased depth: {depth + 1}")
-                event.min_depth = depth + 1
-                self._get_move(event)
+            except Exception:
+                log.exception(f"Error during engine play")
+                if depth < event.max_depth:
+                    # Retry with increased depth
+                    log.info(f"Retrying engine move selection with increased depth: {depth + 1}")
 
-            else:
-                log.error(f"Engine move selection failed for event {event}")
-                result = chess.engine.PlayResult(move=None, ponder=None, info={"depth": depth}, resigned=True)
+            depth += 1
 
-        if result is not None:
-            events.event_manager.publish(events.EngineMoveEvent(result))
+        if result is None:
+            log.error(f"Engine move selection failed for event {event}")
+            result = chess.engine.PlayResult(move=None, ponder=None, info={"depth": depth}, resigned=True)
+
+        events.event_manager.publish(events.EngineMoveEvent(result))
 
     def _start_analysis(self, event: _EngineStartAnalysisRequest) -> None:
         total_limit = settings['engine.analysis.time_limit']

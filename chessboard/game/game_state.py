@@ -179,7 +179,7 @@ class GameState:
         with open(savefile, "wb") as f:
             f.write(new_bytes)
 
-        log.info(
+        log.debug(
             f"Saved game state to {savefile}:\n"
             f"  FEN: {self.board.fen()}\n"
             f"  White time left: {self.chess_clock.white_time_left}\n"
@@ -367,8 +367,6 @@ class GameState:
         events.event_manager.publish(events.ChessMoveEvent(move=event.result.move, side=self.engine_color))
 
     def _handle_move(self, event: events.ChessMoveEvent):
-        log.info(f"Handling move event: {event.move.uci()}")
-
         self.board.push(event.move)
 
         log.info(f"Move {event.move.uci()} registered")

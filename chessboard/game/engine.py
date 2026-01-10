@@ -281,7 +281,7 @@ class _Lc0Engine:
 
         depth = choice(range(event.min_depth, event.max_depth + 1))
         result = None
-        while result is None and depth <= event.max_depth:
+        while result is None:
             try:
                 result = self._engine.play(
                     board=event.board,
@@ -290,25 +290,22 @@ class _Lc0Engine:
 
                 if result.resigned:
                     log.info(f"Engine resigned (result={result})")
-                    break
                 elif result.move is not None and event.board.is_legal(result.move):
                     log.info(f"Engine selected move {result.move.uci()} (result={result})")
-                    break
                 else:
                     log.warning(f"Engine returned invalid move at depth {depth} for event {event}: {result}")
                     result = None
 
             except Exception:
                 log.exception(f"Error during engine play: (event={event})")
-                if depth < event.max_depth:
-                    # Retry with increased depth
-                    log.info(f"Retrying engine move selection with increased depth: {depth + 1}")
 
-            depth += 1
-
-        if result is None:
-            log.error(f"Engine move selection failed for event {event}")
-            result = chess.engine.PlayResult(move=None, ponder=None, info={"depth": depth}, resigned=True)
+            if result is None and depth < event.max_depth:
+                depth += 1
+                log.info(f"Retrying engine move selection with increased depth: {depth}")
+            elif result is None:
+                log.error(
+                    f"Engine move selection failed for event {event} event at max depth {depth}")
+                result = chess.engine.PlayResult(move=None, ponder=None, info={"depth": depth}, resigned=True)
 
         events.event_manager.publish(events.EngineMoveEvent(result))
 

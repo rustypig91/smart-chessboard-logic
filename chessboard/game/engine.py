@@ -290,8 +290,10 @@ class _Lc0Engine:
 
                 if result.resigned:
                     log.info(f"Engine resigned (result={result})")
+                    break
                 elif result.move is not None and event.board.is_legal(result.move):
                     log.info(f"Engine selected move {result.move.uci()} (result={result})")
+                    break
                 else:
                     log.warning(f"Engine returned invalid move at depth {depth} for event {event}: {result}")
                     result = None

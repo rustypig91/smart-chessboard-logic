@@ -311,7 +311,7 @@ class _Lc0Engine:
         events.event_manager.publish(events.EngineMoveEvent(result))
 
     def _start_analysis(self, event: _EngineStartAnalysisRequest) -> None:
-        """ Start engine analysis for the given request.
+        """Start engine analysis for the given request.
 
         Note: Only allowed to be called from the engine worker thread.
         """

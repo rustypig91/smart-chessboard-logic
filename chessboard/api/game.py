@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, request
 from chessboard.game.game_state import game_state
 from chessboard.logger import log
 import chessboard.game.engine as engine
-
+import chessboard.events as events
 api = Blueprint('api', __name__, template_folder='templates')
 
 
@@ -52,11 +52,13 @@ def start_new_game():
     if start_time_seconds == 0.0:
         start_time_seconds = float('inf')  # Represent unlimited time
 
-    game_state.new_game(
+    event = events.NewGameEvent(
+        white_engine_weight=engine_name if engine_color == chess.WHITE else None,
+        black_engine_weight=engine_name if engine_color == chess.BLACK else None,
         start_time_seconds=start_time_seconds,
-        increment_seconds=increment_seconds,
-        engine_weight=engine_name,
-        engine_color=engine_color)
+        increment_seconds=increment_seconds
+    )
+    events.event_manager.publish(event)
 
     # Here you would typically set up the game state with the engine
     # For this example, we'll just return success
@@ -66,63 +68,33 @@ def start_new_game():
 @api.route('/pause', methods=['POST'])
 def pause_game():
     """API endpoint to pause the current game"""
-    game_state.pause_game()
+    events.event_manager.publish(events.ClockStopEvent())
     return jsonify({'success': True})
 
 
 @api.route('/resume', methods=['POST'])
 def resume_game():
     """API endpoint to resume the current game"""
-    game_state.resume_game()
+    events.event_manager.publish(events.ClockStartEvent())
     return jsonify({'success': True})
 
 
 @api.route('/resign', methods=['POST'])
 def resign_game():
     """API endpoint to resign the current game"""
-    game_state.resign_game()
+    events.event_manager.publish(events.ResignEvent())
     return jsonify({'success': True})
 
 
 @api.route('/regret_last_move', methods=['POST'])
 def regret_last_move():
     """API endpoint to regret the last move"""
-    game_state.regret_last_move()
+    events.event_manager.publish(events.RegretMoveEvent())
     return jsonify({'success': True})
-
-
-@api.route('/state', methods=['GET'])
-def get_game_state():
-    """API endpoint to get the current game state"""
-    board = game_state.get_board()
-    return jsonify({
-        'success': True,
-        'fen': board.fen(),
-        'turn': 'white' if board.turn == chess.WHITE else 'black',
-        'is_check': board.is_check(),
-        'is_checkmate': board.is_checkmate(),
-        'is_stalemate': board.is_stalemate(),
-        'is_insufficient_material': board.is_insufficient_material(),
-        'is_game_over': board.is_game_over(),
-        'last_move': board.move_stack[-1].uci() if board.move_stack else None,
-        'started': game_state.is_game_started,
-        'paused': game_state.is_game_paused,
-        'clocks': {
-            'white_time_left': game_state.chess_clock.white_time_left if game_state.chess_clock.white_time_left != float('inf') else None,
-            'black_time_left': game_state.chess_clock.black_time_left if game_state.chess_clock.black_time_left != float('inf') else None,
-            'paused': game_state.chess_clock.paused
-        },
-        'white_player': game_state._players[chess.WHITE],
-        'black_player': game_state._players[chess.BLACK]
-    })
 
 
 @api.route('/hint', methods=['POST'])
 def get_hint():
     """API endpoint to get a hint for the next move from the engine"""
-    move = game_state.get_hint()
-
-    if move is None:
-        return jsonify({'success': False, 'error': 'No hint available'}), 400
-
-    return jsonify({'success': True, 'move': move.uci()})
+    events.event_manager.publish(events.HintRequestedEvent())
+    return jsonify({'success': True})

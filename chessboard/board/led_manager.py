@@ -111,7 +111,16 @@ class _LedManager:
         self._layers: weakref.WeakSet[LedLayer] = weakref.WeakSet()
         self._lock = Lock()
 
+        events.event_manager.subscribe(events.NewSubscriberEvent, lambda e: self.apply_layers())
+
+        self._last_applied_colors: dict[int, tuple[int, int, int]] = {}
+
         self.apply_layers()
+
+    def _handle_new_subscriber_event(self, event: events.NewSubscriberEvent) -> None:
+        """ Handle new subscriber event to send latest colors """
+        if event.event_type == events.SetSquareColorEvent and self._last_applied_colors:
+            event.callback(events.SetSquareColorEvent(self._last_applied_colors))
 
     @property
     def colors(self) -> dict[int, tuple[int, int, int]]:
@@ -123,6 +132,7 @@ class _LedManager:
             for layer in sorted(list(self._layers), key=lambda l: l.priority):
                 layer.apply_layer(final_colors)
 
+        self._last_applied_colors = final_colors
         return final_colors
 
     def apply_layers(self) -> None:

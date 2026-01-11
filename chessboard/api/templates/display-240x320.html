@@ -306,25 +306,39 @@
                 let lastGameState = null;
                 let lastGameStateReceivedTime = null;
 
-                function handleGameStateEvent(data) {
-                    console.log("Received GameStateEvent:", data);
+                function handleBoardStateEvent(data) {
+                    console.log("Received BoardStateEvent:", data);
 
                     lastGameState = data;
                     lastGameStateReceivedTime = Date.now();
 
+                    const lastMoveEl = document.getElementById('last-move');
+                    if (lastMoveEl) lastMoveEl.textContent = `Last: ${data.board.last_move || '-'}`;
+
+                    // const whiteNameEl = document.getElementById('white-name');
+                    // const blackNameEl = document.getElementById('black-name');
+                    // if (whiteNameEl) whiteNameEl.textContent = `${data.white_player}`;
+                    // if (blackNameEl) blackNameEl.textContent = `${data.black_player}`;
+
+                    // if (data.is_game_started && !data.is_game_paused) {
+                    //     showView('game-overview-view');
+                    // }
+                }
+
+                addBoardEventListener('BoardStateEvent', handleBoardStateEvent)
+
+                let lastClockState = null;
+                let lastClockStateReceivedTime = null;
+                function handleClockStateEvent(data) {
+                    lastClockState = data;
+                    lastClockStateReceivedTime = Date.now();
+
+                    console.log("Received ClockStateEvent:", data);
+
                     const pauseOverlay = document.getElementById('pause-overlay');
                     if (pauseOverlay) {
-                        pauseOverlay.style.display = data.clock_paused ? 'flex' : 'none';
+                        pauseOverlay.style.display = data.paused ? 'flex' : 'none';
                     }
-
-                    const lastMoveEl = document.getElementById('last-move');
-                    if (lastMoveEl) lastMoveEl.textContent = `Last: ${data.last_move || '-'}`;
-
-                    const whiteNameEl = document.getElementById('white-name');
-                    const blackNameEl = document.getElementById('black-name');
-                    if (whiteNameEl) whiteNameEl.textContent = `${data.white_player}`;
-                    if (blackNameEl) blackNameEl.textContent = `${data.black_player}`;
-
                     const whitePanel = document.getElementById('white-panel');
                     const blackPanel = document.getElementById('black-panel');
                     const blackClockEl = document.getElementById('black-clock');
@@ -345,13 +359,59 @@
                         whitePanel.style.background = isWhiteTurn ? activeBg : inactiveBg;
                         blackPanel.style.background = isWhiteTurn ? inactiveBg : activeBg;
                     }
+                }
+                addBoardEventListener('ClockStateEvent', handleClockStateEvent)
 
-                    if (data.is_game_started && !data.is_game_paused) {
-                        showView('game-overview-view');
+                function updateClockDisplay() {
+                    if (lastClockStateReceivedTime == null) {
+                        console.warn("Clock update called before initialization");
+                        return;
+                    }
+                    const now = Date.now();
+                    const dt = (now - lastClockStateReceivedTime) / 1000.0;
+
+                    let whiteTime;
+                    if (lastClockState.white_time_left != 'inf') {
+                        // Both players have unlimited time; no need to update clocks
+                        whiteTime = Math.max(0.0, lastClockState.white_time_left - (lastClockState.current_side === 'white' && !lastClockState.paused ? dt : 0));
+                    } else {
+                        whiteTime = lastClockState.white_time_elapsed + (dt * (lastClockState.current_side === 'white' && !lastClockState.paused ? 1 : 0));
+                    }
+
+                    let blackTime;
+                    if (lastClockState.black_time_left != 'inf') {
+                        // Both players have unlimited time; no need to update clocks
+                        blackTime = Math.max(0.0, lastClockState.black_time_left - (lastClockState.current_side === 'black' && !lastClockState.paused ? dt : 0));
+                    } else {
+                        blackTime = lastClockState.black_time_elapsed + (dt * (lastClockState.current_side === 'black' && !lastClockState.paused ? 1 : 0));
+                    }
+
+                    const wSign = whiteTime < 0 ? '-' : '';
+                    const bSign = blackTime < 0 ? '-' : '';
+
+                    whiteTime = Math.abs(whiteTime);
+                    blackTime = Math.abs(blackTime);
+
+                    const wMin = Math.floor((whiteTime || 0) / 60);
+                    const wSec = ((whiteTime || 0) % 60).toFixed(1);
+                    const bMin = Math.floor((blackTime || 0) / 60);
+                    const bSec = ((blackTime || 0) % 60).toFixed(1);
+
+                    const wEl = document.getElementById('white-clock');
+                    const bEl = document.getElementById('black-clock');
+
+                    if (wEl) {
+                        wEl.textContent = `${wSign}${String(wMin)}:${padStart(String(wSec), 4, '0')}`;
+                    }
+                    if (bEl) {
+                        bEl.textContent = `${bSign}${String(bMin)}:${padStart(String(bSec), 4, '0')}`;
                     }
                 }
 
-                addBoardEventListener('GameStateChangedEvent', handleGameStateEvent)
+                document.addEventListener("DOMContentLoaded", () => {
+                    setInterval(updateClockDisplay, 100);
+                    sendEvent('RequestClockStateEvent');
+                });
 
                 function hideProbabilityBar(hidden) {
                     const bar = document.getElementById('win-prob-bar');
@@ -393,62 +453,6 @@
 
                 addBoardEventListener('EngineAnalysisEvent', function (data) {
                     updateWinProbabilityBar(data.white_win_prob, data.black_win_prob);
-                });
-
-                document.addEventListener("DOMContentLoaded", () => {
-                    setInterval(() => {
-                        if (currentView !== 'game-overview-view') return;
-
-                        if (lastGameStateReceivedTime == null) {
-                            console.warn("Clock update called before initialization");
-                            return;
-                        }
-                        const now = Date.now();
-                        const dt = (now - lastGameStateReceivedTime) / 1000.0;
-
-
-                        let whiteTime;
-                        if (lastGameState.white_time_left != 'inf') {
-                            // Both players have unlimited time; no need to update clocks
-                            whiteTime = Math.max(0.0, lastGameState.white_time_left - (lastGameState.turn === 'white' && !lastGameState.clock_paused ? dt : 0));
-                        } else {
-                            whiteTime = lastGameState.white_time_elapsed + (dt * (lastGameState.turn === 'white' && !lastGameState.clock_paused ? 1 : 0));
-                        }
-
-                        let blackTime;
-                        if (lastGameState.black_time_left != 'inf') {
-                            // Both players have unlimited time; no need to update clocks
-                            blackTime = Math.max(0.0, lastGameState.black_time_left - (lastGameState.turn === 'black' && !lastGameState.clock_paused ? dt : 0));
-                        } else {
-                            blackTime = lastGameState.black_time_elapsed + (dt * (lastGameState.turn === 'black' && !lastGameState.clock_paused ? 1 : 0));
-                        }
-
-                        const wSign = whiteTime < 0 ? '-' : '';
-                        const bSign = blackTime < 0 ? '-' : '';
-
-                        whiteTime = Math.abs(whiteTime);
-                        blackTime = Math.abs(blackTime);
-
-                        const wMin = Math.floor((whiteTime || 0) / 60);
-                        const wSec = ((whiteTime || 0) % 60).toFixed(1);
-                        const bMin = Math.floor((blackTime || 0) / 60);
-                        const bSec = ((blackTime || 0) % 60).toFixed(1);
-
-                        const wEl = document.getElementById('white-clock');
-                        const bEl = document.getElementById('black-clock');
-
-                        if (wEl) {
-                            wEl.textContent = `${wSign}${String(wMin)}:${padStart(String(wSec), 4, '0')}`;
-                        }
-                        if (bEl) {
-                            bEl.textContent = `${bSign}${String(bMin)}:${padStart(String(bSec), 4, '0')}`;
-                        }
-
-
-
-                    }, 100);
-
-                    socket.emit("publish_game_state")
                 });
 
             </script>
@@ -1320,7 +1324,7 @@
             showMessageView(data.title, data.message);
         });
 
-        addBoardEventListener("ChessMoveEvent", (data) => {
+        addBoardEventListener("MoveEvent", (data) => {
             const lm = document.getElementById('last-move');
             if (!lm) return;
             lm.textContent = 'Last: ' + (data.move.uci || '-');

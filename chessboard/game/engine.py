@@ -197,22 +197,60 @@ class _Lc0Engine:
     def __init__(self):
         self._analysis_queue = queue.Queue()
 
-        events.event_manager.subscribe(events.GameStateChangedEvent, self._handle_chess_move_event)
-
         self.__engine = None
         self.__engine_weight: str | None = None
+
+        self._engine_weights: dict[chess.Color, str | None] = {
+            chess.WHITE: None,
+            chess.BLACK: None
+        }
+
+        self._post_init()
+
+    def _post_init(self):
+        events.event_manager.subscribe(events.NewGameEvent, self._handle_new_game_event)
+        events.event_manager.subscribe(events.BoardStateEvent, self._handle_board_state)
 
         self._engine_stop = Event()
 
         self._engine_thread = Thread(target=self._engine_worker, daemon=True)
         self._engine_thread.start()
 
-    def _handle_chess_move_event(self, event: events.GameStateChangedEvent) -> None:
+    def _handle_new_game_event(self, event: events.NewGameEvent):
         self._analysis_queue.put(_EngineStartAnalysisRequest(
             weight=settings['engine.analysis.weight'],
-            board=event.board,
+            board=chess.Board(),
             stop_on_new_request=True
         ))
+        self._engine_weights[chess.WHITE] = event.white_engine_weight
+        self._engine_weights[chess.BLACK] = event.black_engine_weight
+
+        if event.white_engine_weight:
+            log.info(f"White engine weight set to: {event.white_engine_weight}")
+        if event.black_engine_weight:
+            log.info(f"Black engine weight set to: {event.black_engine_weight}")
+
+        if event.white_engine_weight:
+            self.get_move_async(
+                weight=event.white_engine_weight,
+                board=chess.Board())
+
+    def _handle_board_state(self, event: events.BoardStateEvent) -> None:
+        if event.is_game_over:
+            return
+
+        weight = self._engine_weights[event.board.turn]
+
+        if weight is not None:
+            self.get_move_async(
+                weight=weight,
+                board=event.board.copy(stack=0))
+        else:
+            self._analysis_queue.put(_EngineStartAnalysisRequest(
+                weight=settings['engine.analysis.weight'],
+                board=event.board,
+                stop_on_new_request=True
+            ))
 
     def __del__(self):
         self.stop()
@@ -318,6 +356,22 @@ class _Lc0Engine:
                 result = chess.engine.PlayResult(move=None, ponder=None, info={"depth": depth}, resigned=True)
 
         events.event_manager.publish(events.EngineMoveEvent(result))
+
+        if result.resigned:
+            events.event_manager.publish(events.ResignEvent())
+        elif result.draw_offered:
+            events.event_manager.publish(events.PlayerNotifyEvent(
+                title="Draw Offered",
+                message="The engine has offered a draw."
+            ))
+        elif result.move is not None:
+            events.event_manager.publish(events.MoveEvent(result.move, side=event.board.turn))
+        else:
+            log.error(f"Engine returned no move and did not resign for event {event}: {result}")
+            events.event_manager.publish(events.PlayerNotifyEvent(
+                title="Engine Error",
+                message="The engine failed to provide a valid move."
+            ))
 
     def _start_analysis(self, event: _EngineStartAnalysisRequest) -> None:
         """Start engine analysis for the given request.

@@ -48,35 +48,3 @@ def clear_square_color_preview() -> Response:
     # Ensure clients get an immediate update
     led_manager.apply_layers()
     return jsonify({'success': True})
-
-
-@api.route('/square/pieces', methods=['GET'])
-def get_board_state() -> Response:
-    """API endpoint to get the current board state"""
-
-    pieces = {}
-    board = game_state.get_board()
-
-    for square, piece in board.piece_map().items():
-        pieces[square] = piece.unicode_symbol()
-
-    return jsonify({'success': True, 'board_state': pieces})
-
-
-@api.route('/game/reset', methods=['POST'])
-def reset_game() -> Response:
-    """API endpoint to reset the game"""
-    game_state.reset()
-    return jsonify({'success': True})
-
-
-@api.route('/game/start', methods=['POST'])
-def start_game() -> Response:
-    """API endpoint to start a new game"""
-    data = request.get_json()
-    start_time = data.get('start_time', None)
-    increment = data.get('increment', None)
-
-    game_state.new_game(start_time_seconds=start_time, increment_seconds=increment)
-
-    return jsonify({'success': True})

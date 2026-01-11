@@ -35,7 +35,7 @@ _hint_animation = AnimationPulse(
 )
 
 
-def _handle_chess_move_event(event: events.ChessMoveEvent) -> None:
+def _handle_chess_move_event(event: events.MoveEvent) -> None:
     global _change_side_animation
     _change_side_animation.set_side(not event.side)
 
@@ -96,7 +96,7 @@ def _handle_square_piece_state_change(event: events.SquarePieceStateChangeEvent)
                 _hint_animation.stop()
 
 
-events.event_manager.subscribe(events.ChessMoveEvent, _handle_chess_move_event)
+events.event_manager.subscribe(events.MoveEvent, _handle_chess_move_event)
 events.event_manager.subscribe(events.LegalMoveDetectedEvent, _handle_legal_move_detected)
 events.event_manager.subscribe(events.GameStateChangedEvent, _handle_game_state_change)
 events.event_manager.subscribe(events.HintEvent, _handle_hint_event)

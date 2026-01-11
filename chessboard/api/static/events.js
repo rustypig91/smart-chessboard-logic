@@ -3,7 +3,7 @@
 // Place this script tag after the Socket.IO script tag in your HTML to ensure 'io' is defined.
 socket = io();
 
-function sendEvent(eventType, eventData) {
+function sendEvent(eventType, eventData = {}) {
     console.log("Sending event:", eventType, eventData);
     socket.emit("publish_event", {
         event_type: eventType,
@@ -13,6 +13,10 @@ function sendEvent(eventType, eventData) {
 
 function addBoardEventListener(eventType, callback) {
     socket.on("board_event." + eventType, callback);
+    socket.emit("subscribe", {
+        event_type: eventType,
+        board_only: true,
+    });
 }
 
 if (!window._socketOnAnySet) {

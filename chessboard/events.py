@@ -9,7 +9,6 @@ import traceback
 import atexit
 import inspect
 import queue
-from chessboard.board_wrapper import Board
 
 
 @enum.unique
@@ -39,6 +38,12 @@ class Event:
         else:
             raise ValueError(f"Invalid color type: {type(color)}")
 
+    def _parse_color_not_none(self, color: chess.Color | str) -> chess.Color:
+        parsed = self._parse_color(color)
+        if parsed is None:
+            raise ValueError("Color cannot be None")
+        return parsed
+
     def _color_to_str(self, color: chess.Color | None) -> str | None:
         if color is None:
             return None
@@ -49,7 +54,10 @@ class Event:
         if isinstance(value, float):
             return value if value != float('inf') else "inf"
         elif isinstance(value, chess.Board):
-            return value.fen()
+            return {
+                "fen": value.fen(),
+                "last_move": value.move_stack[-1].uci() if value.move_stack else None
+            }
         elif isinstance(value, ModuleType):
             return value.__name__
         elif isinstance(value, chess.Move):
@@ -120,11 +128,7 @@ class TimeButtonPressedEvent(Event):
     def __init__(self, color: chess.Color | str):
         super().__init__()
 
-        parsed_color = self._parse_color(color)
-        if parsed_color is None:
-            raise ValueError("Color cannot be None for TimeButtonPressedEvent")
-
-        self.color: chess.Color = parsed_color
+        self.color: chess.Color = self._parse_color_not_none(color)
 
     def __repr__(self):
         return f"TimeButtonPressedEvent(color={'white' if self.color == chess.WHITE else 'black'})"
@@ -135,19 +139,21 @@ class TimeButtonPressedEvent(Event):
         return items
 
 
-class ChessMoveEvent(Event):
+class MoveEvent(Event):
     def __init__(self, move: chess.Move, side: chess.Color | str):
         super().__init__()
         self.move = move
-        _side = self._parse_color(side)
-        if _side is None:
-            raise ValueError("Side cannot be None for ChessMoveEvent")
-        self.side = _side
+        self.side = self._parse_color_not_none(side)
 
     def to_json(self):
         items = super().to_json()
         items['side'] = self._color_to_str(self.side)
         return items
+
+
+class ResignEvent(Event):
+    def __init__(self):
+        super().__init__()
 
 
 class GameOverEvent(Event):
@@ -165,17 +171,17 @@ class PlayerNotifyEvent(Event):
         self.message = message
 
 
-class GameStartedEvent(Event):
+class GameStartEvent(Event):
     def __init__(self):
         super().__init__()
 
 
-class GamePausedEvent(Event):
+class ClockStopEvent(Event):
     def __init__(self):
         super().__init__()
 
 
-class GameResumedEvent(Event):
+class ClockStartEvent(Event):
     def __init__(self):
         super().__init__()
 
@@ -186,33 +192,89 @@ class SystemShutdownEvent(Event):
 
 
 class NewGameEvent(Event):
-    def __init__(self, white_player: PlayerType, black_player: PlayerType, engine_weight: str | None, start_time_seconds: tuple[float, float], increment_seconds: tuple[float, float]):
+    def __init__(self,
+                 white_engine_weight: str | None,
+                 black_engine_weight: str | None,
+                 start_time_seconds: tuple[float, float] | float | int,
+                 increment_seconds: tuple[float, float] | float | int):
         super().__init__()
-        self.white_player = white_player
-        self.black_player = black_player
-        self.engine_weight = engine_weight
-        self.start_time_seconds = start_time_seconds
-        self.increment_seconds = increment_seconds
+        self.white_player = PlayerType.ENGINE if white_engine_weight else PlayerType.HUMAN
+        self.black_player = PlayerType.ENGINE if black_engine_weight else PlayerType.HUMAN
+
+        self.white_engine_weight = white_engine_weight
+        self.black_engine_weight = black_engine_weight
+
+        if isinstance(start_time_seconds, (float, int)):
+            start_time_seconds = (start_time_seconds, start_time_seconds)
+
+        if isinstance(increment_seconds, (float, int)):
+            increment_seconds = (increment_seconds, increment_seconds)
+
+        self.start_time_seconds: tuple[float, float] = start_time_seconds
+        self.increment_seconds: tuple[float, float] = increment_seconds
 
 
-class ChessClockStateChangedEvent(Event):
+class RequestClockStateEvent(Event):
+    def __init__(self):
+        super().__init__()
+
+
+class ClockStateEvent(Event):
     def __init__(
         self,
         paused: bool,
-        current_player: chess.Color | None | str,
+        current_side: chess.Color | str,
         white_time_left: float,
-        black_time_left: float
+        black_time_left: float,
+        white_time_elapsed: float,
+        black_time_elapsed: float
     ):
         super().__init__()
         self.paused = paused
-        self.current_player = self._parse_color(current_player)
+        self.current_side = self._parse_color_not_none(current_side)
         self.white_time_left = white_time_left
         self.black_time_left = black_time_left
+        self.white_time_elapsed = white_time_elapsed
+        self.black_time_elapsed = black_time_elapsed
 
     def to_json(self) -> dict:
         items = super().to_json()
-        items['current_player'] = self._color_to_str(self.current_player)
+        items['current_side'] = self._color_to_str(self.current_side)
         return items
+
+
+class ClockTimeoutEvent(Event):
+    def __init__(self, side: chess.Color | str):
+        super().__init__()
+        self.side = self._parse_color_not_none(side)
+
+    def to_json(self) -> dict:
+        items = super().to_json()
+        items['side'] = self._color_to_str(self.side)
+        return items
+
+
+class BoardStateEvent(Event):
+    def __init__(self, board: chess.Board, is_game_over: bool):
+        super().__init__()
+        self.board = board
+        self.is_game_over = is_game_over
+
+
+class RegretMoveEvent(Event):
+    def __init__(self):
+        super().__init__()
+
+
+class MoveRegrettedEvent(Event):
+    def __init__(self, move: chess.Move):
+        super().__init__()
+        self.move = move
+
+
+class SaveEvent(Event):
+    def __init__(self):
+        super().__init__()
 
 
 class GameStateChangedEvent(Event):
@@ -300,12 +362,26 @@ class EngineMoveEvent(Event):
         self.result = result
 
 
+class HintRequestedEvent(Event):
+    """ Request for engine hint for the next move. """
+
+    def __init__(self):
+        super().__init__()
+
+
 class HintEvent(Event):
     """ Engine provided hint for the next move. """
 
     def __init__(self, move: chess.Move):
         super().__init__()
         self.move = move
+
+
+class NewSubscriberEvent(Event):
+    def __init__(self, callback: Callable, event_type: type[Event]):
+        super().__init__()
+        self.callback = callback
+        self.event_type = event_type
 
 
 class _EventManager:
@@ -330,10 +406,11 @@ class _EventManager:
             raise ValueError(f"Unknown event type: {event_type}")
 
         self._subscribers[event_type].append(callback)
+        self.publish(NewSubscriberEvent(callback=callback, event_type=event_type))
 
     def subscribe_all_events(self, callback: Callable[[Event], None]):
         for event_type in Event.__subclasses__():
-            self._subscribers[event_type].append(callback)
+            self.subscribe(event_type, callback)
 
     def unsubscribe(self, event_type: type[Event], callback: Callable):
         if event_type in self._subscribers:

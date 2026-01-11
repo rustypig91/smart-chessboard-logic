@@ -112,17 +112,52 @@ def handle_publish_event(data: dict[str, Any]) -> None:
         return
 
 
-@socketio.on('publish_game_state')
-def handle_publish_game_state() -> None:
-    """Handle request to get the current game state"""
-    game_state.publish_game_state()
+_subscriptions = {}
 
 
-chessboard.events.event_manager.subscribe_all_events(lambda event: emit_event(event))
+@socketio.on('subscribe')
+def handle_subscribe(data: dict[str, Any]) -> None:
+    """
+    Handle event subscription requests from clients.
+    Expects 'event_type' in data.
+    """
+    event_type = data.get('event_type')
+    if not event_type:
+        log.error("subscribe missing 'event_type'")
+        return
+
+    try:
+        event_class = getattr(chessboard.events, event_type)
+        log.debug(f"subscribe to event: {event_type}")
+
+        sid = request.sid  # type: ignore
+
+        def emit_event_callback(event: chessboard.events.Event) -> None:
+            socketio.emit(
+                f'board_event.{type(event).__name__}',
+                event.to_json(),
+                room=sid  # type: ignore
+            )
+
+        log.info(f"Subscribing SID {sid} to event {event_type}")
+        chessboard.events.event_manager.subscribe(event_class, emit_event_callback)
+        if sid not in _subscriptions:
+            _subscriptions[sid] = []
+        _subscriptions[sid].append((emit_event_callback, event_class))
+    except Exception as e:
+        traceback_lines = "\n    ".join(traceback.format_exc().splitlines())
+        log.info(f"Error handling subscribe: {e}: \n    {traceback_lines}")
+        return
 
 
-def emit_event(event: chessboard.events.Event):
-    socketio.emit(f'board_event.{type(event).__name__}', event.to_json())
+@socketio.on('disconnect')
+def handle_disconnect() -> None:
+    """Handle client disconnection and clean up subscriptions."""
+    sid = request.sid  # type: ignore
+    if sid in _subscriptions:
+        for callback, event_class in _subscriptions[sid]:
+            chessboard.events.event_manager.unsubscribe(event_class, callback)
+        del _subscriptions[sid]
 
 
 if __name__ == '__main__':

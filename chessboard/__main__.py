@@ -39,11 +39,10 @@ def main():
     import chessboard.events as events
     import chessboard.api.api as api
     import chessboard.animations
-    import chessboard.game.engine
-    import chessboard.game.history  # activate game history subscriptions
+    import chessboard.game
 
-    if args.new_game:
-        game_state.new_game(engine_weight=args.engine_weight, engine_color=args.engine_color)
+    # if args.new_game:
+    #     game_state.new_game(engine_weight=args.engine_weight, engine_color=args.engine_color)
 
     api.socketio.run(api.app, debug=False, host='0.0.0.0', port=args.port, allow_unsafe_werkzeug=True)
 

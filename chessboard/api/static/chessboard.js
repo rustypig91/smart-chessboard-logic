@@ -162,59 +162,53 @@ function createPieceDiv(pieceSymbol, squareIndex) {
     return pieceDiv;
 }
 
-function updateBoardState() {
-    fetch("/api/board/square/pieces")
-        .then(response => response.json())
-        .then(data => {
-            console.log("Fetched piece map data:", data);
-            const pieceMap = data.board_state;
+function getPieceSymbolFromFenChar(fenChar) {
+    switch (fenChar) {
+        case 'K': return "♔"; // White King
+        case 'Q': return "♕"; // White Queen
+        case 'R': return "♖"; // White Rook
+        case 'B': return "♗"; // White Bishop
+        case 'N': return "♘"; // White Knight
+        case 'P': return "♙"; // White Pawn
+        case 'k': return "♚"; // Black King
+        case 'q': return "♛"; // Black Queen
+        case 'r': return "♜"; // Black Rook
+        case 'b': return "♝"; // Black Bishop
+        case 'n': return "♞"; // Black Knight
+        case 'p': return "♟"; // Black Pawn
+        default: return null;
+    }
+}
 
-            // Clear all pieces from board
-            document.querySelectorAll('.chess-square').forEach(square => {
-                square.innerHTML = '';
-            });
+function updateBoardFromFen(fen) {
+    const rows = fen.split(' ')[0].split('/');
 
-            // Place pieces according to pieceMap
-            Object.entries(pieceMap).forEach(([squareIndex, pieceSymbol]) => {
+    // Clear all pieces from board
+    document.querySelectorAll('.chess-square').forEach(square => {
+        square.innerHTML = '';
+    });
+
+    for (let row = 0; row < 8; row++) {
+        let col = 0;
+        for (const char of rows[row]) {
+            if (isNaN(char)) {
+                const squareIndex = (7 - row) * 8 + col;
                 const squareDiv = document.querySelector(`[data-square_index='${squareIndex}']`);
                 if (squareDiv) {
-                    const pieceDiv = createPieceDiv(pieceSymbol, squareIndex);
+                    const pieceDiv = createPieceDiv(getPieceSymbolFromFenChar(char), squareIndex);
                     squareDiv.appendChild(pieceDiv);
-                }
-                else {
+                } else {
                     console.error("Could not find square for piece placement:", squareIndex);
                 }
-            });
-        })
-        .catch(err => console.error("Failed to fetch piece map data:", err));
+                col += 1;
+            } else {
+                col += parseInt(char);
+            }
+        }
+    }
 }
 
-function updateAllSquareColors() {
-    fetch("/api/board/square/colors")
-        .then(response => response.json())
-        .then(data => {
-            console.log("Fetched LED data:", data);
-            // data should be { squares: [indices], color: [r, g, b] }
-            document.querySelectorAll('.chess-square').forEach(square => {
-                square.style.background = ''; // Reset background
-                square.style.boxShadow = '';
-            });
-
-            Object.entries(data.colors).forEach(([squareIndex, color]) => {
-                const squareDiv = document.querySelector(`[data-square_index='${squareIndex}']`);
-                if (squareDiv && Array.isArray(color)) {
-                    squareDiv.style.background = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
-                }
-                else {
-                    console.error("Could not find square for LED update:", squareIndex);
-                }
-            });
-
-        })
-        .catch(err => console.error("Failed to fetch LED data:", err));
-}
-
-function initializeBoard(boardDiv, width) {
+function initializeBoard(boardDiv, width, auto_update = true) {
     boardWidth = width;
 
     boardDiv.style.gridTemplateColumns = `repeat(8, ${width / 8}px)`;
@@ -238,8 +232,14 @@ function initializeBoard(boardDiv, width) {
         }
     }
 
-    updateBoardState();
-    updateAllSquareColors();
+    initialized = false;
+
+    addBoardEventListener("BoardStateEvent", function (data) {
+        if (!auto_update && initialized) return;
+        initialized = true;
+
+        updateBoardFromFen(data.board.fen);
+    });
 
     addBoardEventListener("SetSquareColorEvent", function (data) {
         console.log("LED Change Event data:", data);

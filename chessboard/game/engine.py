@@ -4,7 +4,7 @@ import chess
 import chess.engine
 from chessboard.logger import log
 from chessboard.settings import settings
-from threading import Thread, Event, current_thread
+from threading import Thread, Event, current_thread, Lock
 from random import choice
 import chessboard.persistent_storage as persistent_storage
 import shutil
@@ -72,7 +72,7 @@ def _probability_from_engine_score(score: chess.engine.PovScore) -> tuple[float,
 class _EngineGetMoveRequest:
     def __init__(self, weight: str, board: chess.Board, min_depth: int, max_depth: int):
         self.weight = weight
-        self.board = board.copy()
+        self.board = board
         self.min_depth = min_depth
         self.max_depth = max_depth
         if self.min_depth < 1:
@@ -87,13 +87,24 @@ class _EngineGetMoveRequest:
 
 
 class _EngineStartAnalysisRequest:
-    def __init__(self, weight: str, board: chess.Board):
+    ID_LOCK = Lock()
+    NEXT_ID: int = 0
+
+    def __init__(self, weight: str, board: chess.Board, stop_on_new_request: bool = True):
         self.weight = weight
-        self.board = board.copy()
+        self.board = board
+        self.stop_on_new_request = stop_on_new_request
+        with _EngineStartAnalysisRequest.ID_LOCK:
+            self.id = _EngineStartAnalysisRequest.NEXT_ID
+            next_id = (self.id + 1) % 0x100000000  # Wrap around at 2^32
+            _EngineStartAnalysisRequest.NEXT_ID = next_id
 
     def __repr__(self):
-        return (f"_EngineStartAnalysisRequest(weight={self.weight}, "
-                f"board_fen={self.board.fen()})")
+        return (f"_EngineStartAnalysisRequest("
+                f"weight={self.weight}, "
+                f"board_fen={self.board.fen()}, "
+                f"id={self.id}), "
+                f"stop_on_new_request={self.stop_on_new_request})")
 
 
 def install_weight(weight_file: str) -> None:
@@ -189,7 +200,7 @@ class _Lc0Engine:
         events.event_manager.subscribe(events.GameStateChangedEvent, self._handle_chess_move_event)
 
         self.__engine = None
-        self._current_weight = ThreadSafeVariable[str | None](None)
+        self.__engine_weight: str | None = None
 
         self._engine_stop = Event()
 
@@ -199,7 +210,8 @@ class _Lc0Engine:
     def _handle_chess_move_event(self, event: events.GameStateChangedEvent) -> None:
         self._analysis_queue.put(_EngineStartAnalysisRequest(
             weight=settings['engine.analysis.weight'],
-            board=event.board
+            board=event.board,
+            stop_on_new_request=True
         ))
 
     def __del__(self):
@@ -227,8 +239,13 @@ class _Lc0Engine:
         """Request the engine to select a move for the given board position."""
         self._analysis_queue.put(_EngineGetMoveRequest(weight, board, min_depth, max_depth))
 
-    @property
-    def _engine(self) -> chess.engine.SimpleEngine:
+    def get_analysis_async(self, weight: str, board: chess.Board) -> int:
+        """Request the engine to start analysis for the given board position."""
+        event = _EngineStartAnalysisRequest(weight, board, stop_on_new_request=False)
+        self._analysis_queue.put(event)
+        return event.id
+
+    def _get_engine(self, weight: str) -> chess.engine.SimpleEngine:
         """Get the current engine instance or initialize it if not running.
 
         Note: Only allowed to be called from the engine worker thread.
@@ -237,39 +254,30 @@ class _Lc0Engine:
             chess.engine.SimpleEngine: The engine instance.
         """
         if current_thread() != self._engine_thread:
-            raise RuntimeError("_engine must be called from the engine worker thread")
+            raise RuntimeError("_get_engine must be called from the engine worker thread")
 
         if self.__engine is None or self.__engine.protocol.returncode.done():
             self.__engine = chess.engine.SimpleEngine.popen_uci([_Lc0Engine.ENGINE_COMMAND])
+            self.__engine_weight = None
             log.info(f"Engine '{_Lc0Engine.ENGINE_COMMAND}' initialized")
 
+        if self.__engine_weight != weight:
+            weight_path = get_weight_file(weight, try_download=True)
+            if weight_path is None:
+                raise FileNotFoundError(f"Engine weights file not found: {weight_path}")
+
+            self.__engine.configure({"WeightsFile": weight_path})
+            self.__engine_weight = weight
+
+            log.info(f"Engine weight set to: {weight}")
+
         return self.__engine
-
-    def _set_weight(self, weight: str) -> None:
-        """Set the engine weight file to use.
-
-        Note: Only allowed to be called from the engine worker thread.
-        """
-
-        weight_path = get_weight_file(weight, try_download=True)
-        if weight_path is None:
-            raise FileNotFoundError(f"Engine weights file not found: {weight_path}")
-
-        if self._current_weight.value == weight:
-            return
-
-        self._engine.configure({"WeightsFile": weight_path})
-        self._current_weight.value = weight
-
-        log.info(f"Engine weight set to: {weight}")
 
     def _get_move(self, event: _EngineGetMoveRequest) -> None:
         """Get the engine move for the given request.
 
         Note: Only allowed to be called from the engine worker thread.
         """
-
-        self._set_weight(event.weight)
 
         depth = choice(range(event.min_depth, event.max_depth + 1))
         result = None
@@ -278,7 +286,7 @@ class _Lc0Engine:
                 return
 
             try:
-                result = self._engine.play(
+                result = self._get_engine(event.weight).play(
                     board=event.board,
                     limit=chess.engine.Limit(time=settings['engine.player.time_limit'], depth=depth),
                     info=chess.engine.INFO_BASIC)
@@ -316,17 +324,18 @@ class _Lc0Engine:
 
         Note: Only allowed to be called from the engine worker thread.
         """
+        if event.stop_on_new_request and not self._analysis_queue.empty():
+            # Do not even start analysis if a new request is pending and stop_on_new_request is set
+            return
 
         total_limit = settings['engine.analysis.time_limit']
         depth_limit = settings['engine.analysis.depth_limit']
         limit = chess.engine.Limit(time=total_limit, depth=depth_limit)
 
-        self._set_weight(event.weight)
-
-        analysis_event = events.EngineAnalysisEvent(event.board, event.weight)
+        analysis_event = events.EngineAnalysisEvent(event.board, event.weight, event.id)
         analysis_event.white_win_prob, analysis_event.black_win_prob = _probability_from_material(event.board)
         try:
-            with self._engine.analysis(event.board, limit, info=chess.engine.INFO_ALL) as analysis:
+            with self._get_engine(event.weight).analysis(event.board, limit, info=chess.engine.INFO_ALL) as analysis:
                 for info in analysis:
                     score = info.get('score')
                     if score is not None:
@@ -340,8 +349,7 @@ class _Lc0Engine:
 
                     events.event_manager.publish(analysis_event)
 
-                    # Cancel if a newer request arrived
-                    if not self._analysis_queue.empty() or self._engine_stop.is_set():
+                    if (event.stop_on_new_request and not self._analysis_queue.empty()) or self._engine_stop.is_set():
                         break
         except KeyboardInterrupt:
             raise

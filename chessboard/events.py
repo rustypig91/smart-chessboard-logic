@@ -9,6 +9,7 @@ import traceback
 import atexit
 import inspect
 import queue
+from chessboard.board_wrapper import Board
 
 
 @enum.unique
@@ -150,10 +151,11 @@ class ChessMoveEvent(Event):
 
 
 class GameOverEvent(Event):
-    def __init__(self, winner: chess.Color | None | str, reason: str):
+    def __init__(self, winner: chess.Color | None | str, reason: str, board: chess.Board):
         super().__init__()
         self.winner = self._parse_color(winner)
         self.reason = reason
+        self.board = board
 
 
 class PlayerNotifyEvent(Event):
@@ -232,7 +234,7 @@ class GameStateChangedEvent(Event):
     ):
         super().__init__()
 
-        self.board = board.copy(stack=1)
+        self.board = board
 
         self.last_move = board.move_stack[-1].uci() if board.move_stack else None
         self.is_check = board.is_check()
@@ -273,7 +275,13 @@ class LegalMoveDetectedEvent(Event):
 class EngineAnalysisEvent(Event):
     """Probability of winning for each side, emitted after each move."""
 
-    def __init__(self, board: chess.Board, weight: str, white_win_prob: float = 0.5, black_win_prob: float = 0.5, pv: list[chess.Move] = [], depth: int = 0, score: int = 0):
+    def __init__(self, board: chess.Board,
+                 weight: str,
+                 id: int,
+                 white_win_prob: float = 0.5,
+                 black_win_prob: float = 0.5,
+                 pv: list[chess.Move] = [],
+                 depth: int = 0, score: int = 0):
         super().__init__()
         self.white_win_prob = float(white_win_prob)
         self.black_win_prob = float(black_win_prob)

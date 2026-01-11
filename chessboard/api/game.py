@@ -94,16 +94,17 @@ def regret_last_move():
 @api.route('/state', methods=['GET'])
 def get_game_state():
     """API endpoint to get the current game state"""
+    board = game_state.get_board()
     return jsonify({
         'success': True,
-        'fen': game_state.board.fen(),
-        'turn': 'white' if game_state.board.turn == chess.WHITE else 'black',
-        'is_check': game_state.board.is_check(),
-        'is_checkmate': game_state.board.is_checkmate(),
-        'is_stalemate': game_state.board.is_stalemate(),
-        'is_insufficient_material': game_state.board.is_insufficient_material(),
-        'is_game_over': game_state.board.is_game_over(),
-        'last_move': game_state.board.move_stack[-1].uci() if game_state.board.move_stack else None,
+        'fen': board.fen(),
+        'turn': 'white' if board.turn == chess.WHITE else 'black',
+        'is_check': board.is_check(),
+        'is_checkmate': board.is_checkmate(),
+        'is_stalemate': board.is_stalemate(),
+        'is_insufficient_material': board.is_insufficient_material(),
+        'is_game_over': board.is_game_over(),
+        'last_move': board.move_stack[-1].uci() if board.move_stack else None,
         'started': game_state.is_game_started,
         'paused': game_state.is_game_paused,
         'clocks': {

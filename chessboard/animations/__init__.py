@@ -55,8 +55,8 @@ _rainbow_animation_shown = False
 
 
 def _handle_game_state_change(event: events.GameStateChangedEvent) -> None:
-    checkers = game_state.board.checkers()
-    king_square = game_state.board.king(game_state.board.turn)
+    checkers = event.board.checkers()
+    king_square = event.board.king(event.board.turn)
 
     _hint_animation.stop()
 

@@ -55,7 +55,9 @@ def get_board_state() -> Response:
     """API endpoint to get the current board state"""
 
     pieces = {}
-    for square, piece in game_state.board.piece_map().items():
+    board = game_state.get_board()
+
+    for square, piece in board.piece_map().items():
         pieces[square] = piece.unicode_symbol()
 
     return jsonify({'success': True, 'board_state': pieces})

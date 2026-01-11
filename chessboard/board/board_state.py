@@ -32,9 +32,10 @@ class BoardState:
 
         # Current realtime state of pieces on board
         self._board_piece_color_map: list[chess.Color | None] = [None] * 64
+        board = game_state.get_board()
         for square in chess.SQUARES:
             # Start of assuming board matches game state
-            self._board_piece_color_map[square] = game_state.board.color_at(square)
+            self._board_piece_color_map[square] = board.color_at(square)
 
         self._led_layer = leds.LedLayer(priority=0)
         leds.led_manager.add_layer(self._led_layer)
@@ -44,7 +45,7 @@ class BoardState:
         log.info("BoardState initialized")
 
     def _handle_game_state_change_event(self, event: events.GameStateChangedEvent):
-        self._latest_board = event.board.copy()
+        self._latest_board = event.board
         self._scan_board(self._latest_board)
 
     def _handle_piece_state_change_event(self, event: events.SquarePieceStateChangeEvent):
@@ -54,9 +55,9 @@ class BoardState:
             events.event_manager.publish(events.LegalMoveDetectedEvent(move=move))
 
     def _handle_time_button_pressed_event(self, event: events.TimeButtonPressedEvent):
-        if event.color != game_state.board.turn:
+        if event.color != self._latest_board.turn:
             log.warning(
-                f"Time button pressed for {'white' if event.color == chess.WHITE else 'black'} out of turn ({event.color}, expected {game_state.board.turn}), ignoring")
+                f"Time button pressed for {'white' if event.color == chess.WHITE else 'black'} out of turn ({event.color}, expected {self._latest_board.turn}), ignoring")
             return
 
         move = self._scan_board(self._latest_board)
@@ -71,8 +72,8 @@ class BoardState:
     def _reset_led_layer(self):
         self._led_layer.reset()
 
-        if game_state.board.move_stack:
-            last_move = game_state.board.peek()
+        if self._latest_board.move_stack:
+            last_move = self._latest_board.peek()
             for sq in [last_move.from_square, last_move.to_square]:
                 self._led_layer.colors[sq] = settings['led.color.previous_move']
 
@@ -121,7 +122,7 @@ class BoardState:
                     extra_opponent_pieces.append(square)
                     missing_friendly_pieces.append(square)
 
-        if game_state.is_game_over:
+        if game_state:
             color_map.update({sq: settings['led.color.invalid_piece_placement']
                               for sq in missing_friendly_pieces + extra_friendly_pieces + missing_opponent_pieces + extra_opponent_pieces})
 

@@ -314,18 +314,25 @@
 
                     const lastMoveEl = document.getElementById('last-move');
                     if (lastMoveEl) lastMoveEl.textContent = `Last: ${data.board.last_move || '-'}`;
-
-                    // const whiteNameEl = document.getElementById('white-name');
-                    // const blackNameEl = document.getElementById('black-name');
-                    // if (whiteNameEl) whiteNameEl.textContent = `${data.white_player}`;
-                    // if (blackNameEl) blackNameEl.textContent = `${data.black_player}`;
-
-                    // if (data.is_game_started && !data.is_game_paused) {
-                    //     showView('game-overview-view');
-                    // }
                 }
-
                 addBoardEventListener('BoardStateEvent', handleBoardStateEvent)
+
+                function handleEngineWeightChangedEvent(data) {
+                    const whiteNameEl = document.getElementById('white-name');
+                    const blackNameEl = document.getElementById('black-name');
+                    white_player = data.white_weight || 'Human';
+                    black_player = data.black_weight || 'Human';
+
+                    if (whiteNameEl) whiteNameEl.textContent = `${white_player}`;
+                    if (blackNameEl) blackNameEl.textContent = `${black_player}`;
+
+                    console.log("Updated player names:", white_player, black_player, "from", data);
+
+                    if (data.is_game_started && !data.is_game_paused) {
+                        showView('game-overview-view');
+                    }
+                }
+                addBoardEventListener('EngineWeightChangedEvent', handleEngineWeightChangedEvent)
 
                 let lastClockState = null;
                 let lastClockStateReceivedTime = null;
@@ -349,7 +356,7 @@
                         const inactiveBorder = '#8b7355';
                         const activeBg = '#444';
                         const inactiveBg = '#1a1a1a';
-                        const isWhiteTurn = data.turn === 'white';
+                        const isWhiteTurn = data.current_side === 'white';
 
                         whiteClockEl.style.color = isWhiteTurn ? '#fff' : '#aaa';
                         blackClockEl.style.color = isWhiteTurn ? '#aaa' : '#fff';
@@ -410,7 +417,6 @@
 
                 document.addEventListener("DOMContentLoaded", () => {
                     setInterval(updateClockDisplay, 100);
-                    sendEvent('RequestClockStateEvent');
                 });
 
                 function hideProbabilityBar(hidden) {

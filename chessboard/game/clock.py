@@ -115,9 +115,23 @@ class ChessClock(PersistentClass):
         events.event_manager.subscribe(events.ClockStartEvent, self._handle_clock_start_event)
         events.event_manager.subscribe(events.ClockStopEvent, self._handle_clock_stop_event)
         events.event_manager.subscribe(events.MoveRegrettedEvent, self._handle_move_regretted_event)
-        events.event_manager.subscribe(events.RequestClockStateEvent, lambda event: self._send_clock_state_event())
+        events.event_manager.subscribe(events.NewSubscriberEvent, self._handle_new_subscriber_event)
 
         self._start_timeout_monitoring()
+
+    def _handle_new_subscriber_event(self, event: events.NewSubscriberEvent) -> None:
+        """ Handle new subscriber event to send latest clock state """
+        if event.event_type == events.ClockStateEvent:
+            white_time_elapsed, white_time_left = self._get_time(chess.WHITE)
+            black_time_elapsed, black_time_left = self._get_time(chess.BLACK)
+            events.event_manager.publish(events.ClockStateEvent(
+                paused=self._clocks[self._current_player].paused,
+                current_side=self._current_player,
+                white_time_left=white_time_left,
+                black_time_left=black_time_left,
+                white_time_elapsed=white_time_elapsed,
+                black_time_elapsed=black_time_elapsed
+            ))
 
     def _handle_clock_start_event(self, event: events.ClockStartEvent):
         self._clocks[self._current_player].start()
@@ -131,13 +145,10 @@ class ChessClock(PersistentClass):
         log.info(f"Clock stopped during player {chess.COLOR_NAMES[self._current_player]} turn")
 
     def _send_clock_state_event(self):
-        paused = self._clocks[self._current_player].paused
-
         white_time_elapsed, white_time_left = self._get_time(chess.WHITE)
         black_time_elapsed, black_time_left = self._get_time(chess.BLACK)
-
         events.event_manager.publish(events.ClockStateEvent(
-            paused=paused,
+            paused=self._clocks[self._current_player].paused,
             current_side=self._current_player,
             white_time_left=white_time_left,
             black_time_left=black_time_left,
@@ -188,7 +199,9 @@ class ChessClock(PersistentClass):
 
     def _handle_move_event(self, event: events.MoveEvent):
         self._clocks[event.side].stop()
-        self._clocks[event.side].increment(self._increment_seconds[event.side])
+
+        # Decrement elapsed time by increment i.e. add increment to time left
+        self._clocks[event.side].decrement(self._increment_seconds[event.side])
         self._clocks[not event.side].start()
 
         self._current_player = not event.side
@@ -200,7 +213,8 @@ class ChessClock(PersistentClass):
 
         self._current_player = not self._current_player
 
-        self._clocks[self._current_player].decrement(self._increment_seconds[not self._current_player])
+        # Increment elapsed time by increment for the player whose move was regretted
+        self._clocks[self._current_player].increment(self._increment_seconds[not self._current_player])
         if stopped:
             self._clocks[self._current_player].start()
 

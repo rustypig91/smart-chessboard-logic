@@ -214,11 +214,6 @@ class NewGameEvent(Event):
         self.increment_seconds: tuple[float, float] = increment_seconds
 
 
-class RequestClockStateEvent(Event):
-    def __init__(self):
-        super().__init__()
-
-
 class ClockStateEvent(Event):
     def __init__(
         self,
@@ -360,6 +355,15 @@ class EngineMoveEvent(Event):
     def __init__(self, result: chess.engine.PlayResult):
         super().__init__()
         self.result = result
+
+
+class EngineWeightChangedEvent(Event):
+    """ Engine weight file changed. """
+
+    def __init__(self, white_weight: str | None, black_weight: str | None):
+        super().__init__()
+        self.white_weight = white_weight
+        self.black_weight = black_weight
 
 
 class HintRequestedEvent(Event):

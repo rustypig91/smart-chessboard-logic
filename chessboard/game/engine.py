@@ -210,11 +210,20 @@ class _Lc0Engine:
     def _post_init(self):
         events.event_manager.subscribe(events.NewGameEvent, self._handle_new_game_event)
         events.event_manager.subscribe(events.BoardStateEvent, self._handle_board_state)
+        events.event_manager.subscribe(events.NewSubscriberEvent, self._handle_new_subscriber_event)
 
         self._engine_stop = Event()
 
         self._engine_thread = Thread(target=self._engine_worker, daemon=True)
         self._engine_thread.start()
+
+    def _handle_new_subscriber_event(self, event: events.NewSubscriberEvent) -> None:
+        """ Handle new subscriber event to send latest engine weights """
+        if event.event_type == events.EngineWeightChangedEvent:
+            event.callback(events.EngineWeightChangedEvent(
+                white_weight=self._engine_weights[chess.WHITE],
+                black_weight=self._engine_weights[chess.BLACK]
+            ))
 
     def _handle_new_game_event(self, event: events.NewGameEvent):
         self._analysis_queue.put(_EngineStartAnalysisRequest(
@@ -229,6 +238,11 @@ class _Lc0Engine:
             log.info(f"White engine weight set to: {event.white_engine_weight}")
         if event.black_engine_weight:
             log.info(f"Black engine weight set to: {event.black_engine_weight}")
+
+        events.event_manager.publish(events.EngineWeightChangedEvent(
+            white_weight=event.white_engine_weight,
+            black_weight=event.black_engine_weight
+        ))
 
         if event.white_engine_weight:
             self.get_move_async(

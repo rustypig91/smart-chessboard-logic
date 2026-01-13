@@ -99,9 +99,16 @@ def get_game_history():
 
 @api.route('/svg_board', methods=['POST'])
 def get_svg_board():
-    """API endpoint to get the current board state as an SVG image"""
+    """API endpoint to get the current board state as an SVG image.
+
+    Accepts JSON body with:
+    - board_fen: optional FEN string to render
+    - lastmove_uci: optional UCI string (e.g. "e2e4") to highlight last move
+    """
     data = request.get_json()
     board_fen = data.get('board_fen', None)
+    lastmove_uci = data.get('lastmove_uci')
+    size = data.get('size', 400)
 
     if board_fen:
         try:
@@ -111,7 +118,14 @@ def get_svg_board():
     else:
         board = chess.Board()
 
-    svg_data = chess.svg.board(board=board, size=400)
+    lastmove = None
+    if lastmove_uci:
+        try:
+            lastmove = chess.Move.from_uci(lastmove_uci)
+        except ValueError:
+            lastmove = None
+
+    svg_data = chess.svg.board(board=board, size=size, lastmove=lastmove)
 
     return Response(svg_data, mimetype='image/svg+xml')
 

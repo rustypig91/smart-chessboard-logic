@@ -14,8 +14,7 @@ function sendEvent(eventType, eventData = {}) {
 function addBoardEventListener(eventType, callback) {
     socket.on("board_event." + eventType, callback);
     socket.emit("subscribe", {
-        event_type: eventType,
-        board_only: true,
+        event_type: eventType
     });
 }
 

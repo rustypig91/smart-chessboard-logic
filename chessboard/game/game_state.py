@@ -1,5 +1,7 @@
+import typing
 from typing import Optional, Union
-from typing_extensions import Self
+if typing.TYPE_CHECKING:
+    from typing_extensions import Self
 
 import chess
 
@@ -73,7 +75,7 @@ class VariantBoard(chess.Board):
 
         return super().reset()
 
-    def copy(self, *, stack: Union[bool, int] = True) -> Self:
+    def copy(self, *, stack: Union[bool, int] = True) -> 'Self':
         board = super().copy(stack=stack)
 
         assert isinstance(board, VariantBoard)

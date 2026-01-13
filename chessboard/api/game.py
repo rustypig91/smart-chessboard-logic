@@ -108,7 +108,7 @@ def get_svg_board():
     data = request.get_json()
     board_fen = data.get('board_fen', None)
     lastmove_uci = data.get('lastmove_uci')
-    size = data.get('size', 400)
+    size = data.get('size', None)
 
     if board_fen:
         try:

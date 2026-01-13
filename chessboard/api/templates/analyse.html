@@ -271,6 +271,10 @@
                 el.games.appendChild(div);
             });
             updateSelectedGameUI();
+            // Auto-load the latest game on first load
+            if (!current.filename && data.games && data.games.length > 0) {
+                loadGame(data.games[0].filename);
+            }
         }
 
         async function loadGame(filename) {
@@ -361,8 +365,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     board_fen: fen,
-                    lastmove_uci: current.moves[current.idx - 1] || null,
-                    size: 520
+                    lastmove_uci: current.moves[current.idx - 1] || null
                 })
             });
             el.board.innerHTML = await res.text();

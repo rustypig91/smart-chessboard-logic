@@ -134,6 +134,34 @@ def serve_history_file(filename):
     return send_from_directory(history_dir, filename, as_attachment=True)
 
 
+@api.route('/history/<path:filename>/positions', methods=['GET'])
+def get_game_positions(filename):
+    """Return move list and FEN sequence for a saved PGN."""
+    history_dir = persistent_storage.get_directory("history")
+    safe_dir = os.path.realpath(history_dir)
+    requested = os.path.realpath(os.path.join(history_dir, filename))
+    if not requested.startswith(safe_dir):
+        return jsonify({'success': False, 'error': 'Invalid path'}), 400
+    if not os.path.isfile(requested):
+        return jsonify({'success': False, 'error': 'File not found'}), 404
+
+    with open(requested, 'r') as f:
+        game = chess.pgn.read_game(f)
+
+    if game is None:
+        return jsonify({'success': False, 'error': 'Invalid PGN'}), 400
+
+    board = chess.Board()
+    fens = [board.fen()]
+    moves = []
+    for mv in game.mainline_moves():
+        moves.append(mv.uci())
+        board.push(mv)
+        fens.append(board.fen())
+
+    return jsonify({'success': True, 'filename': os.path.basename(filename), 'moves': moves, 'fens': fens})
+
+
 @api.route('/pause', methods=['POST'])
 def pause_game():
     """API endpoint to pause the current game"""

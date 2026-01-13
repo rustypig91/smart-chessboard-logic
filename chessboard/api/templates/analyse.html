@@ -1,58 +1,183 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <title>Chessboard SVG Display</title>
+    <meta charset="utf-8" />
+    <title>Analyse Games</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            margin: 0;
+            padding: 16px;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 16px;
+        }
+
+        .card {
+            border: 1px solid #d0d7de;
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .list {
+            max-height: 60vh;
+            overflow: auto;
+        }
+
+        .item {
+            padding: 8px;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            cursor: pointer;
+        }
+
+        .item:hover {
+            background: #f6f8fa;
+        }
+
+        .row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 6px 10px;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            background: #f6f8fa;
+            cursor: pointer;
+        }
+
+        button.primary {
+            background: #1f6feb;
+            color: #fff;
+            border-color: #1f6feb;
+        }
+
+        #board {
+            width: 420px;
+            height: 420px;
+            border: 1px solid #d0d7de;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        #moves {
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+
+        .spacer {
+            flex: 1 1 auto;
+        }
+
+        .small {
+            font-size: 12px;
+            color: #6e7781;
+        }
+    </style>
 </head>
 
 <body>
-    <h1>Chessboard SVG</h1>
-    <div class="controls" style="margin-bottom:12px">
-        <label for="fen">FEN (optional):</label>
-        <input id="fen" type="text" placeholder="e.g. rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-            style="width:520px" />
-        <button id="render">Render SVG</button>
+    <h1>Analyse Games</h1>
+    <div class="layout">
+        <div class="card">
+            <h2>History</h2>
+            <div id="games" class="list"></div>
+        </div>
+        <div class="card">
+            <h2 id="title">No game loaded</h2>
+            <div class="row" style="margin-bottom:8px">
+                <button id="first">⏮</button>
+                <button id="prev">◀</button>
+                <button id="next">▶</button>
+                <button id="last">⏭</button>
+                <span class="spacer"></span>
+                <span class="small">Move: <span id="moveIdx">0</span>/<span id="moveMax">0</span></span>
+            </div>
+            <div id="board"></div>
+            <div class="small" style="margin-top:8px">UCI: <span id="uci">-</span></div>
+            <div id="moves" style="margin-top:8px"></div>
+        </div>
     </div>
 
-    <div id="svg-container"></div>
-
     <script>
-        async function renderSvg(fen) {
-            const payload = fen ? { board_fen: fen } : {};
-            try {
-                const res = await fetch('/api/game/svg_board', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-                const svgText = await res.text();
-                const container = document.getElementById('svg-container');
-                container.innerHTML = svgText;
-            } catch (e) {
-                const container = document.getElementById('svg-container');
-                container.textContent = `Failed to render SVG: ${e.message}`;
-            }
+        const el = {
+            games: document.getElementById('games'),
+            title: document.getElementById('title'),
+            board: document.getElementById('board'),
+            moveIdx: document.getElementById('moveIdx'),
+            moveMax: document.getElementById('moveMax'),
+            uci: document.getElementById('uci'),
+            first: document.getElementById('first'),
+            prev: document.getElementById('prev'),
+            next: document.getElementById('next'),
+            last: document.getElementById('last'),
+            movesText: document.getElementById('moves'),
+        };
+
+        let current = { filename: null, moves: [], fens: [], idx: 0 };
+
+        async function fetchJSON(url, opts = {}) {
+            const res = await fetch(url, opts);
+            if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+            return res.json();
         }
 
-        function getQueryParam(name) {
-            const params = new URLSearchParams(window.location.search);
-            return params.get(name);
+        async function loadHistory() {
+            const data = await fetchJSON('/api/game/history');
+            el.games.innerHTML = '';
+            (data.games || []).forEach(g => {
+                const div = document.createElement('div');
+                div.className = 'item';
+                div.textContent = `${g.white_player} vs ${g.black_player} — ${g.result} — ${g.filename}`;
+                div.addEventListener('click', () => loadGame(g.filename));
+                el.games.appendChild(div);
+            });
         }
 
-        document.getElementById('render').addEventListener('click', (e) => {
-            e.preventDefault();
-            const fen = document.getElementById('fen').value.trim();
-            renderSvg(fen || null);
-        });
-
-        // Initial render: use ?fen=... if provided, else default start position
-        const initialFen = getQueryParam('fen');
-        if (initialFen) {
-            document.getElementById('fen').value = initialFen;
+        async function loadGame(filename) {
+            const pos = await fetchJSON(`/api/game/history/${encodeURIComponent(filename)}/positions`);
+            if (!pos.success) return;
+            current = { filename: pos.filename, moves: pos.moves, fens: pos.fens, idx: 0 };
+            el.title.textContent = pos.filename;
+            el.moveMax.textContent = Math.max(0, (pos.fens || []).length - 1);
+            el.movesText.textContent = (pos.moves || []).map((m, i) => `${i + 1}. ${m}`).join(' ');
+            render();
         }
-        renderSvg(initialFen || null);
+
+        async function render() {
+            const fen = current.fens[current.idx] || null;
+            el.moveIdx.textContent = current.idx;
+            el.uci.textContent = current.moves[current.idx - 1] || '-';
+            if (!fen) { el.board.innerHTML = ''; return; }
+            const res = await fetch('/api/game/svg_board', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ board_fen: fen })
+            });
+            el.board.innerHTML = await res.text();
+        }
+
+        function goto(i) {
+            if (!current.fens.length) return;
+            current.idx = Math.max(0, Math.min(i, current.fens.length - 1));
+            render();
+        }
+
+        el.first.onclick = () => goto(0);
+        el.prev.onclick = () => goto(current.idx - 1);
+        el.next.onclick = () => goto(current.idx + 1);
+        el.last.onclick = () => goto(current.fens.length - 1);
+
+        loadHistory();
     </script>
 </body>
 

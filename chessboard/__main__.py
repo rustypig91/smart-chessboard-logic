@@ -35,8 +35,8 @@ def main():
         log.info(f"Persistent storage directory set to: {args.persistent_storage_dir}")
 
     # Initialize system by importing necessary modules
-    from chessboard.game.game_state import game_state
     import chessboard.events as events
+    from chessboard.game.game_state import game_state
     import chessboard.api.api as api
     import chessboard.animations
     import chessboard.game

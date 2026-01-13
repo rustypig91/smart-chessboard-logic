@@ -537,6 +537,18 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Yes/No question view -->
+            <div id="yes-no-view" class="view">
+                <div class="view-header" id="yes-no-title">Confirm</div>
+                <div class="menu" style="padding: 16px 10px;">
+                    <div id="yes-no-content"
+                        style="background:none; border:none; color:#fff; font-size:13px; padding:0; margin:0;">
+                        <!-- Question will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
         </div> <!-- End of content -->
 
 
@@ -640,10 +652,18 @@
             { short: menuGoBack, shortHint: 'Ok', long: null, longHint: '' },
         ];
 
+        let yesNoButtonFunctions = [
+            { short: menuGoBack, shortHint: 'No', long: null, longHint: '' },
+            { short: null, shortHint: '', long: null, longHint: '' },
+            { short: null, shortHint: '', long: null, longHint: '' },
+            { short: menuSelect, shortHint: 'Yes', long: null, longHint: '' },
+        ];
+
         const viewButtonsConfig = {
             'keyboard-view': keyboardButtonFunctions,
             'message-view': messageButtonFunctions,
             'game-overview-view': gameOverviewButtonFunctions,
+            'yes-no-view': yesNoButtonFunctions,
         };
 
         // Get current menu items based on active view
@@ -1319,6 +1339,13 @@
         // Update WiFi status every 10 seconds
         setInterval(wifiUpdateIcon, 10000);
 
+        function yesNoView(title, question, callback) {
+            document.getElementById('yes-no-title').textContent = title;
+            document.getElementById('yes-no-question').textContent = question;
+            yesNoCallback = callback || null;
+            showView('yes-no-view');
+        }
+
         // --- Message View Helper ---
         function showMessageView(title, message) {
             document.getElementById('message-title').textContent = title;
@@ -1330,10 +1357,22 @@
             showMessageView(data.title, data.message);
         });
 
+        addBoardEventListener("GameOverEvent", (data) => {
+            let message = `Winner: ${data.winner !== null ? (data.winner ? 'White' : 'Black') : 'Draw'}<br>`;
+            message += `Reason: ${data.reason || 'Unknown'}<br>`;
+            showMessageView('Game Over', message);
+        });
+
         addBoardEventListener("MoveEvent", (data) => {
             const lm = document.getElementById('last-move');
             if (!lm) return;
             lm.textContent = 'Last: ' + (data.move.uci || '-');
+        });
+
+        addBoardEventListener("DrawOfferEvent", (data) => {
+            yesNoView('Draw Offer', 'Your opponent has offered a draw. Do you accept?', function (accepted) {
+                sendEvent('DrawResponseEvent', { accepted: accepted });
+            });
         });
     </script>
 </body>

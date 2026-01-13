@@ -40,13 +40,10 @@ class BoardState:
         for square, piece in self._latest_board.piece_map().items():
             self._board_piece_color_map[square] = piece.color if piece else None
 
-        self._is_game_over: bool = False
-
         log.info("BoardState initialized")
 
     def _handle_board_state_change_event(self, event: events.BoardStateEvent):
         self._latest_board = event.board.copy()
-        self._is_game_over = event.is_game_over
         self._scan_board(self._latest_board)
 
     def _handle_piece_state_change_event(self, event: events.SquarePieceStateChangeEvent):
@@ -123,7 +120,7 @@ class BoardState:
                     extra_opponent_pieces.append(square)
                     missing_friendly_pieces.append(square)
 
-        if self._is_game_over:
+        if self._latest_board.is_game_over():
             color_map.update({sq: settings['led.color.invalid_piece_placement']
                               for sq in missing_friendly_pieces + extra_friendly_pieces + missing_opponent_pieces + extra_opponent_pieces})
 

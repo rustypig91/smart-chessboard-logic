@@ -1,99 +1,59 @@
-# import json
-# import time
-# import threading
-# import uuid
-# import chess
-# import chess.pgn
+import json
+import time
+import threading
+import uuid
+import chess
+import chess.pgn
 
-# import chessboard.persistent_storage as persistent_storage
-# import chessboard.events as events
-# from chessboard.logger import log
-
-
-# class GameHistory:
-#     """Stores completed games for later analysis.
-
-#     Records metadata at game start, appends moves as they occur,
-#     and finalizes on game over. Persists all entries as PGN.
-#     """
-
-#     HISTORY_FILE = "history/games.pgn"
-
-#     def __init__(self):
-#         self._ensure_storage()
-
-#         events.event_manager.subscribe(events.GameOverEvent, self._on_game_over)
-
-#         log.info("GameHistory initialized")
-
-#     def _ensure_storage(self):
-#         # Ensure directory exists
-#         persistent_storage.get_directory("history")
-#         # Ensure file exists for appending PGN entries
-#         filename = persistent_storage.get_filename(self.HISTORY_FILE)
-#         try:
-#             open(filename, "a").close()
-#         except Exception:
-#             with open(filename, "w") as f:
-#                 f.write("")
-
-#     # PGN storage is append-only; listing/parsing can be added later if needed
-
-#     def _on_game_over(self, event: events.GameOverEvent):
-#         with self._lock:
-#             if self._current is None:
-#                 return
-
-#             # Winner: store as "white" / "black" / None
-#             winner_str = None
-#             if isinstance(event.winner, chess.Color):
-#                 winner_str = "white" if event.winner == chess.WHITE else "black"
-
-#             final_fen = None
-#             white_elapsed = None
-#             black_elapsed = None
-#             if self._last_state is not None:
-#                 final_fen = self._last_state.board.fen()
-#                 white_elapsed = self._last_state.white_time_elapsed
-#                 black_elapsed = self._last_state.black_time_elapsed
-
-#             # Update headers
-#             if self._pgn_game is not None:
-#                 self._pgn_game.headers["Termination"] = event.reason
-#                 if white_elapsed is not None and black_elapsed is not None:
-#                     self._pgn_game.headers["WhiteTimeElapsed"] = f"{white_elapsed:.3f}"
-#                     self._pgn_game.headers["BlackTimeElapsed"] = f"{black_elapsed:.3f}"
-#                 if self._current.get("engine_weight"):
-#                     self._pgn_game.headers["EngineWeight"] = self._current["engine_weight"]
-#                 if final_fen is not None:
-#                     self._pgn_game.headers["FinalFEN"] = final_fen
-
-#                 # Result
-#                 if winner_str == "white":
-#                     self._pgn_game.headers["Result"] = "1-0"
-#                 elif winner_str == "black":
-#                     self._pgn_game.headers["Result"] = "0-1"
-#                 else:
-#                     self._pgn_game.headers["Result"] = "1/2-1/2"
-
-#                 # Append to PGN file
-#                 filename = persistent_storage.get_filename(self.HISTORY_FILE)
-#                 try:
-#                     with open(filename, "a", encoding="utf-8") as f:
-#                         exporter = chess.pgn.FileExporter(f)
-#                         self._pgn_game.accept(exporter)
-#                         f.write("\n\n")
-#                     log.info(f"GameHistory saved PGN record: {self._current['id']}")
-#                 except Exception as e:
-#                     log.error(f"Failed to write PGN history: {e}")
-
-#             # Cleanup current session
-#             self._current = None
-#             self._last_state = None
-#             self._board = None
-#             self._pgn_game = None
-#             self._pgn_node = None
+import chessboard.persistent_storage as persistent_storage
+import chessboard.events as events
+from chessboard.logger import log
 
 
-# # Initialize singleton on import
-# history = GameHistory()
+class GameHistory:
+    """Stores completed games for later analysis.
+
+    Records metadata at game start, appends moves as they occur,
+    and finalizes on game over. Persists all entries as PGN.
+    """
+
+    def __init__(self):
+        self._white_player = "Human"
+        self._black_player = "Human"
+
+        events.event_manager.subscribe(events.GameOverEvent, self._on_game_over)
+        events.event_manager.subscribe(events.EngineWeightChangedEvent, self._on_engine_weight_changed)
+
+        log.info("GameHistory initialized")
+
+    # PGN storage is append-only; listing/parsing can be added later if needed
+
+    def _on_engine_weight_changed(self, event: events.EngineWeightChangedEvent):
+        """Handle engine weight change events to record player types."""
+        self._white_player = event.white_weight if event.white_weight else "Human"
+        self._black_player = event.black_weight if event.black_weight else "Human"
+
+    def _on_game_over(self, event: events.GameOverEvent):
+        """Handle game over event to save the completed game."""
+        game = chess.pgn.Game()
+        game.headers["Event"] = "Smart Chessboard Game"
+        game.headers["Site"] = "Smart Chessboard"
+        game.headers["Date"] = time.strftime("%Y.%m.%d")
+        game.headers["White"] = self._white_player
+        game.headers["Black"] = self._black_player
+        game.headers["Result"] = event.board.result()
+
+        node = game
+        for move in event.board.move_stack:
+            node = node.add_variation(move)
+
+        time_str = time.strftime("%Y-%m-%d_%H:%M:%S")
+        filename = persistent_storage.get_filename(f"history/{time_str}.pgn")
+        with open(filename, "w") as f:
+            f.write(str(game))
+
+        log.info(f"Game saved to history as {filename}")
+
+
+# Initialize singleton on import
+history = GameHistory()

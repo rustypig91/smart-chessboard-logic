@@ -250,10 +250,9 @@ class ClockTimeoutEvent(Event):
 
 
 class BoardStateEvent(Event):
-    def __init__(self, board: chess.Board, is_game_over: bool):
+    def __init__(self, board: chess.Board):
         super().__init__()
         self.board = board
-        self.is_game_over = is_game_over
 
 
 class RegretMoveEvent(Event):
@@ -270,57 +269,6 @@ class MoveRegrettedEvent(Event):
 class SaveEvent(Event):
     def __init__(self):
         super().__init__()
-
-
-class GameStateChangedEvent(Event):
-    def __init__(
-        self,
-        board: chess.Board,
-        clock_paused: bool,
-        white_time_left: float,
-        black_time_left: float,
-        white_time_elapsed: float,
-        black_time_elapsed: float,
-        white_start_time: float,
-        black_start_time: float,
-        white_player: PlayerType,
-        black_player: PlayerType,
-        winner: chess.Color | None | str,
-        is_game_started: bool = False,
-        is_game_paused: bool = False,
-    ):
-        super().__init__()
-
-        self.board = board
-
-        self.last_move = board.move_stack[-1].uci() if board.move_stack else None
-        self.is_check = board.is_check()
-
-        self.clock_paused = clock_paused
-        self.turn = self._parse_color(board.turn)
-
-        self.white_time_left = white_time_left
-        self.black_time_left = black_time_left
-
-        self.white_time_elapsed = white_time_elapsed
-        self.black_time_elapsed = black_time_elapsed
-
-        self.white_start_time = white_start_time
-        self.black_start_time = black_start_time
-
-        self.white_player = white_player
-        self.black_player = black_player
-
-        self.winner = self._parse_color(winner)
-
-        self.is_game_started = is_game_started
-        self.is_game_paused = is_game_paused
-
-    def to_json(self) -> dict:
-        items = super().to_json()
-        items['turn'] = self._color_to_str(self.turn)
-        items['winner'] = self._color_to_str(self.winner)
-        return items
 
 
 class LegalMoveDetectedEvent(Event):
@@ -379,6 +327,17 @@ class HintEvent(Event):
     def __init__(self, move: chess.Move):
         super().__init__()
         self.move = move
+
+
+class DrawOfferEvent(Event):
+    def __init__(self):
+        super().__init__()
+
+
+class DrawResponseEvent(Event):
+    def __init__(self, accepted: bool):
+        super().__init__()
+        self.accepted = accepted
 
 
 class NewSubscriberEvent(Event):

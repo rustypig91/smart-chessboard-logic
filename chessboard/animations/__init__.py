@@ -51,10 +51,7 @@ def _handle_legal_move_detected(event: events.LegalMoveDetectedEvent) -> None:
     anim.start()
 
 
-_rainbow_animation_shown = False
-
-
-def _handle_game_state_change(event: events.GameStateChangedEvent) -> None:
+def _handle_board_state_event(event: events.BoardStateEvent) -> None:
     checkers = event.board.checkers()
     king_square = event.board.king(event.board.turn)
 
@@ -67,19 +64,15 @@ def _handle_game_state_change(event: events.GameStateChangedEvent) -> None:
     else:
         _checkers_animation.stop()
 
-    if event.winner is not None:
-        global _rainbow_animation_shown
-        # Make sure animation is only shown once per game end
-        if not _rainbow_animation_shown:
-            _rainbow_animation_shown = True
-            anim = AnimationRainbow(
-                fps=15.0,
-                speed=0.05,
-                duration=10.0,
-            )
-            anim.start()
-    else:
-        _rainbow_animation_shown = False
+
+def _handle_game_over_event(event: events.GameOverEvent) -> None:
+    # Make sure animation is only shown once per game end
+    anim = AnimationRainbow(
+        fps=15.0,
+        speed=0.05,
+        duration=10.0,
+    )
+    anim.start()
 
 
 def _handle_hint_event(event: events.HintEvent) -> None:
@@ -98,6 +91,7 @@ def _handle_square_piece_state_change(event: events.SquarePieceStateChangeEvent)
 
 events.event_manager.subscribe(events.MoveEvent, _handle_chess_move_event)
 events.event_manager.subscribe(events.LegalMoveDetectedEvent, _handle_legal_move_detected)
-events.event_manager.subscribe(events.GameStateChangedEvent, _handle_game_state_change)
+events.event_manager.subscribe(events.BoardStateEvent, _handle_board_state_event)
+events.event_manager.subscribe(events.GameOverEvent, _handle_game_over_event)
 events.event_manager.subscribe(events.HintEvent, _handle_hint_event)
 events.event_manager.subscribe(events.SquarePieceStateChangeEvent, _handle_square_piece_state_change)

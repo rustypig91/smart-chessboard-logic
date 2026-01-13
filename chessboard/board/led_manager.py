@@ -7,9 +7,9 @@ from chessboard.thread_safe_variable import ThreadSafeVariable
 from threading import Lock
 
 
-settings.register('led.color.white_square', ColorSetting((150, 150, 150)),
+settings.register('led.color.light_square', ColorSetting((150, 150, 150)),
                   "Base color for white squares on the chessboard LEDs")
-settings.register('led.color.black_square', ColorSetting((0, 0, 0)),
+settings.register('led.color.dark_square', ColorSetting((0, 0, 0)),
                   "Base color for black squares on the chessboard LEDs")
 
 
@@ -34,10 +34,12 @@ class LedLayer:
 
         self._lock = Lock()
 
+        self._led_manager = led_manager
+
     def __del__(self) -> None:
         """ Ensure the layer is removed from the LED manager on deletion. """
-        led_manager.remove_layer(self)
-        led_manager.apply_layers()
+        self._led_manager.remove_layer(self)
+        self._led_manager.apply_layers()
 
     def reset(self) -> None:
         """ Reset the layer to default state. """
@@ -99,13 +101,12 @@ class LedLayer:
 class _LedManager:
     def __init__(self) -> None:
         self.base_colors = {}
-        white_squares = [sq for sq in chess.SQUARES if (chess.square_rank(sq) + chess.square_file(sq)) % 2 == 1]
-        black_squares = [sq for sq in chess.SQUARES if (chess.square_rank(sq) + chess.square_file(sq)) % 2 == 0]
 
-        for square in white_squares:
-            self.base_colors[square] = settings['led.color.white_square']
-        for square in black_squares:
-            self.base_colors[square] = settings['led.color.black_square']
+        for square in chess.SQUARES:
+            if chess.BB_SQUARES[square] & chess.BB_LIGHT_SQUARES:
+                self.base_colors[square] = settings['led.color.light_square']
+            else:
+                self.base_colors[square] = settings['led.color.dark_square']
 
         # Track layers weakly so they auto-remove when destroyed
         self._layers: weakref.WeakSet[LedLayer] = weakref.WeakSet()
@@ -116,6 +117,10 @@ class _LedManager:
         self._last_applied_colors: dict[int, tuple[int, int, int]] = {}
 
         self.apply_layers()
+
+    def __del__(self) -> None:
+        """ Cleanup all layers on deletion. """
+        self._layers.clear()
 
     def _handle_new_subscriber_event(self, event: events.NewSubscriberEvent) -> None:
         """ Handle new subscriber event to send latest colors """

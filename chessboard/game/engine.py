@@ -250,7 +250,7 @@ class _Lc0Engine:
                 board=chess.Board())
 
     def _handle_board_state(self, event: events.BoardStateEvent) -> None:
-        if event.is_game_over:
+        if event.board.is_game_over():
             return
 
         weight = self._engine_weights[event.board.turn]

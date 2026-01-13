@@ -116,8 +116,13 @@ class ChessClock(PersistentClass):
         events.event_manager.subscribe(events.ClockStopEvent, self._handle_clock_stop_event)
         events.event_manager.subscribe(events.MoveRegrettedEvent, self._handle_move_regretted_event)
         events.event_manager.subscribe(events.NewSubscriberEvent, self._handle_new_subscriber_event)
+        events.event_manager.subscribe(events.GameOverEvent, self._handle_game_over_event)
 
         self._start_timeout_monitoring()
+
+    def _handle_game_over_event(self, event: events.GameOverEvent) -> None:
+        self._clocks[self._current_player].stop()
+        self._send_clock_state_event()
 
     def _handle_new_subscriber_event(self, event: events.NewSubscriberEvent) -> None:
         """ Handle new subscriber event to send latest clock state """

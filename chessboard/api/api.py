@@ -82,6 +82,12 @@ def simulator() -> str:
     return render_template('simulator.html')
 
 
+@app.route('/analyse')
+def analyse() -> str:
+    """API endpoint to get the board analyser page"""
+    return render_template('analyse.html')
+
+
 @app.route('/xiao_firmware')
 def xiao_firmware() -> str:
     """Firmware updater page"""

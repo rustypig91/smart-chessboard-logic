@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Chessboard SVG Display</title>
+</head>
+
+<body>
+    <h1>Chessboard SVG</h1>
+    <div class="controls" style="margin-bottom:12px">
+        <label for="fen">FEN (optional):</label>
+        <input id="fen" type="text" placeholder="e.g. rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+            style="width:520px" />
+        <button id="render">Render SVG</button>
+    </div>
+
+    <div id="svg-container"></div>
+
+    <script>
+        async function renderSvg(fen) {
+            const payload = fen ? { board_fen: fen } : {};
+            try {
+                const res = await fetch('/api/game/svg_board', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+                const svgText = await res.text();
+                const container = document.getElementById('svg-container');
+                container.innerHTML = svgText;
+            } catch (e) {
+                const container = document.getElementById('svg-container');
+                container.textContent = `Failed to render SVG: ${e.message}`;
+            }
+        }
+
+        function getQueryParam(name) {
+            const params = new URLSearchParams(window.location.search);
+            return params.get(name);
+        }
+
+        document.getElementById('render').addEventListener('click', (e) => {
+            e.preventDefault();
+            const fen = document.getElementById('fen').value.trim();
+            renderSvg(fen || null);
+        });
+
+        // Initial render: use ?fen=... if provided, else default start position
+        const initialFen = getQueryParam('fen');
+        if (initialFen) {
+            document.getElementById('fen').value = initialFen;
+        }
+        renderSvg(initialFen || null);
+    </script>
+</body>
+
+</html>

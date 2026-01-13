@@ -2,7 +2,7 @@ import os
 import pickle
 import chessboard.events as events
 
-PERSISTENT_STORAGE_DIR = os.path.join(os.path.dirname(__file__), ".persistent_storage")
+PERSISTENT_STORAGE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".persistent_storage"))
 
 
 def get_filename(filename: str) -> str:

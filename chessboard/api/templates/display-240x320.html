@@ -55,7 +55,7 @@
                             <p>Start a new chess game</p>
                         </div>
                     </div>
-                    <div class="menu-item" data-action="game-history">
+                    <div class="menu-item" data-action="game-history" data-next-view="game-history-view">
                         <div>
                             <h3>Game History</h3>
                             <p>View previous games</p>
@@ -302,6 +302,23 @@
                     </div>
                 </div>
             </div>
+
+            <!-- History -->
+            <div id="game-history-view" class="view">
+                <div class="view-header">Game History</div>
+                <div class="menu" id="history-menu">
+                    <!-- Game history items populated dynamically -->
+                </div>
+            </div>
+
+            <!-- History -> game -->
+            <div id="game-history-detail-view" class="view">
+                <div class="view-header" id="history-details-title">Game Details</div>
+                <div class="menu" id="history-details">
+                    <!-- Game details populated dynamically -->
+                </div>
+            </div>
+
             <script>
                 let lastGameState = null;
                 let lastGameStateReceivedTime = null;
@@ -703,6 +720,8 @@
 
                 targetView.classList.add('active');
                 console.log('Navigated to:', viewId);
+            } else {
+                console.error('showView: View not found:', viewId);
             }
         }
 
@@ -1092,6 +1111,57 @@
             });
         }
 
+        function updateGameHistoryList() {
+            loadingShow('Loading History');
+            apiCall('/api/game/history', null, function (data) {
+                const historyList = document.getElementById('history-menu');
+                historyList.innerHTML = '';
+
+                data.games.forEach((game) => {
+                    const item = document.createElement('div');
+                    item.dataset.action = 'view-history-details';
+                    item.dataset.nextView = 'game-history-detail-view';
+                    item.className = 'menu-item';
+
+                    item.dataset.game = JSON.stringify(game);
+
+                    item.innerHTML = `
+                            <div>
+                                <h3>${game.white_player || 'Unknown'} vs ${game.black_player || 'Unknown'}</h3>
+                                <p>Result: ${game.result || 'N/A'}</p>
+                                <p>Date: ${game.date || 'N/A'}</p>
+                            </div>
+                        `;
+                    historyList.appendChild(item);
+                });
+
+                selectedIndex = 0;
+                menuUpdateSelection();
+            });
+        }
+
+        function updateGameHistoryDetails(selectedItem) {
+            // loadingShow('Loading Game Details');
+            // apiCall(`/api/game/history/${encodeURIComponent(gameId)}`, null, function (data) {
+            const detailsDiv = document.getElementById('history-details');
+            const titleDiv = document.getElementById('history-details-title');
+
+            game = JSON.parse(selectedItem.dataset.game);
+
+            titleDiv.textContent = game.white_player + ' vs ' + game.black_player;
+
+            console.log("Moves:", game.moves);
+            detailsDiv.innerHTML = `
+                    <p><strong>Result:</strong> ${game.result || 'N/A'}</p>
+                    <p><strong>Date:</strong> ${game.date || 'N/A'}</p
+                    <p><strong>Filename:</strong> ${game.filename || 'N/A'}</p>
+                    <p><strong>Moves:</strong></p>
+                    <pre style="white-space: pre-wrap; word-wrap: break-word;">${game.moves || ''}</pre>
+
+                `;
+            // });
+        }
+
         function menuSelect() {
             const menuItems = menuGetCurrentItems();
             if (menuItems.length === 0) return;
@@ -1214,6 +1284,12 @@
                         break;
                     case 'start-game':
                         startNewGame();
+                        break;
+                    case 'game-history':
+                        updateGameHistoryList();
+                        break;
+                    case 'view-history-details':
+                        updateGameHistoryDetails(selectedItem);
                         break;
                     default:
                         console.error('Action not yet implemented:', action);

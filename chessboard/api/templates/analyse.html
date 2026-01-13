@@ -126,6 +126,52 @@
             border-color: var(--accent);
         }
 
+        /* Link button for actions (e.g., download) */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--panel);
+            color: var(--text);
+            text-decoration: none;
+            cursor: pointer;
+            transition: background .15s ease, border-color .15s ease;
+        }
+
+        .btn:hover {
+            background: var(--hover);
+        }
+
+        .btn.primary {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        .btn.disabled {
+            opacity: .6;
+            pointer-events: none;
+            filter: saturate(.7);
+        }
+
+        /* Icon-only button variant */
+        .icon-btn {
+            padding: 8px;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            justify-content: center;
+        }
+
+        .icon-btn svg {
+            width: 18px;
+            height: 18px;
+            display: block;
+        }
+
         #board-wrap {
             display: grid;
             place-items: center;
@@ -227,6 +273,15 @@
                 <button id="last">⏭</button>
                 <span class="spacer"></span>
                 <span class="small">Move: <span id="moveIdx">0</span>/<span id="moveMax">0</span></span>
+                <a id="download" class="btn icon-btn disabled" href="#" aria-disabled="true" title="Download PGN"
+                    aria-label="Download PGN">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <path d="M7 10l5 5 5-5" />
+                        <path d="M12 15V3" />
+                    </svg>
+                </a>
             </div>
             <div id="board-wrap">
                 <div id="board"></div>
@@ -249,6 +304,7 @@
             next: document.getElementById('next'),
             last: document.getElementById('last'),
             movesText: document.getElementById('moves'),
+            download: document.getElementById('download'),
         };
 
         let current = { filename: null, moves: [], fens: [], idx: 0 };
@@ -286,6 +342,24 @@
             updateSelectedGameUI();
             renderMoves();
             render();
+
+            // enable download button
+            if (current.filename) {
+                const url = `/api/game/history/${encodeURIComponent(current.filename)}`;
+                el.download.href = url;
+                el.download.setAttribute('download', current.filename);
+                el.download.classList.remove('disabled');
+                el.download.classList.add('primary');
+                el.download.setAttribute('aria-disabled', 'false');
+                el.download.title = `Download ${current.filename}`;
+            } else {
+                el.download.href = '#';
+                el.download.removeAttribute('download');
+                el.download.classList.add('disabled');
+                el.download.classList.remove('primary');
+                el.download.setAttribute('aria-disabled', 'true');
+                el.download.title = `Download PGN`;
+            }
         }
 
         function updateSelectedGameUI() {

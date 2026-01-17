@@ -3,6 +3,7 @@ import os
 from flask import Blueprint, jsonify, request, render_template
 import tempfile
 from chessboard import is_raspberrypi
+import chessboard.events as events
 from chessboard.logger import log
 import shutil
 

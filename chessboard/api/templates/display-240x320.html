@@ -740,30 +740,15 @@
             }
 
             return fetch(endpoint, options)
-                .then(async (response) => {
-                    const contentType = response.headers.get('content-type') || '';
-                    let payload = null;
-
+                .then((response) => {
                     if (!response.ok) {
                         const err = new Error(response.statusText || 'Error');
-                        err.status = response.status;
-                        err.data = payload;
-                        throw err;
-                    }
-
-                    if (contentType.includes('application/json')) {
-                        try {
-                            payload = await response.json();
-                        } catch (_) {
-                            payload = null;
-                        }
-                    } else {
-                        const err = new Error('Invalid content type: ' + contentType);
+                        err.statusText = response.statusText;
                         err.status = response.status;
                         throw err;
                     }
 
-                    return payload ?? {};
+                    return response.json();
                 })
                 .then(data => {
                     loadingHide();
@@ -772,10 +757,11 @@
                     return data;
                 }).catch(error => {
                     loadingHide();
+                    console.error('API call error (' + endpoint + '):', error);
                     if (errorMessage) {
-                        showMessageView('Error', errorMessage + ': ' + (error.message || "Unknown error"));
+                        showMessageView('Error', errorMessage + ': ' + (error.status || ' ') + ' ' + (error.statusText || error.message || "Unknown error"));
                     } else {
-                        showMessageView('Error', endpoint + ' call error: ' + (error.message || "Unknown error"));
+                        showMessageView('Error', endpoint + ' call error: ' + (error.status || ' ') + ' ' + (error.statusText || error.message || "Unknown error"));
                     }
                     throw error;
                 });
@@ -1080,7 +1066,7 @@
         function calibrateSensors() {
             console.warn("Sensor calibration requested, but not implemented.");
             loadingShow('Calibrating Sensors');
-            apiCall('/api/sensors/calibrate', null, function (data) {
+            apiCall('/api/system/xiao/calibrate_sensors', {}, function (data) {
                 if (data.success) {
                     showMessageView('Success', data.message || 'Sensors calibrated successfully!');
                 } else {

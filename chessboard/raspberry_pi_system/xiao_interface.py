@@ -134,11 +134,15 @@ class _XiaoInterface:
 
         Warning: No pieces shall be on the board when this is called.
         """
+        # Make sure everyone can prepare for calibration
+        events.event_manager.publish(events.SensorCalibrationEvent(), block=True)
+
         log.info("Calibrating HAL sensors...")
         self._monitor_stop()
         self._send_command('board calibrate set')
         self._monitor_start()
         log.info("HAL sensors calibrated successfully.")
+        events.event_manager.publish(events.SensorCalibrationCompletedEvent())
 
     def _find_tty_device(self) -> str | None:
         """ Find the TTY device corresponding to the HAL sensor device. """

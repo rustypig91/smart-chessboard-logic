@@ -4,7 +4,7 @@ import weakref
 import chessboard.events as events
 from chessboard.settings import settings, ColorSetting
 from chessboard.thread_safe_variable import ThreadSafeVariable
-from threading import Lock
+from threading import Lock, Event
 
 
 settings.register('led.color.light_square', ColorSetting((150, 150, 150)),
@@ -111,10 +111,17 @@ class _LedManager:
         # Track layers weakly so they auto-remove when destroyed
         self._layers: weakref.WeakSet[LedLayer] = weakref.WeakSet()
         self._lock = Lock()
+        self._calibrating = Event()
 
         events.event_manager.subscribe(events.NewSubscriberEvent, lambda e: self.apply_layers())
 
         self._last_applied_colors: dict[int, tuple[int, int, int]] = {}
+
+        events.event_manager.subscribe(
+            events.SensorCalibrationEvent, self._handle_calibration_event)
+
+        events.event_manager.subscribe(
+            events.SensorCalibrationCompletedEvent, self._handle_calibration_completed_event)
 
         self.apply_layers()
 
@@ -127,10 +134,24 @@ class _LedManager:
         if event.event_type == events.SetSquareColorEvent and self._last_applied_colors:
             event.callback(events.SetSquareColorEvent(self._last_applied_colors))
 
+    def _handle_calibration_event(self, event: events.SensorCalibrationEvent) -> None:
+        """ Add calibration layer on calibration start. """
+        self._calibrating.set()
+        self.apply_layers()
+
+    def _handle_calibration_completed_event(self, event: events.SensorCalibrationCompletedEvent) -> None:
+        """ Remove calibration layer on calibration completion. """
+        self._calibrating.clear()
+        self.apply_layers()
+
     @property
     def colors(self) -> dict[int, tuple[int, int, int]]:
         """ Get the current colors after applying all layers. """
         final_colors = self.base_colors.copy()
+
+        if self._calibrating.is_set():
+            # Calibrate with base colors only
+            return final_colors
 
         with self._lock:
             # Apply layers in ascending priority order

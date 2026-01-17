@@ -3,6 +3,7 @@ from chessboard.animations.change_side import AnimationChangeSide
 from chessboard.animations.water_droplet import AnimationWaterDroplet
 from chessboard.animations.rainbow import AnimationRainbow
 from chessboard.animations.pulse import AnimationPulse
+from chessboard.animations.calibration_complete import AnimationCalibrationComplete
 import chessboard.events as events
 from chessboard.game.game_state import game_state
 from chessboard.settings import settings, ColorSetting
@@ -12,6 +13,7 @@ settings.register('animation.check.color', ColorSetting((255, 100, 255)), 'Color
 settings.register('animation.legal_move.enabled', True, 'Enable animations for legal moves detected')
 settings.register('animation.legal_move.color', ColorSetting((102, 204, 255)), 'Color for water droplet animation')
 settings.register('animation.hint.color', ColorSetting((0, 255, 0)), 'Color for hint pulse animation')
+settings.register('animation.calibration.color', ColorSetting((0, 255, 100)), 'Color for calibration success animation')
 
 _change_side_animation = AnimationChangeSide(
     new_side=chess.WHITE,
@@ -89,9 +91,21 @@ def _handle_square_piece_state_change(event: events.SquarePieceStateChangeEvent)
                 _hint_animation.stop()
 
 
+def _handle_calibration_completed_event(event: events.SensorCalibrationCompletedEvent) -> None:
+    anim = AnimationCalibrationComplete(
+        fps=15.0,
+        color=settings['animation.calibration.color'],
+        ripple_duration=1.2,
+        pulse_duration=0.8,
+        priority=1000,
+    )
+    anim.start()
+
+
 events.event_manager.subscribe(events.MoveEvent, _handle_chess_move_event)
 events.event_manager.subscribe(events.LegalMoveDetectedEvent, _handle_legal_move_detected)
 events.event_manager.subscribe(events.BoardStateEvent, _handle_board_state_event)
 events.event_manager.subscribe(events.GameOverEvent, _handle_game_over_event)
 events.event_manager.subscribe(events.HintEvent, _handle_hint_event)
 events.event_manager.subscribe(events.SquarePieceStateChangeEvent, _handle_square_piece_state_change)
+events.event_manager.subscribe(events.SensorCalibrationCompletedEvent, _handle_calibration_completed_event)

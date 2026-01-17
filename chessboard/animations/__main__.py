@@ -4,6 +4,7 @@ import chess
 import tkinter as tk
 from chessboard.animations.rainbow import AnimationRainbow
 from chessboard.animations.pulse import AnimationPulse
+from chessboard.animations.calibration_complete import AnimationCalibrationComplete
 import chessboard.events as events
 
 
@@ -44,13 +45,19 @@ board = TKInterBoard()
 #     loop=True,
 # )
 
-animation = AnimationPulse(
-    pulsating_squares=[chess.E4, chess.D4, chess.E5, chess.D5],
-    frequency_hz=1.0,
-    pulsating_color=(0, 255, 0),
+# animation = AnimationPulse(
+#     pulsating_squares=[chess.E4, chess.D4, chess.E5, chess.D5],
+#     frequency_hz=1.0,
+#     pulsating_color=(0, 255, 0),
+#     fps=15.0,
+#     pulses=10,
+#     priority=500,
+# )
+
+animation = AnimationCalibrationComplete(
+    color=(0, 255, 100),
     fps=15.0,
-    pulses=10,
-    priority=500,
+    priority=1000,
 )
 
 START_DELAY_MS = 100

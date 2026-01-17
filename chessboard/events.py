@@ -321,7 +321,7 @@ class HintRequestedEvent(Event):
         super().__init__()
 
 
-class SensorCalibrationStartedEvent(Event):
+class SensorCalibrationEvent(Event):
     """ Sensor calibration process has started. """
 
     def __init__(self):

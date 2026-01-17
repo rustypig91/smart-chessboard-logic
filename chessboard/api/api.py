@@ -1,6 +1,8 @@
 import os
+import chess
+import chess.svg
 from typing import Any
-from flask import Flask, render_template, send_from_directory, request, Response, url_for
+from flask import Flask, render_template, send_from_directory, request, Response, url_for, jsonify
 from flask_socketio import SocketIO
 
 
@@ -14,6 +16,7 @@ from chessboard.api.system.xiao import api as api_system_xiao
 from chessboard.api.engine import api as api_engine
 from chessboard import is_raspberrypi
 from chessboard.game.game_state import game_state
+from chessboard.api.history import api as api_history
 
 from chessboard.logger import log
 import traceback
@@ -26,6 +29,7 @@ app.register_blueprint(api_settings, url_prefix='/api/settings', name='settings'
 app.register_blueprint(api_game, url_prefix='/api/game', name='game')
 app.register_blueprint(api_system_xiao, url_prefix='/api/system/xiao/', name='xiao')
 app.register_blueprint(api_engine, url_prefix='/api/engine', name='engine')
+app.register_blueprint(api_history, url_prefix='/api/history', name='history')
 
 # eventlet.monkey_patch()  # noqa
 
@@ -92,6 +96,39 @@ def analyse() -> str:
 def xiao_firmware() -> str:
     """Firmware updater page"""
     return render_template('xiao_firmware.html')
+
+
+@app.route('/svg_board', methods=['POST'])
+def get_svg_board():
+    """API endpoint to get the current board state as an SVG image.
+
+    Accepts JSON body with:
+    - board_fen: optional FEN string to render
+    - lastmove_uci: optional UCI string (e.g. "e2e4") to highlight last move
+    """
+    data = request.get_json()
+    board_fen = data.get('board_fen', None)
+    lastmove_uci = data.get('lastmove_uci')
+    size = data.get('size', None)
+
+    if board_fen:
+        try:
+            board = chess.Board(board_fen)
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid FEN string provided'}), 400
+    else:
+        board = chess.Board()
+
+    lastmove = None
+    if lastmove_uci:
+        try:
+            lastmove = chess.Move.from_uci(lastmove_uci)
+        except ValueError:
+            lastmove = None
+
+    svg_data = chess.svg.board(board=board, size=size, lastmove=lastmove)
+
+    return Response(svg_data, mimetype='image/svg+xml')
 
 
 @socketio.on('publish_event')

@@ -316,7 +316,7 @@
         }
 
         async function loadHistory() {
-            const data = await fetchJSON('/api/game/history');
+            const data = await fetchJSON('/api/history');
             el.games.innerHTML = '';
             (data.games || []).forEach(g => {
                 const div = document.createElement('div');
@@ -334,7 +334,7 @@
         }
 
         async function loadGame(filename) {
-            const pos = await fetchJSON(`/api/game/history/${encodeURIComponent(filename)}/positions`);
+            const pos = await fetchJSON(`/api/history/${encodeURIComponent(filename)}/positions`);
             if (!pos.success) return;
             current = { filename: pos.filename, moves: pos.moves, fens: pos.fens, idx: 0 };
             el.title.textContent = pos.filename;
@@ -345,7 +345,7 @@
 
             // enable download button
             if (current.filename) {
-                const url = `/api/game/history/${encodeURIComponent(current.filename)}`;
+                const url = `/api/history/${encodeURIComponent(current.filename)}`;
                 el.download.href = url;
                 el.download.setAttribute('download', current.filename);
                 el.download.classList.remove('disabled');
@@ -434,7 +434,7 @@
             el.uci.textContent = current.moves[current.idx - 1] || '-';
             updateMoveHighlight();
             if (!fen) { el.board.innerHTML = ''; return; }
-            const res = await fetch('/api/game/svg_board', {
+            const res = await fetch('/svg_board', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

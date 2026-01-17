@@ -638,7 +638,7 @@
         }
 
         function getHint() {
-            apiCall('/api/game/hint', {});
+            sendEvent('HintRequestedEvent');
         }
 
         let menuButtonFunctions = [

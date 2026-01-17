@@ -1,16 +1,8 @@
 import chess
-import chess.svg
 from flask import Blueprint, jsonify, request
-from chessboard.game.game_state import game_state
 from chessboard.logger import log
 import chessboard.game.engine as engine
 import chessboard.events as events
-from chessboard.game.history import history
-from flask import send_from_directory
-import os
-from flask import Response
-import chessboard.persistent_storage as persistent_storage
-import chess.pgn
 api = Blueprint('api', __name__, template_folder='templates')
 
 
@@ -70,110 +62,6 @@ def start_new_game():
     # Here you would typically set up the game state with the engine
     # For this example, we'll just return success
     return jsonify({'success': True, 'message': f'Game started'})
-
-
-@api.route('/history', methods=['GET'])
-def get_game_history():
-    """API endpoint to get the game history"""
-    data = []
-    for file in history.get_game_filenames_sorted():
-        with open(file) as f:
-            game = chess.pgn.read_game(f)
-
-        if game is None:
-            log.warning(f"Failed to read game from history file: {file}")
-            continue
-
-        data.append({
-            'filename': os.path.basename(file),
-            'created_time': os.path.getctime(file),
-            'white_player': game.headers.get('White', 'Unknown'),
-            'black_player': game.headers.get('Black', 'Unknown'),
-            'result': game.headers.get('Result', '*'),
-            'date': game.headers.get('Date', 'Unknown'),
-            'moves': ' '.join(str(move) for move in game.mainline_moves())
-        })
-
-    return jsonify({'success': True, 'games': data, 'total_games': len(data)})
-
-
-@api.route('/svg_board', methods=['POST'])
-def get_svg_board():
-    """API endpoint to get the current board state as an SVG image.
-
-    Accepts JSON body with:
-    - board_fen: optional FEN string to render
-    - lastmove_uci: optional UCI string (e.g. "e2e4") to highlight last move
-    """
-    data = request.get_json()
-    board_fen = data.get('board_fen', None)
-    lastmove_uci = data.get('lastmove_uci')
-    size = data.get('size', None)
-
-    if board_fen:
-        try:
-            board = chess.Board(board_fen)
-        except ValueError:
-            return jsonify({'success': False, 'error': 'Invalid FEN string provided'}), 400
-    else:
-        board = chess.Board()
-
-    lastmove = None
-    if lastmove_uci:
-        try:
-            lastmove = chess.Move.from_uci(lastmove_uci)
-        except ValueError:
-            lastmove = None
-
-    svg_data = chess.svg.board(board=board, size=size, lastmove=lastmove)
-
-    return Response(svg_data, mimetype='image/svg+xml')
-
-
-@api.route('/history/latest', methods=['GET'])
-def get_latest_game_history():
-    history_files = history.get_game_filenames_sorted()
-    history_dir = persistent_storage.get_directory("history")
-    if not history_files:
-        return 'No games in history', 404
-
-    filename = os.path.basename(history_files[0])
-    return send_from_directory(history_dir, filename, as_attachment=False)
-
-
-@api.route('/history/<path:filename>', methods=['GET'])
-def serve_history_file(filename):
-    """Serve a file from the history directory"""
-    history_dir = persistent_storage.get_directory("history")
-    return send_from_directory(history_dir, filename, as_attachment=True)
-
-
-@api.route('/history/<path:filename>/positions', methods=['GET'])
-def get_game_positions(filename):
-    """Return move list and FEN sequence for a saved PGN."""
-    history_dir = persistent_storage.get_directory("history")
-    safe_dir = os.path.realpath(history_dir)
-    requested = os.path.realpath(os.path.join(history_dir, filename))
-    if not requested.startswith(safe_dir):
-        return jsonify({'success': False, 'error': 'Invalid path'}), 400
-    if not os.path.isfile(requested):
-        return jsonify({'success': False, 'error': 'File not found'}), 404
-
-    with open(requested, 'r') as f:
-        game = chess.pgn.read_game(f)
-
-    if game is None:
-        return jsonify({'success': False, 'error': 'Invalid PGN'}), 400
-
-    board = chess.Board()
-    fens = [board.fen()]
-    moves = []
-    for mv in game.mainline_moves():
-        moves.append(mv.uci())
-        board.push(mv)
-        fens.append(board.fen())
-
-    return jsonify({'success': True, 'filename': os.path.basename(filename), 'moves': moves, 'fens': fens})
 
 
 @api.route('/pause', methods=['POST'])

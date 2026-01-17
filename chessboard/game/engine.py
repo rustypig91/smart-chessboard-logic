@@ -208,14 +208,23 @@ class _Lc0Engine:
         self._post_init()
 
     def _post_init(self):
-        events.event_manager.subscribe(events.NewGameEvent, self._handle_new_game_event)
-        events.event_manager.subscribe(events.BoardStateEvent, self._handle_board_state)
-        events.event_manager.subscribe(events.NewSubscriberEvent, self._handle_new_subscriber_event)
-
         self._engine_stop = Event()
 
         self._engine_thread = Thread(target=self._engine_worker, daemon=True)
         self._engine_thread.start()
+
+        self._latest_best_move = ThreadSafeVariable[chess.Move | None](None)
+
+        events.event_manager.subscribe(events.NewGameEvent, self._handle_new_game_event)
+        events.event_manager.subscribe(events.BoardStateEvent, self._handle_board_state)
+        events.event_manager.subscribe(events.NewSubscriberEvent, self._handle_new_subscriber_event)
+        events.event_manager.subscribe(events.HintRequestedEvent, self._handle_hint_requested_event)
+
+    def _handle_hint_requested_event(self, event: events.HintRequestedEvent) -> None:
+        """ Handle hint request event by requesting engine move for current board state """
+        move = self._latest_best_move.get()
+        if move is not None:
+            events.event_manager.publish(events.HintEvent(move))
 
     def _handle_new_subscriber_event(self, event: events.NewSubscriberEvent) -> None:
         """ Handle new subscriber event to send latest engine weights """
@@ -250,6 +259,8 @@ class _Lc0Engine:
                 board=chess.Board())
 
     def _handle_board_state(self, event: events.BoardStateEvent) -> None:
+        self._latest_best_move.set(None)  # Reset latest best move
+
         if event.board.is_game_over():
             return
 
@@ -414,6 +425,9 @@ class _Lc0Engine:
 
                     analysis_event.pv = info.get('pv', [])
                     analysis_event.depth = info.get('depth', 0)
+
+                    best_move = analysis_event.pv[0] if len(analysis_event.pv) > 0 else None
+                    self._latest_best_move.set(best_move)
 
                     events.event_manager.publish(analysis_event)
 

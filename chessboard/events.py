@@ -321,6 +321,20 @@ class HintRequestedEvent(Event):
         super().__init__()
 
 
+class SensorCalibrationStartedEvent(Event):
+    """ Sensor calibration process has started. """
+
+    def __init__(self):
+        super().__init__()
+
+
+class SensorCalibrationCompletedEvent(Event):
+    """ Sensor calibration process has completed. """
+
+    def __init__(self):
+        super().__init__()
+
+
 class HintEvent(Event):
     """ Engine provided hint for the next move. """
 

@@ -134,10 +134,11 @@ class _XiaoInterface:
 
         Warning: No pieces shall be on the board when this is called.
         """
-
+        log.info("Calibrating HAL sensors...")
         self._monitor_stop()
         self._send_command('board calibrate set')
         self._monitor_start()
+        log.info("HAL sensors calibrated successfully.")
 
     def _find_tty_device(self) -> str | None:
         """ Find the TTY device corresponding to the HAL sensor device. """

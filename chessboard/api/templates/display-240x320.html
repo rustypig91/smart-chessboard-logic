@@ -92,6 +92,12 @@
                             <p>Configure LED brightness, colors</p>
                         </div>
                     </div>
+                    <div class="submenu-item" data-action="calibrate-sensors">
+                        <div>
+                            <h4>Calibrate Sensors</h4>
+                            <p>Calibrate HAL sensors</p>
+                        </div>
+                    </div>
                     <div class="submenu-item" data-action="about">
                         <div>
                             <h4>About</h4>
@@ -388,7 +394,6 @@
 
                 function updateClockDisplay() {
                     if (lastClockStateReceivedTime == null) {
-                        console.warn("Clock update called before initialization");
                         return;
                     }
                     const now = Date.now();
@@ -559,7 +564,7 @@
             <div id="yes-no-view" class="view">
                 <div class="view-header" id="yes-no-title">Confirm</div>
                 <div class="menu" style="padding: 16px 10px;">
-                    <div id="yes-no-content"
+                    <div id="yes-no-question"
                         style="background:none; border:none; color:#fff; font-size:13px; padding:0; margin:0;">
                         <!-- Question will be inserted here -->
                     </div>
@@ -670,10 +675,10 @@
         ];
 
         let yesNoButtonFunctions = [
-            { short: menuGoBack, shortHint: 'No', long: null, longHint: '' },
+            { short: menuNo, shortHint: 'No', long: null, longHint: '' },
             { short: null, shortHint: '', long: null, longHint: '' },
             { short: null, shortHint: '', long: null, longHint: '' },
-            { short: menuSelect, shortHint: 'Yes', long: null, longHint: '' },
+            { short: menuYes, shortHint: 'Yes', long: null, longHint: '' },
         ];
 
         const viewButtonsConfig = {
@@ -725,7 +730,7 @@
             }
         }
 
-        function apiCall(endpoint, post_data = null, callback = function (data) { }) {
+        function apiCall(endpoint, post_data = null, callback = function (data) { }, errorMessage = null) {
             const options = {
                 method: post_data ? 'POST' : 'GET',
                 headers: { 'Content-Type': 'application/json' },
@@ -735,7 +740,31 @@
             }
 
             return fetch(endpoint, options)
-                .then(response => response.json())
+                .then(async (response) => {
+                    const contentType = response.headers.get('content-type') || '';
+                    let payload = null;
+
+                    if (!response.ok) {
+                        const err = new Error(response.statusText || 'Error');
+                        err.status = response.status;
+                        err.data = payload;
+                        throw err;
+                    }
+
+                    if (contentType.includes('application/json')) {
+                        try {
+                            payload = await response.json();
+                        } catch (_) {
+                            payload = null;
+                        }
+                    } else {
+                        const err = new Error('Invalid content type: ' + contentType);
+                        err.status = response.status;
+                        throw err;
+                    }
+
+                    return payload ?? {};
+                })
                 .then(data => {
                     loadingHide();
                     console.log('API call success (' + endpoint + '):', data);
@@ -743,7 +772,11 @@
                     return data;
                 }).catch(error => {
                     loadingHide();
-                    showMessageView('Error', endpoint + ' call error: ' + (error.message || "Unknown error"));
+                    if (errorMessage) {
+                        showMessageView('Error', errorMessage + ': ' + (error.message || "Unknown error"));
+                    } else {
+                        showMessageView('Error', endpoint + ' call error: ' + (error.message || "Unknown error"));
+                    }
                     throw error;
                 });
         }
@@ -785,7 +818,6 @@
                 console.log('Already at main view');
             }
         }
-
 
         // Show virtual keyboard
         function keyboardShow(title, initialInput, callback, numberOnly = false) {
@@ -1006,7 +1038,6 @@
             loadBoardSettings();
         }
 
-
         function loadBoardSettings() {
             loadingShow('Loading Settings');
             apiCall('/api/settings', null, function (data) {
@@ -1043,6 +1074,18 @@
 
                 selectedIndex = 0;
                 menuUpdateSelection();
+            });
+        }
+
+        function calibrateSensors() {
+            console.warn("Sensor calibration requested, but not implemented.");
+            loadingShow('Calibrating Sensors');
+            apiCall('/api/sensors/calibrate', null, function (data) {
+                if (data.success) {
+                    showMessageView('Success', data.message || 'Sensors calibrated successfully!');
+                } else {
+                    showMessageView('Error', 'Failed to calibrate sensors: ' + (data.error || 'Unknown error'));
+                }
             });
         }
 
@@ -1215,6 +1258,14 @@
                         break;
                     case 'board-settings':
                         loadBoardSettings();
+                        break;
+                    case "calibrate-sensors":
+                        showYesNoView('Calibrate Sensors', 'Make sure there are no pieces on the board before proceeding. Are you sure you want to calibrate the sensors?', function (yes) {
+                            console.log('Calibrate sensors confirmation:', yes);
+                            if (yes) {
+                                calibrateSensors();
+                            }
+                        });
                         break;
                     case 'set-board-setting':
                         showBoardSettingView(selectedItem.dataset.settingKey);
@@ -1415,7 +1466,27 @@
         // Update WiFi status every 10 seconds
         setInterval(wifiUpdateIcon, 10000);
 
-        function yesNoView(title, question, callback) {
+        let yesNoCallback = null;
+
+        function menuYes() {
+            console.log('Yes selected calling:', yesNoCallback);
+            menuGoBack();
+            if (yesNoCallback) {
+                yesNoCallback(true);
+                yesNoCallback = null;
+            }
+        }
+
+        function menuNo() {
+            console.log('No selected calling:', yesNoCallback);
+            menuGoBack();
+            if (yesNoCallback) {
+                yesNoCallback(false);
+                yesNoCallback = null;
+            }
+        }
+
+        function showYesNoView(title, question, callback) {
             document.getElementById('yes-no-title').textContent = title;
             document.getElementById('yes-no-question').textContent = question;
             yesNoCallback = callback || null;
@@ -1446,7 +1517,7 @@
         });
 
         addBoardEventListener("DrawOfferEvent", (data) => {
-            yesNoView('Draw Offer', 'Your opponent has offered a draw. Do you accept?', function (accepted) {
+            showYesNoView('Draw Offer', 'Your opponent has offered a draw. Do you accept?', function (accepted) {
                 sendEvent('DrawResponseEvent', { accepted: accepted });
             });
         });

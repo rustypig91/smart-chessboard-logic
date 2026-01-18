@@ -106,7 +106,13 @@ async function createStockfishEngine(options = {}) {
             if (current) {
                 lastAnalyzeResult.info = info;
 
-                current.callback(lastAnalyzeResult);
+                // Stream a snapshot to the callback (not the mutable reference)
+                current.callback && current.callback({
+                    info,
+                    bestmove: { ...lastAnalyzeResult.bestmove },
+                    done: false,
+                    fen: lastAnalyzeResult.fen,
+                });
 
                 if (info.multipv === 1) {
                     current.lastInfo = info;
@@ -124,20 +130,27 @@ async function createStockfishEngine(options = {}) {
             lastAnalyzeResult.done = true;
 
             if (current) {
-                cache[lastAnalyzeResult.fen] = { ...lastAnalyzeResult };
-                cache[lastAnalyzeResult.fen].bestmove = { ...lastAnalyzeResult.bestmove };
-                cache[lastAnalyzeResult.fen].info = { ...lastAnalyzeResult.info };
+                // Final snapshot result
+                const finalResult = {
+                    info: lastAnalyzeResult.info ? { ...lastAnalyzeResult.info } : null,
+                    bestmove: { ...lastAnalyzeResult.bestmove },
+                    done: true,
+                    fen: lastAnalyzeResult.fen,
+                };
 
-                current.resolve(lastAnalyzeResult);
-                current.callback(lastAnalyzeResult);
+                cache[finalResult.fen] = finalResult;
+
+                current.resolve(finalResult);
+                current.callback && current.callback(finalResult);
                 current = null;
 
-                lastAnalyzeResult.info = null;
-                lastAnalyzeResult.bestmove.move = null;
-                lastAnalyzeResult.bestmove.ponder = null;
-                lastAnalyzeResult.bestmove.raw = null;
-                lastAnalyzeResult.done = false;
-                lastAnalyzeResult.fen = null;
+                // Reset internal mutable holder
+                lastAnalyzeResult = {
+                    info: null,
+                    bestmove: { move: null, ponder: null, raw: null },
+                    done: false,
+                    fen: null,
+                };
             }
         }
     };
@@ -148,34 +161,31 @@ async function createStockfishEngine(options = {}) {
 
     async function ready() { await readyPromise; }
 
-    async function analyze({ fen, depth = 32, callback } = {}) {
-        if (!callback) {
-            return;
-        }
-
+    async function analyze({ fen, depth = 32, callback = () => { } } = {}) {
         if (typeof fen !== 'string' || fen.length === 0) {
             throw new Error('analyze() requires a FEN or "startpos"');
         }
 
-        console.warn('Cache is: ', cache);
+        // Short-circuit on cache hit: invoke callback with a snapshot and return a snapshot
         if (fen in cache) {
-            callback(cache[fen]);
-            return Promise.resolve(cache[fen]);
+            const cached = cache[fen];
+            const snapshot = {
+                info: cached.info ? { ...cached.info } : null,
+                bestmove: { ...cached.bestmove },
+                done: cached.done,
+                fen: cached.fen,
+            };
+            callback(snapshot);
+            return Promise.resolve(snapshot);
         } else {
             console.error('Cache miss for fen:', fen);
         }
 
         console.log('analyze called with', fen, depth);
 
-        if (!fen || typeof fen !== 'string') {
-            throw new Error('analyze() requires a FEN or "startpos"');
-        }
-
         // Cancel any previous analysis
         if (current) {
-            try {
-                post('stop');
-            } catch (_) { }
+            try { post('stop'); } catch (_) { }
             current = null;
         }
         await ready();
@@ -188,8 +198,7 @@ async function createStockfishEngine(options = {}) {
 
         if (fen === 'startpos') {
             post('position startpos');
-        }
-        else {
+        } else {
             post('position fen ' + fen);
         }
 
@@ -203,7 +212,7 @@ async function createStockfishEngine(options = {}) {
         const p = new Promise((resolve, reject) => { current.resolve = resolve; current.reject = reject; });
 
         post('go depth ' + Math.max(6, Math.min(30, Number(depth) || 16)));
-        return p;
+        return p; // always resolves with the final snapshot result
     }
 
     async function analyzeMove({ fen, move, depth = 32, callback } = {}) {

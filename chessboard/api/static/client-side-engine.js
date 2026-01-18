@@ -198,14 +198,15 @@ async function createStockfishEngine(options = {}) {
         return p; // always resolves with the final snapshot result
     }
 
-    async function analyzeMove({ fen, move, depth = 32, callback } = {}) {
+    async function analyzeMove({ fenBeforeMove, move, depth = 32, blunderThreshold = 0.5, callback } = {}) {
 
-        const chess = new Chess(fen);
+        const chess = new Chess(fenBeforeMove);
+        const turn = chess.turn();
 
         const starting_fen = chess.fen();
         const move_san = chess.move(move, { sloppy: true })?.san;
         if (move_san === null) {
-            throw new Error('Invalid move: ' + move + ' fen: ' + fen);
+            throw new Error('Invalid move: ' + move + ' fen: ' + fenBeforeMove);
         }
         const new_fen = chess.fen();
 
@@ -236,18 +237,23 @@ async function createStockfishEngine(options = {}) {
         if (!start_fen_result.info || !end_fen_result.info || !best_move_result.info) {
             throw new Error('Failed to get complete analysis info for move: ' + move_san);
         }
-        if (best_move_result.info.type !== 'cp' || end_fen_result.info.type !== 'cp' || start_fen_result.info.type !== 'cp') {
+        if (best_move_result.info.score.type !== 'cp' || end_fen_result.info.score.type !== 'cp' || start_fen_result.info.score.type !== 'cp') {
             throw new Error('Invalid score type in analysis info for move: ' + move_san + '(got types: ' +
-                start_fen_result.info.type + ', ' + end_fen_result.info.type + ', ' + best_move_result.info.type + ')');
+                start_fen_result.info.score.type + ', ' + end_fen_result.info.score.type + ', ' + best_move_result.info.score.type + ')');
         }
 
-        best_move_score = (best_move_result.info.score.value / 100).toFixed(2);
-        move_score = (end_fen_result.info.score.value / 100).toFixed(2);
-        pre_move_score = (start_fen_result.info.score.value / 100).toFixed(2);
+        // Convert centipawns to pawns
+        const pre_move_score = (start_fen_result.info.score.value / 100);
+        const post_move_score = (end_fen_result.info.score.value / 100);
+        const best_move_score = (best_move_result.info.score.value / 100);
 
-        score_diff = pre_move_score - move_score;
-        best_move_score_diff = pre_move_score - best_move_score;
-        is_blunder = score_diff >= 1.5
+
+        const score_diff = post_move_score - pre_move_score;
+        const best_move_score_diff = best_move_score - pre_move_score;
+        const score_diff_norm = (turn === 'w' ? score_diff : -score_diff);
+        const best_move_score_diff_norm = (turn === 'w' ? best_move_score_diff : -best_move_score_diff);
+
+        const is_blunder = score_diff_norm <= -blunderThreshold && best_move_score_diff_norm >= -blunderThreshold;
 
         return {
             start_result: start_fen_result,
@@ -258,29 +264,17 @@ async function createStockfishEngine(options = {}) {
             end_fen: new_fen,
             move: move_san,
             best_move: best_move_san,
-            score:
-                best_move_score: best_move_result.info ? (
-                    best_move_result.info.score.type === 'cp' ?
-                        (best_move_result.info.score.value / 100).toFixed(2) :
-                        `Mate in ${best_move_result.info.score.value}`
-                ) : null,
-            score_diff: end_fen_result.info && start_fen_result.info ? {
-                type: end_fen_result.info.score.type,
-                value: (end_fen_result.info.score.value - start_fen_result.info.score.value) / 100
-            } : null,
-            best_move_score_diff: best_move_result.info && end_fen_result.info ? {
-                type: best_move_result.info.score.type,
-                value: (best_move_result.info.score.value - end_fen_result.info.score.value) / 100
-            } : null,
-            blunder: end_fen_result.info && start_fen_result.info && best_move_result.info ? (
-                (start_fen_result.info.score.type === 'cp' && end_fen_result.info.score.type === 'cp' && best_move_result.info.score.type === 'cp') ?
-                    (start_fen_result.info.score.value - end_fen_result.info.score.value >= 100 &&
-                        best_move_result.info.score.value - end_fen_result.info.score.value >= 100)
-                    : false
-            ) : false,
+            score: post_move_score,
+            pre_move_score: pre_move_score,
+            best_move_score: best_move_score,
+            score_diff: score_diff,
+            score_diff_norm: score_diff_norm,
+            best_move_score_diff: best_move_score_diff,
+            best_move_score_diff_norm: best_move_score_diff_norm,
+            blunder: is_blunder,
+            turn: turn,
         }
     }
-
 
     async function analyzePGN({ pgn, depth = 16, onMoveAnalyzed = null } = {}) {
         const chess = new Chess();
@@ -298,7 +292,7 @@ async function createStockfishEngine(options = {}) {
 
             // Analyze position before the move
             const analysisResult = await analyzeMove({
-                fen: fenBeforeMove,
+                fenBeforeMove: fenBeforeMove,
                 move: move,
                 depth: depth,
                 callback: () => { }

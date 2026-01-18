@@ -7,6 +7,21 @@ const DEFAULT_STOCKFISH_JS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/stockfi
 const DEFAULT_STOCKFISH_WASM_JS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.wasm.js';
 const DEFAULT_STOCKFISH_WASM_BIN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.wasm';
 
+function uci_to_move(uci) {
+    const from = uci.slice(0, 2);
+    const to = uci.slice(2, 4);
+    const promotion = uci.length > 4 ? uci[4] : undefined;
+    return { from, to, promotion };
+}
+
+function move_to_uci(move) {
+    let uci = move.from + move.to;
+    if (move.promotion) {
+        uci += move.promotion;
+    }
+    return uci;
+}
+
 async function createWorkerFromURL(url, wasmBinUrl) {
     const res = await fetch(url, { mode: 'cors' });
     let code = await res.text();
@@ -114,9 +129,6 @@ async function createStockfishEngine(options = {}) {
                 if (current) {
                     lastAnalyzeInfo = info;
 
-                    // Stream snapshot to callback
-                    current.job.callback && current.job.callback(makeSnapshot(info, null, false, currentAnalyzeFen));
-
                     if (info.multipv === 1) {
                         current.lastInfo = info;
                     }
@@ -127,7 +139,7 @@ async function createStockfishEngine(options = {}) {
                 const ponder = parts[3] || null;
 
                 if (current) {
-                    const bestmove = { move, ponder, raw: text };
+                    const bestmove = { move_uci: move, ponder_uci: ponder, raw: text };
                     const finalResult = makeSnapshot(lastAnalyzeInfo, bestmove, true, currentAnalyzeFen);
 
                     // Write to shared cache keyed by requested depth
@@ -138,7 +150,6 @@ async function createStockfishEngine(options = {}) {
                     } catch (_) { /* noop */ }
 
                     current.job.resolve(finalResult);
-                    current.job.callback && current.job.callback(finalResult);
 
                     // Clear state
                     current = null;
@@ -232,7 +243,7 @@ async function createStockfishEngine(options = {}) {
         await Promise.all(slots.map(s => s.ready()));
     }
 
-    async function analyze({ fen, depth = 32, callback = () => { } } = {}) {
+    async function analyze({ fen, depth = 32 } = {}) {
         if (typeof fen !== 'string' || fen.length === 0) {
             throw new Error('analyze() requires a FEN or "startpos"');
         }
@@ -242,8 +253,6 @@ async function createStockfishEngine(options = {}) {
         // Cache lookup
         if ((fen in cache) && (boundedDepth in cache[fen])) {
             const cached = cache[fen][boundedDepth];
-            const snapshot = makeSnapshot(cached.info, cached.bestmove, cached.done, cached.fen);
-            callback(snapshot);
             return cached;
         } else if (!(fen in cache)) {
             cache[fen] = {};
@@ -252,47 +261,47 @@ async function createStockfishEngine(options = {}) {
         // Enqueue job
         let resolve, reject;
         cache[fen][boundedDepth] = new Promise((res, rej) => { resolve = res; reject = rej; });
-        queue.push({ fen, depth: boundedDepth, callback, resolve, reject });
+        queue.push({ fen, depth: boundedDepth, resolve, reject });
 
         dispatch();
         return cache[fen][boundedDepth]; // resolves with final snapshot
     }
 
-    async function analyzeMove({ fenBeforeMove, move, depth = 32, blunderThreshold = 0.5, callback } = {}) {
+    async function analyzeMove({ fenBeforeMove, move_san, depth = 32, blunderThreshold = 0.5 } = {}) {
         const chess = new Chess(fenBeforeMove);
         const turn = chess.turn();
 
         const starting_fen = chess.fen();
 
-        const move_san = chess.move(move, { sloppy: true })?.san;
-        if (move_san === null) {
-            throw new Error('Invalid move: ' + move + ' fen: ' + fenBeforeMove);
+        const move = chess.move(move_san, { sloppy: true });
+        if (move === null) {
+            throw new Error('Invalid move: ' + move_san + ' fen: ' + fenBeforeMove);
         }
+
         const fen_after_move = chess.fen();
         chess.undo();
 
         // Analyze starting position
         let result_start_promise = analyze({
             fen: starting_fen,
-            depth: depth,
-            callback: () => { }
+            depth: depth
         });
 
         // Analyze after move
         let result_after_move_promise = analyze({
             fen: fen_after_move,
-            depth: depth,
-            callback: () => { }
+            depth: depth
         });
 
         const start_fen_result = await result_start_promise;
-        const best_move_san = chess.move(start_fen_result.bestmove.move, { sloppy: true }).san;
+        const best_move_uci = start_fen_result.bestmove.move_uci;
+        const best_move = chess.move(uci_to_move(best_move_uci), { sloppy: true });
+
         const fen_after_best_move = chess.fen();
 
         let best_move_result_promise = analyze({
             fen: fen_after_best_move,
-            depth: depth,
-            callback: () => { }
+            depth: depth
         });
 
         const end_fen_result = await result_after_move_promise;
@@ -313,8 +322,8 @@ async function createStockfishEngine(options = {}) {
 
         const score_diff = post_move_score - pre_move_score;
         const best_move_score_diff = best_move_score - pre_move_score;
-        const score_diff_norm = (turn === 'w' ? score_diff : -score_diff);
-        const best_move_score_diff_norm = (turn === 'w' ? best_move_score_diff : -best_move_score_diff);
+        const score_diff_norm = (turn === 'w' ? score_diff : score_diff);
+        const best_move_score_diff_norm = (turn === 'w' ? best_move_score_diff : best_move_score_diff);
 
         const is_blunder = score_diff_norm <= -blunderThreshold && best_move_score_diff_norm >= -blunderThreshold;
 
@@ -325,8 +334,8 @@ async function createStockfishEngine(options = {}) {
             best_move_fen: fen_after_best_move,
             start_fen: starting_fen,
             end_fen: fen_after_move,
-            move: move_san,
-            best_move: best_move_san,
+            move: move,
+            best_move: best_move,
             score: post_move_score,
             pre_move_score: pre_move_score,
             best_move_score: best_move_score,
@@ -338,7 +347,6 @@ async function createStockfishEngine(options = {}) {
             turn: turn,
         };
 
-        callback && callback(result);
         return result;
     }
 
@@ -348,29 +356,35 @@ async function createStockfishEngine(options = {}) {
         if (!success) {
             throw new Error('Invalid PGN string');
         }
-        const moves = chess.history({ verbose: true }).map(m => m.san);
+        const moves = chess.history({ verbose: true });
         chess.reset();
 
-        const results = [];
-
+        const result_promises = [];
 
         for (const move of moves) {
             const fenBeforeMove = chess.fen();
 
-            results.push(analyzeMove({
+            result_promises.push(analyzeMove({
                 fenBeforeMove: fenBeforeMove,
-                move: move,
-                depth: depth,
-                callback: () => { }
+                move_san: move.san,
+                depth: depth
             }));
 
-            results.push({ move: move, fen: fenBeforeMove, analysis: analysisResult });
             chess.move(move, { sloppy: true });
         }
 
-        for (const reultPromise of results) {
-            await resultPromise;
-            onMoveAnalyzed && onMoveAnalyzed({ move: move, fen: fenBeforeMove, analysis: analysisResult });
+        const results = [];
+        let index = 0;
+        for (const resultPromise of result_promises) {
+            analysisResult = await resultPromise;
+            const result = {
+                fen: analysisResult.end_fen,
+                move: analysisResult.move,
+                analysis: analysisResult,
+                moveIndex: index++,
+            }
+            results.push(result);
+            onMoveAnalyzed && onMoveAnalyzed(result);
         }
 
         return results;

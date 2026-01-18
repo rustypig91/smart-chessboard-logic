@@ -113,9 +113,10 @@ def get_svg_board():
     - lastmove_uci: optional UCI string (e.g. "e2e4") to highlight last move
     """
     data = request.get_json()
-    board_fen = data.get('board_fen', None)
+    board_fen = data.get('board_fen')
     lastmove_uci = data.get('lastmove_uci')
-    size = data.get('size', None)
+    bestmove_uci = data.get('bestmove_uci')
+    size = data.get('size')
 
     if board_fen:
         try:
@@ -132,7 +133,16 @@ def get_svg_board():
         except ValueError:
             lastmove = None
 
-    svg_data = chess.svg.board(board=board, size=size, lastmove=lastmove)
+    bestmove = None
+    if bestmove_uci:
+        try:
+            bestmove = chess.Move.from_uci(bestmove_uci)
+        except ValueError:
+            bestmove = None
+
+    log.error(f"Generating SVG board: FEN={board_fen}, lastmove={lastmove}, bestmove={bestmove}")
+    svg_data = chess.svg.board(board=board, size=size, lastmove=lastmove,
+                               arrows=[(bestmove.from_square, bestmove.to_square)] if bestmove else [])
 
     return Response(svg_data, mimetype='image/svg+xml')
 

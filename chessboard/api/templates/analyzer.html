@@ -7,6 +7,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.2/chess.js"
         integrity="sha512-46pfErGq3YBnmXdl83JmFf2bW4nbtjw5PYGwO+biyXN6tgfeN0K+qjgiAjS4FA0ipfDZwyZaBK3LJwLFtzBzDA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.13.4/chess.js"
+        integrity="sha512-40VRp1+fauX7g61ZdQpOiOJTkBbYwVlTLjCXHK9Svf0Mmz9K8Smg5k6LVrc0eEc9+pApf1HNL6Cim/wFqZeRkw=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" type="module"></script> -->
     <title>PGN Analyzer</title>
     <style>
         :root {
@@ -249,16 +252,22 @@
             sans: [],
             ucis: [],
             fens: [],   // FEN after each ply
+            bestMoveSans: [],
             idx: -1,    // -1 = starting position
         };
 
         function setStatus(s) { el.status.textContent = s; }
 
-        async function renderBoard(fen, lastmove = null) {
+        async function renderBoard({ fen, lastmove_uci = null, bestmove_uci = null }) {
             try {
                 const res = await fetch('/svg_board', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ board_fen: fen, lastmove_uci: lastmove })
+                    body: JSON.stringify({
+                        board_fen: fen,
+                        lastmove_uci: lastmove_uci,
+                        bestmove_uci: bestmove_uci,
+
+                    })
                 });
                 const svg = await res.text();
                 el.board.innerHTML = svg;
@@ -283,16 +292,28 @@
             return game.fens[idx];
         }
 
+        function getLastMoveSan(idx) {
+            return idx >= 0 ? (game.sans[idx] || null) : null;
+        }
+
+        function getBestMoveSan(idx) {
+            return idx >= 0 ? (game.bestMoveSans[idx] || null) : null;
+        }
+
         function getLastMoveUci(idx) {
             return idx >= 0 ? (game.ucis[idx] || null) : null;
+        }
+        function getBestMoveUci(idx) {
+            return idx >= 0 ? (game.bestMoveUcis[idx] || null) : null;
         }
 
         async function goTo(index) {
             if (!game.fens.length && index !== -1) return;
             game.idx = Math.max(-1, Math.min(index, game.sans.length - 1));
             const fen = getFenAt(game.idx);
-            const uci = getLastMoveUci(game.idx);
-            await renderBoard(fen, uci);
+            const lastmove_uci = getLastMoveUci(game.idx);
+            const bestmove_uci = getBestMoveUci(game.idx);
+            await renderBoard({ fen, lastmove_uci, bestmove_uci });
             updateHeaderUI();
             await analyzeCurrentPosition(); // auto analyze on navigation
         }
@@ -322,8 +343,7 @@
             sanMoves.forEach((san) => {
                 const mv = replay.move(san, { sloppy: true });
                 if (!mv) throw new Error('Illegal SAN in PGN: ' + san);
-                const uci = mv.from + mv.to + (mv.promotion ? mv.promotion : '');
-                ucis.push(uci);
+                ucis.push(move_to_uci(mv));
                 fens.push(replay.fen());
             });
 
@@ -359,13 +379,13 @@
 
                 const result = await engine.analyzeMove({
                     fenBeforeMove,
-                    move: moveSan,
+                    move_san: moveSan,
                     depth,
                 });
 
                 // result.score is post-move eval in pawns
                 el.eval.textContent = result.score.toFixed(2);
-                el.best.textContent = result.best_move || '-';
+                el.best.textContent = result.best_move.san || '-';
                 el.pv.textContent = (result.end_result?.info?.pv || []).join(' ');
                 el.scoreDiff.textContent = result.score_diff_norm.toFixed(2);
                 el.bestScoreDiff.textContent = result.best_move_score_diff_norm.toFixed(2);
@@ -391,9 +411,26 @@
                 game.ucis = ucis;
                 game.fens = fens;
                 game.idx = -1;
+                game.bestMoveUcis = [];
+                game.bestMoveSans = [];
 
                 setStatus(`PGN loaded (${sanMoves.length} plies)`);
                 updateHeaderUI();
+
+                engine.analyzePGN({
+                    pgn: text,
+                    depth: Math.max(6, Math.min(30, Number(el.depth.value) || 16)),
+                    onMoveAnalyzed: (result) => {
+                        console.warn(`Analyzed move ${result.move} at ${result.fen}:`, result);
+                        while (game.bestMoveSans.length < result.moveIndex) {
+                            // Fill in nulls for skipped moves
+                            game.bestMoveSans.push(null);
+                        }
+                        game.bestMoveSans[result.moveIndex] = result.analysis.best_move.san || null;
+                        game.bestMoveUcis[result.moveIndex] = move_to_uci(result.analysis.best_move) || null;
+                    }
+                });
+
                 await goStart();
             } catch (e) {
                 console.error(e);
@@ -411,7 +448,7 @@
             setStatus('Idle');
             updateHeaderUI();
             // Empty initial board
-            await renderBoard(getFenAt(-1), null);
+            await renderBoard({ fen: getFenAt(-1), lastmove_uci: null, bestmove_uci: null });
         }
 
         // Wire UI

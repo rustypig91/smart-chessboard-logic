@@ -83,6 +83,7 @@ async function createStockfishEngine(options = {}) {
 
     worker.onmessage = (ev) => {
         const text = typeof ev.data === 'string' ? ev.data : String(ev.data);
+        console.log('Stockfish:', text);
         if (text === 'uciok') {
             // continue with isready
         }
@@ -129,7 +130,7 @@ async function createStockfishEngine(options = {}) {
                     fen: currentAnalyzeFen,
                 };
 
-                cache[finalResult.fen] = finalResult;
+                cache[finalResult.fen][finalResult.info.depth] = finalResult;
 
                 current.resolve(finalResult);
                 current.callback && current.callback(finalResult);
@@ -154,8 +155,8 @@ async function createStockfishEngine(options = {}) {
         }
 
         // Short-circuit on cache hit: invoke callback with a snapshot and return a snapshot
-        if (fen in cache) {
-            const cached = cache[fen];
+        if (fen in cache && depth in cache[fen]) {
+            const cached = cache[fen][depth];
             const snapshot = {
                 info: cached.info ? { ...cached.info } : null,
                 bestmove: { ...cached.bestmove },
@@ -164,6 +165,8 @@ async function createStockfishEngine(options = {}) {
             };
             callback(snapshot);
             return Promise.resolve(snapshot);
+        } else {
+            cache[fen] = {};
         }
 
         // Cancel any previous analysis

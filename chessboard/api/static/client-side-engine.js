@@ -76,16 +76,8 @@ async function createStockfishEngine(options = {}) {
 
     function post(cmd) { worker && worker.postMessage(cmd); }
 
-    let lastAnalyzeResult = {
-        info: null,
-        bestmove: {
-            move: null,
-            ponder: null,
-            raw: null,
-        },
-        done: false,
-        fen: null,
-    }
+    let lastAnalyzeInfo = null;
+    let currentAnalyzeFen = null;
 
     let cache = {};
 
@@ -104,14 +96,14 @@ async function createStockfishEngine(options = {}) {
             const info = parseInfoLine(text);
             // Prefer multipv 1 for display/aggregation
             if (current) {
-                lastAnalyzeResult.info = info;
+                lastAnalyzeInfo = info;
 
                 // Stream a snapshot to the callback (not the mutable reference)
                 current.callback && current.callback({
                     info,
-                    bestmove: { ...lastAnalyzeResult.bestmove },
+                    bestmove: null,
                     done: false,
-                    fen: lastAnalyzeResult.fen,
+                    fen: currentAnalyzeFen,
                 });
 
                 if (info.multipv === 1) {
@@ -124,18 +116,17 @@ async function createStockfishEngine(options = {}) {
             const move = parts[1] || '-';
             const ponder = parts[3] || null;
 
-            lastAnalyzeResult.bestmove.move = move;
-            lastAnalyzeResult.bestmove.ponder = ponder;
-            lastAnalyzeResult.bestmove.raw = text;
-            lastAnalyzeResult.done = true;
-
             if (current) {
                 // Final snapshot result
                 const finalResult = {
-                    info: lastAnalyzeResult.info ? { ...lastAnalyzeResult.info } : null,
-                    bestmove: { ...lastAnalyzeResult.bestmove },
+                    info: lastAnalyzeInfo ? { ...lastAnalyzeInfo } : null,
+                    bestmove: {
+                        move: move,
+                        ponder: ponder,
+                        raw: text
+                    },
                     done: true,
-                    fen: lastAnalyzeResult.fen,
+                    fen: currentAnalyzeFen,
                 };
 
                 cache[finalResult.fen] = finalResult;
@@ -145,12 +136,8 @@ async function createStockfishEngine(options = {}) {
                 current = null;
 
                 // Reset internal mutable holder
-                lastAnalyzeResult = {
-                    info: null,
-                    bestmove: { move: null, ponder: null, raw: null },
-                    done: false,
-                    fen: null,
-                };
+                lastAnalyzeInfo = null;
+                currentAnalyzeFen = null;
             }
         }
     };
@@ -177,11 +164,7 @@ async function createStockfishEngine(options = {}) {
             };
             callback(snapshot);
             return Promise.resolve(snapshot);
-        } else {
-            console.error('Cache miss for fen:', fen);
         }
-
-        console.log('analyze called with', fen, depth);
 
         // Cancel any previous analysis
         if (current) {
@@ -194,7 +177,7 @@ async function createStockfishEngine(options = {}) {
         post('isready');
         await ready(); // wait again to ensure options reset
 
-        lastAnalyzeResult.fen = fen;
+        currentAnalyzeFen = fen;
 
         if (fen === 'startpos') {
             post('position startpos');
@@ -220,8 +203,8 @@ async function createStockfishEngine(options = {}) {
         const chess = new Chess(fen);
 
         const starting_fen = chess.fen();
-        const moveResult = chess.move(move, { sloppy: true });
-        if (moveResult === null) {
+        const move_san = chess.move(move, { sloppy: true })?.san;
+        if (move_san === null) {
             throw new Error('Invalid move: ' + move + ' fen: ' + fen);
         }
         const new_fen = chess.fen();
@@ -234,7 +217,7 @@ async function createStockfishEngine(options = {}) {
         });
 
         chess.undo();
-        chess.move(start_fen_result.bestmove.move, { sloppy: true });
+        const best_move_san = chess.move(start_fen_result.bestmove.move, { sloppy: true }).san;
         const best_move_fen = chess.fen();
 
         // Analyze after move
@@ -250,6 +233,22 @@ async function createStockfishEngine(options = {}) {
             callback: () => { }
         });
 
+        if (!start_fen_result.info || !end_fen_result.info || !best_move_result.info) {
+            throw new Error('Failed to get complete analysis info for move: ' + move_san);
+        }
+        if (best_move_result.info.type !== 'cp' || end_fen_result.info.type !== 'cp' || start_fen_result.info.type !== 'cp') {
+            throw new Error('Invalid score type in analysis info for move: ' + move_san + '(got types: ' +
+                start_fen_result.info.type + ', ' + end_fen_result.info.type + ', ' + best_move_result.info.type + ')');
+        }
+
+        best_move_score = (best_move_result.info.score.value / 100).toFixed(2);
+        move_score = (end_fen_result.info.score.value / 100).toFixed(2);
+        pre_move_score = (start_fen_result.info.score.value / 100).toFixed(2);
+
+        score_diff = pre_move_score - move_score;
+        best_move_score_diff = pre_move_score - best_move_score;
+        is_blunder = score_diff >= 1.5
+
         return {
             start_result: start_fen_result,
             end_result: end_fen_result,
@@ -257,16 +256,21 @@ async function createStockfishEngine(options = {}) {
             best_move_fen: best_move_fen,
             start_fen: starting_fen,
             end_fen: new_fen,
-            move: move,
-            best_move: moveResult,
-            move_san: moveResult.san,
+            move: move_san,
+            best_move: best_move_san,
+            score:
+                best_move_score: best_move_result.info ? (
+                    best_move_result.info.score.type === 'cp' ?
+                        (best_move_result.info.score.value / 100).toFixed(2) :
+                        `Mate in ${best_move_result.info.score.value}`
+                ) : null,
             score_diff: end_fen_result.info && start_fen_result.info ? {
                 type: end_fen_result.info.score.type,
-                value: end_fen_result.info.score.value - start_fen_result.info.score.value
+                value: (end_fen_result.info.score.value - start_fen_result.info.score.value) / 100
             } : null,
             best_move_score_diff: best_move_result.info && end_fen_result.info ? {
                 type: best_move_result.info.score.type,
-                value: best_move_result.info.score.value - end_fen_result.info.score.value
+                value: (best_move_result.info.score.value - end_fen_result.info.score.value) / 100
             } : null,
             blunder: end_fen_result.info && start_fen_result.info && best_move_result.info ? (
                 (start_fen_result.info.score.type === 'cp' && end_fen_result.info.score.type === 'cp' && best_move_result.info.score.type === 'cp') ?
@@ -280,7 +284,6 @@ async function createStockfishEngine(options = {}) {
 
     async function analyzePGN({ pgn, depth = 16, onMoveAnalyzed = null } = {}) {
         const chess = new Chess();
-        console.log('Parsing PGN:', pgn);
         const success = chess.load_pgn(pgn);
         if (!success) {
             throw new Error('Invalid PGN string');
@@ -291,7 +294,6 @@ async function createStockfishEngine(options = {}) {
         const results = [];
 
         for (const move of moves) {
-            console.log('PGN Move:', move);
             const fenBeforeMove = chess.fen();
 
             // Analyze position before the move

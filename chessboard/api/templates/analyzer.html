@@ -426,6 +426,7 @@
 
                 cancelPGN = false;
                 const text = await file.text();
+                plyIndex = 0;
                 engine.analyzePGN({
                     pgn: text,
                     depth: Math.max(6, Math.min(50, Number(el.depth.value) || 16)),
@@ -437,9 +438,10 @@
                         // el.pgnReport.scrollTop = el.pgnReport.scrollHeight;
 
                         // el.eval.textContent = result.score;
-                        // el.best.textContent = result.best;
+                        // el.best.textContent = result.best_move;
                         // el.pv.textContent = pvShort;
                         setStatus(`Analyzing PGN (${plyIndex + 1}/...)...`);
+                        plyIndex += 1;
                     }
                     // onComplete: () => {
                     //     if (cancelPGN) {

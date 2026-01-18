@@ -160,7 +160,7 @@ async function createStockfishEngine(options = {}) {
         console.warn('Cache is: ', cache);
         if (fen in cache) {
             callback(cache[fen]);
-            return;
+            return Promise.resolve(cache[fen]);
         } else {
             console.error('Cache miss for fen:', fen);
         }
@@ -206,14 +206,16 @@ async function createStockfishEngine(options = {}) {
         return p;
     }
 
-    async function analyzeMove(fen, move, depth = 32) {
+    async function analyzeMove({ fen, move, depth = 32, callback } = {}) {
+
         const chess = new Chess(fen);
+
         const starting_fen = chess.fen();
         const moveResult = chess.move(move, { sloppy: true });
         if (moveResult === null) {
-            throw new Error('Invalid move: ' + move);
+            throw new Error('Invalid move: ' + move + ' fen: ' + fen);
         }
-        const newFen = chess.fen();
+        const new_fen = chess.fen();
 
         // Analyze starting position
         const start_fen_result = await analyze({
@@ -222,19 +224,97 @@ async function createStockfishEngine(options = {}) {
             callback: () => { } // No-op or handle info updates if needed
         });
 
+        chess.undo();
+        chess.move(start_fen_result.bestmove.move, { sloppy: true });
+        const best_move_fen = chess.fen();
+
         // Analyze after move
         const end_fen_result = await analyze({
-            fen: newFen,
+            fen: new_fen,
+            depth: depth,
+            callback: () => { }
+        });
+
+        const best_move_result = await analyze({
+            fen: best_move_fen,
             depth: depth,
             callback: () => { }
         });
 
         return {
-            start_fen: start_fen_result,
-            end_fen: end_fen_result
-        };
+            start_result: start_fen_result,
+            end_result: end_fen_result,
+            best_move_result: best_move_result,
+            best_move_fen: best_move_fen,
+            start_fen: starting_fen,
+            end_fen: new_fen,
+            move: move,
+            best_move: moveResult,
+            move_san: moveResult.san,
+            score_diff: end_fen_result.info && start_fen_result.info ? {
+                type: end_fen_result.info.score.type,
+                value: end_fen_result.info.score.value - start_fen_result.info.score.value
+            } : null,
+            best_move_score_diff: best_move_result.info && end_fen_result.info ? {
+                type: best_move_result.info.score.type,
+                value: best_move_result.info.score.value - end_fen_result.info.score.value
+            } : null,
+            blunder: end_fen_result.info && start_fen_result.info && best_move_result.info ? (
+                (start_fen_result.info.score.type === 'cp' && end_fen_result.info.score.type === 'cp' && best_move_result.info.score.type === 'cp') ?
+                    (start_fen_result.info.score.value - end_fen_result.info.score.value >= 100 &&
+                        best_move_result.info.score.value - end_fen_result.info.score.value >= 100)
+                    : false
+            ) : false,
+        }
     }
 
+
+    async function analyzePGN({ pgn, depth = 16, onMoveAnalyzed = null } = {}) {
+        const chess = new Chess();
+        console.log('Parsing PGN:', pgn);
+        const success = chess.load_pgn(pgn);
+        if (!success) {
+            throw new Error('Invalid PGN string');
+        }
+        const moves = chess.history({ verbose: true }).map(m => m.san);
+        chess.reset(); // Reset to start position
+
+        const results = [];
+
+        for (const move of moves) {
+            console.log('PGN Move:', move);
+            const fenBeforeMove = chess.fen();
+
+            // Analyze position before the move
+            const analysisResult = await analyzeMove({
+                fen: fenBeforeMove,
+                move: move,
+                depth: depth,
+                callback: () => { }
+            });
+
+            console.log('Analyzed move:', move, 'Result:', analysisResult);
+
+            results.push({
+                move: move,
+                fen: fenBeforeMove,
+                analysis: analysisResult
+            });
+
+            if (onMoveAnalyzed) {
+                onMoveAnalyzed({
+                    move: move,
+                    fen: fenBeforeMove,
+                    analysis: analysisResult
+                });
+            }
+
+            // Make the move on the board
+            chess.move(move, { sloppy: true });
+        }
+
+        return results;
+    }
 
     function stop() { post('stop'); if (current) { current.reject?.(new Error('stopped')); current = null; } }
 
@@ -242,7 +322,7 @@ async function createStockfishEngine(options = {}) {
 
     function terminate() { try { worker.terminate(); } catch (_) { } }
 
-    const engine = { ready, analyze, stop, setOption, terminate, analyzeMoves, getBestMove };
+    const engine = { ready, analyze, stop, setOption, terminate, analyzeMove, analyzePGN };
     if (typeof window !== 'undefined') { window.createStockfishEngine = createStockfishEngine; }
     return engine;
 }

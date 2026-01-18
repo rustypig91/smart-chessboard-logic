@@ -7,8 +7,11 @@
     <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.13.4/chess.min.js"
         integrity="sha512-5nNBISa4noe7B2/Me0iHkkt7mUvXG9xYoeXuSrr8OmCQIxd5+Qwxhjy4npBLIuxGNQKwew/9fEup/f2SUVkkXg=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script> -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.2/chess.min.js"
+    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.2/chess.min.js"
         integrity="sha512-6DkY4K5rOdr4RIh9PkktHCjhQqdG1VSFPmfzc0prVozTPCfpOJUdcTXc3dFsBhDSfRaxgLkagn1f6TyYDBNamQ=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script> -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.2/chess.js"
+        integrity="sha512-46pfErGq3YBnmXdl83JmFf2bW4nbtjw5PYGwO+biyXN6tgfeN0K+qjgiAjS4FA0ipfDZwyZaBK3LJwLFtzBzDA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <title>Chessboard Analyzer</title>
     <style>
@@ -190,6 +193,18 @@
                 <button id="reset">Reset Engine</button>
             </div>
 
+            <!-- New: PGN upload + analysis -->
+            <label for="pgnFile" style="margin-top:10px">PGN</label>
+            <input id="pgnFile" type="file" accept=".pgn,.txt,text/plain" />
+
+            <div class="row" style="margin-top:8px">
+                <button id="loadPgn">Load PGN (final position)</button>
+                <button id="analyzePgn">Analyze PGN (all plies)</button>
+            </div>
+
+            <label for="pgnReport" style="margin-top:10px">PGN Analysis</label>
+            <textarea id="pgnReport" rows="8" class="mono" placeholder="Results will appear here"></textarea>
+
             <div style="margin-top:10px">
                 <div class="stat">
                     <div class="muted">Status</div>
@@ -225,6 +240,11 @@
             eval: document.getElementById('eval'),
             best: document.getElementById('best'),
             pv: document.getElementById('pv'),
+            // New elements
+            pgnFile: document.getElementById('pgnFile'),
+            loadPgn: document.getElementById('loadPgn'),
+            analyzePgn: document.getElementById('analyzePgn'),
+            pgnReport: document.getElementById('pgnReport'),
         };
 
         // Render board from FEN via server SVG endpoint (no moves applied)
@@ -244,6 +264,7 @@
         function setStatus(s) { el.status.textContent = s; }
 
         let engine = null;
+        let cancelPGN = false; // cancel flag for PGN batch analysis
 
         async function initEngine() {
             if (engine) { try { engine.terminate && engine.terminate(); } catch (e) { } }
@@ -317,7 +338,172 @@
         }
 
 
-        function stop() { engine.stop(); setStatus('Stopped'); }
+        // Helper: derive starting FEN from PGN headers if present
+        function startingFenFromHeaders(headers) {
+            if (!headers) return undefined;
+            if (headers.SetUp === '1' && headers.FEN) return headers.FEN;
+            return undefined;
+        }
+
+        // Parse a PGN string into headers, SAN moves, final FEN, and FENs per ply
+        function parsePGN(pgnText) {
+            const chess = new Chess();
+            console.log('Parsing PGN:', pgnText);
+            const ok = chess.load_pgn(pgnText, { sloppy: true });
+            if (!ok) throw new Error('Invalid PGN content');
+
+            const headers = chess.header();
+            const sanMoves = chess.history(); // array of SAN strings
+            const finalFEN = chess.fen();
+
+            // Rebuild FENs after each ply, respecting non-standard starting positions
+            const startFEN = startingFenFromHeaders(headers);
+            const replay = new Chess(startFEN);
+            const fens = [];
+            sanMoves.forEach((san) => {
+                replay.move(san);
+                fens.push(replay.fen());
+            });
+
+            return { headers, sanMoves, finalFEN, fens };
+        }
+
+        // Promise-based single-position analysis helper
+        function analyzeFenOnce(fen, depth) {
+            return new Promise((resolve, reject) => {
+                if (!engine) return reject(new Error('Engine not initialized'));
+                let last = { info: {}, bestmove: {} };
+
+                engine.analyze({
+                    fen,
+                    depth: Math.max(6, Math.min(50, Number(depth) || 16)),
+                    callback: (result) => {
+                        last = result;
+                        if (result.done) {
+                            const score = result.info?.score
+                                ? (result.info.score.type === 'cp'
+                                    ? (result.info.score.value / 100).toFixed(2)
+                                    : ('#' + result.info.score.value))
+                                : '-';
+                            resolve({
+                                score,
+                                best: result.bestmove?.move || '-',
+                                pv: (result.info?.pv || []).join(' '),
+                                depth: result.info?.depth ?? null
+                            });
+                        }
+                    }
+                });
+            });
+        }
+
+        async function loadPGN() {
+            try {
+                const file = el.pgnFile.files && el.pgnFile.files[0];
+                if (!file) { alert('Please choose a PGN file first.'); return; }
+                const text = await file.text();
+                const { headers, finalFEN, sanMoves } = parsePGN(text);
+
+                el.fen.value = finalFEN;
+                await renderBoard(finalFEN);
+                setStatus('PGN loaded (final position)');
+
+                // Minimal report
+                const hdrs = Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join('\n');
+                el.pgnReport.value =
+                    `Loaded PGN\nMoves: ${sanMoves.length}\n\nHeaders:\n${hdrs}`;
+            } catch (err) {
+                console.error(err);
+                alert('Failed to load PGN: ' + err.message);
+            }
+        }
+
+        async function analyzePGNFile() {
+            try {
+                const file = el.pgnFile.files && el.pgnFile.files[0];
+                if (!file) { alert('Please choose a PGN file first.'); return; }
+                if (!engine) { alert('Engine not initialized.'); return; }
+
+                cancelPGN = false;
+                const text = await file.text();
+                engine.analyzePGN({
+                    pgn: text,
+                    depth: Math.max(6, Math.min(50, Number(el.depth.value) || 16)),
+                    onMoveAnalyzed: (result) => {
+                        // const pvShort = result.pv.split(' ').slice(0, 12).join(' '); // trim PV for readability
+                        // const line = `${plyIndex + 1}. ${sanMove} | eval: ${result.score} | best: ${result.best} | pv: ${pvShort}`;
+
+                        // el.pgnReport.value += line + '\n';
+                        // el.pgnReport.scrollTop = el.pgnReport.scrollHeight;
+
+                        // el.eval.textContent = result.score;
+                        // el.best.textContent = result.best;
+                        // el.pv.textContent = pvShort;
+                        setStatus(`Analyzing PGN (${plyIndex + 1}/...)...`);
+                    }
+                    // onComplete: () => {
+                    //     if (cancelPGN) {
+                    //         setStatus('PGN analysis stopped');
+                    //     } else {
+                    //         setStatus('PGN analysis done');
+                    //     }
+                    // },
+                    // onError: (err) => {
+                    //     console.error(err);
+                    //     alert('Failed to analyze PGN: ' + err.message);
+                    // }
+                });
+            } catch (err) {
+                console.error(err);
+                alert('Failed to analyze PGN: ' + err.message);
+            }
+            //     const { headers, sanMoves, fens } = parsePGN(text);
+            //     const depth = Number(el.depth.value) || 16;
+
+            //     const total = fens.length;
+            //     if (total === 0) { alert('No moves found in PGN.'); return; }
+
+            //     el.pgnReport.value = '';
+            //     setStatus(`Analyzing PGN (0/${total})...`);
+
+            //     // Analyze each ply sequentially
+            //     for (let i = 0; i < total; i++) {
+            //         if (cancelPGN) break;
+
+            //         const fen = fens[i];
+            //         // show the current position (optional; comment out if too slow)
+            //         // await renderBoard(fen);
+
+            //         const res = await analyzeFenOnce(fen, depth);
+            //         const moveSAN = sanMoves[i];
+            //         const pvShort = res.pv.split(' ').slice(0, 12).join(' '); // trim PV for readability
+            //         const line = `${i + 1}. ${moveSAN} | eval: ${res.score} | best: ${res.best} | pv: ${pvShort}`;
+
+            //         el.pgnReport.value += line + '\n';
+            //         el.pgnReport.scrollTop = el.pgnReport.scrollHeight;
+
+            //         el.eval.textContent = res.score;
+            //         el.best.textContent = res.best;
+            //         el.pv.textContent = pvShort;
+            //         setStatus(`Analyzing PGN (${i + 1}/${total})...`);
+            //     }
+
+            //     if (cancelPGN) {
+            //         setStatus('PGN analysis stopped');
+            //     } else {
+            //         setStatus('PGN analysis done');
+            //     }
+            // } catch (err) {
+            //     console.error(err);
+            //     alert('Failed to analyze PGN: ' + err.message);
+            // }
+        }
+
+        function stop() {
+            try { engine && engine.stop && engine.stop(); } catch (e) { }
+            cancelPGN = true;
+            setStatus('Stopped');
+        }
 
         function resetEngine() { initEngine(); setStatus('Idle'); el.eval.textContent = '-'; el.best.textContent = '-'; el.pv.textContent = '-'; }
 
@@ -331,6 +517,10 @@
             renderBoard(el.fen.value);
         };
         el.renderFen.onclick = () => { const fen = el.fen.value.trim(); if (fen) renderBoard(fen); };
+
+        // New: PGN handlers
+        el.loadPgn.onclick = loadPGN;
+        el.analyzePgn.onclick = analyzePGNFile;
 
         // Initialize
         initEngine();

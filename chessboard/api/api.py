@@ -92,6 +92,12 @@ def analyse() -> str:
     return render_template('analyse.html')
 
 
+@app.route('/analyzer')
+def analyzer() -> str:
+    """Client-side analyzer page using Stockfish WASM"""
+    return render_template('analyzer.html')
+
+
 @app.route('/xiao_firmware')
 def xiao_firmware() -> str:
     """Firmware updater page"""

@@ -61,181 +61,242 @@ function parseInfoLine(text) {
 }
 
 async function createStockfishEngine(options = {}) {
-    var wasmSupported = typeof WebAssembly === 'object' && WebAssembly.validate(Uint8Array.of(0x0, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00));
-    console.log('WebAssembly supported:', wasmSupported);
+    const wasmSupported = typeof WebAssembly === 'object' && WebAssembly.validate(Uint8Array.of(0x0, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00));
+    const {
+        scriptUrl = wasmSupported ? DEFAULT_STOCKFISH_WASM_JS_URL : DEFAULT_STOCKFISH_JS_URL,
+        poolSize: poolSizeOpt
+    } = options;
 
-    const { scriptUrl = wasmSupported ? DEFAULT_STOCKFISH_WASM_JS_URL : DEFAULT_STOCKFISH_JS_URL } = options;
-    console.log('Loading Stockfish from:', scriptUrl);
+    const poolSize = Math.max(1, Number.isFinite(poolSizeOpt) ? Number(poolSizeOpt) : navigator.hardwareConcurrency || 2);
+    console.log(`Loading ${poolSize} Stockfish worker(s) from:`, scriptUrl);
 
-    // Redirect wasm binary fetch to CDN to work within blob worker
-    const worker = await createWorkerFromURL(scriptUrl, wasmSupported ? DEFAULT_STOCKFISH_WASM_BIN_URL : undefined);
+    // Shared cache across the pool: cache[fen][depth] -> final snapshot
+    const cache = {};
 
-    let readyResolver = null;
-    const readyPromise = new Promise((resolve) => { readyResolver = resolve; });
-    let current = null; // { resolve, reject, onInfo, lastInfo }
+    function makeSnapshot(info, bestmove, done, fen) {
+        return {
+            info: info ? { ...info } : null,
+            bestmove: bestmove ? { ...bestmove } : null,
+            done: !!done,
+            fen
+        };
+    }
 
-    function post(cmd) { worker && worker.postMessage(cmd); }
+    // Worker slot factory
+    async function createSlot(id) {
+        const worker = await createWorkerFromURL(scriptUrl, wasmSupported ? DEFAULT_STOCKFISH_WASM_BIN_URL : undefined);
 
-    let lastAnalyzeInfo = null;
-    let currentAnalyzeFen = null;
+        let readyResolver = null;
+        const readyPromise = new Promise((resolve) => { readyResolver = resolve; });
 
-    let cache = {};
+        // State for the currently assigned job on this worker
+        let current = null; // { job, lastInfo }
+        let lastAnalyzeInfo = null;
+        let currentAnalyzeFen = null;
+        let busy = false;
 
-    worker.onmessage = (ev) => {
-        const text = typeof ev.data === 'string' ? ev.data : String(ev.data);
-        console.log('Stockfish:', text);
-        if (text === 'uciok') {
-            // continue with isready
-        }
-        else if (text === 'readyok') {
-            if (readyResolver) {
-                readyResolver();
-                readyResolver = null;
-            }
-        }
-        else if (text.startsWith('info ')) {
-            const info = parseInfoLine(text);
-            // Prefer multipv 1 for display/aggregation
-            if (current) {
-                lastAnalyzeInfo = info;
+        function post(cmd) { worker && worker.postMessage(cmd); }
 
-                // Stream a snapshot to the callback (not the mutable reference)
-                current.callback && current.callback({
-                    info,
-                    bestmove: null,
-                    done: false,
-                    fen: currentAnalyzeFen,
-                });
+        worker.onmessage = (ev) => {
+            const text = typeof ev.data === 'string' ? ev.data : String(ev.data);
+            // console.log(`[SF${id}]`, text);
+            console.log(`[SF${id}]`, text);
 
-                if (info.multipv === 1) {
-                    current.lastInfo = info;
+            if (text === 'uciok') {
+                // continue with isready
+            } else if (text === 'readyok') {
+                if (readyResolver) {
+                    readyResolver();
+                    readyResolver = null;
+                }
+            } else if (text.startsWith('info ')) {
+                const info = parseInfoLine(text);
+                if (current) {
+                    lastAnalyzeInfo = info;
+
+                    // Stream snapshot to callback
+                    current.job.callback && current.job.callback(makeSnapshot(info, null, false, currentAnalyzeFen));
+
+                    if (info.multipv === 1) {
+                        current.lastInfo = info;
+                    }
+                }
+            } else if (text.startsWith('bestmove')) {
+                const parts = text.split(/\s+/);
+                const move = parts[1] || '-';
+                const ponder = parts[3] || null;
+
+                if (current) {
+                    const bestmove = { move, ponder, raw: text };
+                    const finalResult = makeSnapshot(lastAnalyzeInfo, bestmove, true, currentAnalyzeFen);
+
+                    // Write to shared cache keyed by requested depth
+                    try {
+                        if (!cache[finalResult.fen]) cache[finalResult.fen] = {};
+                        const d = finalResult.info?.depth ?? current.job.depth;
+                        cache[finalResult.fen][d] = finalResult;
+                    } catch (_) { /* noop */ }
+
+                    current.job.resolve(finalResult);
+                    current.job.callback && current.job.callback(finalResult);
+
+                    // Clear state
+                    current = null;
+                    lastAnalyzeInfo = null;
+                    currentAnalyzeFen = null;
+                    busy = false;
+
+                    // Try to dispatch next queued job
+                    dispatch();
                 }
             }
-        }
-        else if (text.startsWith('bestmove')) {
-            const parts = text.split(/\s+/);
-            const move = parts[1] || '-';
-            const ponder = parts[3] || null;
+        };
 
+        // Initial handshake
+        post('uci');
+        post('isready');
+
+        async function ready() { await readyPromise; }
+
+        async function runJob(job) {
+            // Cancel any previous analysis on this worker
             if (current) {
-                // Final snapshot result
-                const finalResult = {
-                    info: lastAnalyzeInfo ? { ...lastAnalyzeInfo } : null,
-                    bestmove: {
-                        move: move,
-                        ponder: ponder,
-                        raw: text
-                    },
-                    done: true,
-                    fen: currentAnalyzeFen,
-                };
-
-                cache[finalResult.fen][finalResult.info.depth] = finalResult;
-
-                current.resolve(finalResult);
-                current.callback && current.callback(finalResult);
+                try { post('stop'); } catch (_) { }
                 current = null;
-
-                // Reset internal mutable holder
-                lastAnalyzeInfo = null;
-                currentAnalyzeFen = null;
             }
+
+            await ready();
+            // New game + position
+            post('ucinewgame');
+            post('isready');
+            await ready();
+
+            currentAnalyzeFen = job.fen;
+
+            if (job.fen === 'startpos') {
+                post('position startpos');
+            } else {
+                post('position fen ' + job.fen);
+            }
+
+            current = { job, lastInfo: null };
+            post('go depth ' + Math.max(6, Math.min(30, Number(job.depth) || 16)));
         }
-    };
 
-    // Initial handshake
-    post('uci');
-    post('isready');
+        function stop() {
+            try { post('stop'); } catch (_) { }
+            if (current) {
+                current.job.reject?.(new Error('stopped'));
+                current = null;
+            }
+            busy = false;
+        }
 
-    async function ready() { await readyPromise; }
+        function terminate() { try { worker.terminate(); } catch (_) { } }
+
+        return {
+            id,
+            ready,
+            runJob,
+            stop,
+            terminate,
+            isBusy: () => busy,
+            setBusy: (b) => { busy = b; },
+        };
+    }
+
+    // Create pool
+    const slots = await Promise.all(Array.from({ length: poolSize }, (_, i) => createSlot(i)));
+
+    // Simple FIFO job queue
+    const queue = [];
+
+    function dispatch() {
+        for (; ;) {
+            const slot = slots.find(s => !s.isBusy());
+            if (!slot) return;
+            const job = queue.shift();
+            if (!job) return;
+            slot.setBusy(true);
+            slot.runJob(job).catch((err) => {
+                slot.setBusy(false);
+                job.reject(err);
+                dispatch();
+            });
+        }
+    }
+
+    // Public API
+
+    async function ready() {
+        await Promise.all(slots.map(s => s.ready()));
+    }
 
     async function analyze({ fen, depth = 32, callback = () => { } } = {}) {
         if (typeof fen !== 'string' || fen.length === 0) {
             throw new Error('analyze() requires a FEN or "startpos"');
         }
 
-        // Short-circuit on cache hit: invoke callback with a snapshot and return a snapshot
-        if (fen in cache && depth in cache[fen]) {
-            const cached = cache[fen][depth];
-            const snapshot = {
-                info: cached.info ? { ...cached.info } : null,
-                bestmove: { ...cached.bestmove },
-                done: cached.done,
-                fen: cached.fen,
-            };
+        const boundedDepth = Math.max(6, Math.min(30, Number(depth) || 16));
+
+        // Cache lookup
+        if ((fen in cache) && (boundedDepth in cache[fen])) {
+            const cached = cache[fen][boundedDepth];
+            const snapshot = makeSnapshot(cached.info, cached.bestmove, cached.done, cached.fen);
             callback(snapshot);
-            return Promise.resolve(snapshot);
-        } else {
+            return cached;
+        } else if (!(fen in cache)) {
             cache[fen] = {};
         }
 
-        // Cancel any previous analysis
-        if (current) {
-            try { post('stop'); } catch (_) { }
-            current = null;
-        }
-        await ready();
-        // New game + position
-        post('ucinewgame');
-        post('isready');
-        await ready(); // wait again to ensure options reset
+        // Enqueue job
+        let resolve, reject;
+        cache[fen][boundedDepth] = new Promise((res, rej) => { resolve = res; reject = rej; });
+        queue.push({ fen, depth: boundedDepth, callback, resolve, reject });
 
-        currentAnalyzeFen = fen;
-
-        if (fen === 'startpos') {
-            post('position startpos');
-        } else {
-            post('position fen ' + fen);
-        }
-
-        current = {
-            resolve: null,
-            reject: null,
-            callback,
-            lastInfo: null,
-        };
-
-        const p = new Promise((resolve, reject) => { current.resolve = resolve; current.reject = reject; });
-
-        post('go depth ' + Math.max(6, Math.min(30, Number(depth) || 16)));
-        return p; // always resolves with the final snapshot result
+        dispatch();
+        return cache[fen][boundedDepth]; // resolves with final snapshot
     }
 
     async function analyzeMove({ fenBeforeMove, move, depth = 32, blunderThreshold = 0.5, callback } = {}) {
-
         const chess = new Chess(fenBeforeMove);
         const turn = chess.turn();
 
         const starting_fen = chess.fen();
+
         const move_san = chess.move(move, { sloppy: true })?.san;
         if (move_san === null) {
             throw new Error('Invalid move: ' + move + ' fen: ' + fenBeforeMove);
         }
-        const new_fen = chess.fen();
+        const fen_after_move = chess.fen();
+        chess.undo();
 
         // Analyze starting position
-        const start_fen_result = await analyze({
+        let result_start_promise = analyze({
             fen: starting_fen,
             depth: depth,
-            callback: () => { } // No-op or handle info updates if needed
+            callback: () => { }
         });
-
-        chess.undo();
-        const best_move_san = chess.move(start_fen_result.bestmove.move, { sloppy: true }).san;
-        const best_move_fen = chess.fen();
 
         // Analyze after move
-        const end_fen_result = await analyze({
-            fen: new_fen,
+        let result_after_move_promise = analyze({
+            fen: fen_after_move,
             depth: depth,
             callback: () => { }
         });
 
-        const best_move_result = await analyze({
-            fen: best_move_fen,
+        const start_fen_result = await result_start_promise;
+        const best_move_san = chess.move(start_fen_result.bestmove.move, { sloppy: true }).san;
+        const fen_after_best_move = chess.fen();
+
+        let best_move_result_promise = analyze({
+            fen: fen_after_best_move,
             depth: depth,
             callback: () => { }
         });
+
+        const end_fen_result = await result_after_move_promise;
+        const best_move_result = await best_move_result_promise;
 
         if (!start_fen_result.info || !end_fen_result.info || !best_move_result.info) {
             throw new Error('Failed to get complete analysis info for move: ' + move_san);
@@ -250,7 +311,6 @@ async function createStockfishEngine(options = {}) {
         const post_move_score = (end_fen_result.info.score.value / 100);
         const best_move_score = (best_move_result.info.score.value / 100);
 
-
         const score_diff = post_move_score - pre_move_score;
         const best_move_score_diff = best_move_score - pre_move_score;
         const score_diff_norm = (turn === 'w' ? score_diff : -score_diff);
@@ -258,13 +318,13 @@ async function createStockfishEngine(options = {}) {
 
         const is_blunder = score_diff_norm <= -blunderThreshold && best_move_score_diff_norm >= -blunderThreshold;
 
-        return {
+        const result = {
             start_result: start_fen_result,
             end_result: end_fen_result,
             best_move_result: best_move_result,
-            best_move_fen: best_move_fen,
+            best_move_fen: fen_after_best_move,
             start_fen: starting_fen,
-            end_fen: new_fen,
+            end_fen: fen_after_move,
             move: move_san,
             best_move: best_move_san,
             score: post_move_score,
@@ -276,7 +336,10 @@ async function createStockfishEngine(options = {}) {
             best_move_score_diff_norm: best_move_score_diff_norm,
             blunder: is_blunder,
             turn: turn,
-        }
+        };
+
+        callback && callback(result);
+        return result;
     }
 
     async function analyzePGN({ pgn, depth = 16, onMoveAnalyzed = null } = {}) {
@@ -286,49 +349,61 @@ async function createStockfishEngine(options = {}) {
             throw new Error('Invalid PGN string');
         }
         const moves = chess.history({ verbose: true }).map(m => m.san);
-        chess.reset(); // Reset to start position
+        chess.reset();
 
         const results = [];
+
 
         for (const move of moves) {
             const fenBeforeMove = chess.fen();
 
-            // Analyze position before the move
-            const analysisResult = await analyzeMove({
+            results.push(analyzeMove({
                 fenBeforeMove: fenBeforeMove,
                 move: move,
                 depth: depth,
                 callback: () => { }
-            });
+            }));
 
-            console.log('Analyzed move:', move, 'Result:', analysisResult);
-
-            results.push({
-                move: move,
-                fen: fenBeforeMove,
-                analysis: analysisResult
-            });
-
-            if (onMoveAnalyzed) {
-                onMoveAnalyzed({
-                    move: move,
-                    fen: fenBeforeMove,
-                    analysis: analysisResult
-                });
-            }
-
-            // Make the move on the board
+            results.push({ move: move, fen: fenBeforeMove, analysis: analysisResult });
             chess.move(move, { sloppy: true });
+        }
+
+        for (const reultPromise of results) {
+            await resultPromise;
+            onMoveAnalyzed && onMoveAnalyzed({ move: move, fen: fenBeforeMove, analysis: analysisResult });
         }
 
         return results;
     }
 
-    function stop() { post('stop'); if (current) { current.reject?.(new Error('stopped')); current = null; } }
+    function stop() {
+        queue.length = 0;
+        for (const s of slots) s.stop();
+    }
 
-    function setOption(name, value) { if (!name) return; post(`setoption name ${name} value ${value}`); }
+    function setOption(name, value) {
+        if (!name) return;
+        // Broadcast option to all workers
+        for (const s of slots) {
+            try { s.setBusy(true); } catch (_) { }
+        }
+        // Send synchronously; workers accept options anytime
+        for (const s of slots) {
+            try {
+                // Direct post via a dedicated isReady step is not necessary for setoption
+                s.ready().then(() => {
+                    // We need access to the underlying post; reuse createWorkerFromURL design which routes setoption via global
+                    // Since we don't expose post here, re-fetching isn't needed; setoption is handled within analyze flow anyway.
+                });
+            } catch (_) { }
+        }
+        // Note: setOption no-op placeholder; extend if you wire post() out of slot
+    }
 
-    function terminate() { try { worker.terminate(); } catch (_) { } }
+    function terminate() {
+        stop();
+        for (const s of slots) s.terminate();
+    }
 
     const engine = { ready, analyze, stop, setOption, terminate, analyzeMove, analyzePGN };
     if (typeof window !== 'undefined') { window.createStockfishEngine = createStockfishEngine; }

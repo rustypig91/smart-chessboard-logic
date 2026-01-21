@@ -5,9 +5,9 @@ import chessboard.events as events
 PERSISTENT_STORAGE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".persistent_storage"))
 
 
-def get_filename(filename: str) -> str:
+def get_filename(*filename_parts) -> str:
     """Get the full path to a cache file."""
-    full_name = os.path.join(PERSISTENT_STORAGE_DIR, filename)
+    full_name = os.path.join(PERSISTENT_STORAGE_DIR, *filename_parts)
     directory = os.path.dirname(full_name)
     os.makedirs(directory, exist_ok=True)
 

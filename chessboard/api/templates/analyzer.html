@@ -3,6 +3,8 @@
 
 <head>
     <meta charset="utf-8" />
+    <!-- <script src="{{ url_for('static', filename='node_modules/stockfish/src/stockfish-17.1-8e4d048.js')}}"></script> -->
+    <script src="{{ url_for('static', filename='stockfish-js-engine.js')}}"></script>
     <script src="{{ url_for('static', filename='client-side-engine.js')}}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.2/chess.js"
         integrity="sha512-46pfErGq3YBnmXdl83JmFf2bW4nbtjw5PYGwO+biyXN6tgfeN0K+qjgiAjS4FA0ipfDZwyZaBK3LJwLFtzBzDA=="
@@ -469,6 +471,7 @@
         });
 
         init();
+        stockfishEngine();
     </script>
 </body>
 

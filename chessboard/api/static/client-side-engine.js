@@ -115,7 +115,6 @@ async function createStockfishEngine(options = {}) {
         worker.onmessage = (ev) => {
             const text = typeof ev.data === 'string' ? ev.data : String(ev.data);
             // console.log(`[SF${id}]`, text);
-            console.log(`[SF${id}]`, text);
 
             if (text === 'uciok') {
                 // continue with isready

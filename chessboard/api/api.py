@@ -93,9 +93,14 @@ def analyse() -> str:
 
 
 @app.route('/analyzer')
-def analyzer() -> str:
+def analyzer() -> Response:
     """Client-side analyzer page using Stockfish WASM"""
-    return render_template('analyzer.html')
+    resp = Response(render_template('analyzer.html'))
+    resp.headers['cross-origin-opener-policy'] = 'same-origin'
+    resp.headers['cross-origin-embedder-policy'] = 'require-corp'
+    resp.headers['cross-origin-resource-policy'] = 'same-origin'
+    resp.headers['content-security-policy'] = "frame-ancestors 'self'"
+    return resp
 
 
 @app.route('/xiao_firmware')
@@ -145,6 +150,17 @@ def get_svg_board():
                                arrows=[(bestmove.from_square, bestmove.to_square)] if bestmove else [])
 
     return Response(svg_data, mimetype='image/svg+xml')
+
+
+@app.route('/static/node_modules/stockfish/src/<path:filename>')
+def static_with_coep(filename: str):
+    resp = send_from_directory(
+        os.path.join(app.root_path, 'static', 'node_modules', 'stockfish', 'src'),
+        filename
+    )
+    resp.headers['Cross-Origin-Embedder-Policy'] = 'require-corp'
+    resp.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+    return resp
 
 
 @socketio.on('publish_event')

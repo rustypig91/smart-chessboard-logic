@@ -1142,7 +1142,7 @@
 
         function updateGameHistoryList() {
             loadingShow('Loading History');
-            apiCall('/api/game/history', null, function (data) {
+            apiCall('/api/history', null, function (data) {
                 const historyList = document.getElementById('history-menu');
                 historyList.innerHTML = '';
 
@@ -1170,8 +1170,6 @@
         }
 
         function updateGameHistoryDetails(selectedItem) {
-            // loadingShow('Loading Game Details');
-            // apiCall(`/api/game/history/${encodeURIComponent(gameId)}`, null, function (data) {
             const detailsDiv = document.getElementById('history-details');
             const titleDiv = document.getElementById('history-details-title');
 

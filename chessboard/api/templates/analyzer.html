@@ -144,6 +144,42 @@
         .spacer {
             flex: 1;
         }
+
+        /* Added: simple list styling for history card */
+        .list {
+            max-height: 60vh;
+            overflow: auto;
+        }
+
+        .item {
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: background .15s ease, transform .05s ease;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .item:hover {
+            background: var(--hover);
+        }
+
+        .item .title {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .item .icon-btn {
+            padding: 6px 8px;
+            line-height: 1;
+        }
     </style>
 </head>
 
@@ -221,6 +257,12 @@
                 </div>
             </div>
         </div>
+
+        <!-- Added: History card -->
+        <div class="card">
+            <h2 style="margin:0 0 10px; font-size:16px; color:var(--muted)">History</h2>
+            <div id="historyList" class="list"></div>
+        </div>
     </div>
 
     <script>
@@ -245,6 +287,8 @@
             pv: document.getElementById('pv'),
             blunder: document.getElementById('blunder'),
             bestEval: document.getElementById('bestEval'),
+            // Added
+            historyList: document.getElementById('historyList'),
         };
 
         let engine = null;
@@ -255,6 +299,8 @@
             ucis: [],
             fens: [],   // FEN after each ply
             bestMoveSans: [],
+            // bestMoveUcis is filled during analysis; ensure array exists
+            bestMoveUcis: [],
             idx: -1,    // -1 = starting position
         };
 
@@ -400,11 +446,9 @@
             }
         }
 
-        async function loadPGN() {
+        // Added: factor out PGN loading from text so we can reuse for history click
+        async function loadPGNFromText(text) {
             try {
-                const file = el.pgnFile.files && el.pgnFile.files[0];
-                if (!file) { alert('Choose a PGN file'); return; }
-                const text = await file.text();
                 const { headers, startFEN, sanMoves, ucis, fens } = parsePGN(text);
 
                 game.headers = headers;
@@ -413,23 +457,25 @@
                 game.ucis = ucis;
                 game.fens = fens;
                 game.idx = -1;
-                game.bestMoveUcis = [];
                 game.bestMoveSans = [];
+                game.bestMoveUcis = [];
 
                 setStatus(`PGN loaded (${sanMoves.length} plies)`);
                 updateHeaderUI();
 
+                // Kick off background best move analysis list
                 engine.analyzePGN({
                     pgn: text,
                     depth: Math.max(6, Math.min(30, Number(el.depth.value) || 16)),
                     onMoveAnalyzed: (result) => {
-                        console.warn(`Analyzed move ${result.move} at ${result.fen}:`, result);
+                        // result.moveIndex is 0-based ply index
                         while (game.bestMoveSans.length < result.moveIndex) {
-                            // Fill in nulls for skipped moves
                             game.bestMoveSans.push(null);
                         }
                         game.bestMoveSans[result.moveIndex] = result.analysis.best_move.san || null;
-                        game.bestMoveUcis[result.moveIndex] = move_to_uci(result.analysis.best_move) || null;
+                        game.bestMoveUcis[result.moveIndex] = (typeof move_to_uci === 'function')
+                            ? move_to_uci(result.analysis.best_move) || null
+                            : (result.analysis.best_move?.uci || null);
                     }
                 });
 
@@ -440,9 +486,70 @@
             }
         }
 
-        function stop() {
-            try { engine && engine.stop && engine.stop(); } catch (_) { }
-            setStatus('Stopped');
+        // Modified: existing file loader now delegates to loadPGNFromText
+        async function loadPGN() {
+            try {
+                const file = el.pgnFile.files && el.pgnFile.files[0];
+                if (!file) { alert('Choose a PGN file'); return; }
+                const text = await file.text();
+                await loadPGNFromText(text);
+            } catch (e) {
+                console.error(e);
+                setStatus('Error');
+            }
+        }
+
+        // Added: load history list and hook clicks to load into analyzer
+        async function loadHistory() {
+            try {
+                const res = await fetch('/api/history');
+                if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+                const data = await res.json();
+                el.historyList.innerHTML = '';
+                (data.games || []).forEach((g) => {
+                    const div = document.createElement('div');
+                    div.className = 'item';
+                    div.title = `Load ${g.filename}`;
+                    const summary = `${g.white_player} vs ${g.black_player} — ${g.result} — ${g.date || g.filename}`;
+
+                    const title = document.createElement('div');
+                    title.className = 'title';
+                    title.textContent = summary;
+
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'icon-btn';
+                    downloadBtn.title = `Download PGN (${summary})`;
+                    downloadBtn.textContent = '⬇';
+                    downloadBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const a = document.createElement('a');
+                        a.href = `/api/history/${encodeURIComponent(g.filename)}`;
+                        a.download = g.filename || 'game.pgn';
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                    });
+
+                    div.appendChild(title);
+                    div.appendChild(downloadBtn);
+                    div.addEventListener('click', async () => {
+                        try {
+                            setStatus('Loading PGN…');
+                            const pgnRes = await fetch(`/api/history/${encodeURIComponent(g.filename)}`);
+                            if (!pgnRes.ok) throw new Error(`${pgnRes.status} ${pgnRes.statusText}`);
+                            const text = await pgnRes.text();
+                            await loadPGNFromText(text);
+                            setStatus('PGN loaded');
+                        } catch (e) {
+                            console.error(e);
+                            setStatus('Error');
+                        }
+                    });
+                    el.historyList.appendChild(div);
+                });
+            } catch (e) {
+                console.error(e);
+            }
         }
 
         async function init() {
@@ -451,6 +558,8 @@
             updateHeaderUI();
             // Empty initial board
             await renderBoard({ fen: getFenAt(-1), lastmove_uci: null, bestmove_uci: null });
+            // Added: populate history
+            loadHistory();
         }
 
         // Wire UI

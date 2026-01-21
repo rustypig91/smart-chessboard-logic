@@ -58,9 +58,17 @@
 
         .layout {
             display: grid;
-            grid-template-columns: 1fr 360px;
+            grid-template-columns: 1fr 460px;
             gap: 16px;
             align-items: start;
+        }
+
+        /* Right column stacks Controls above History */
+        .right-column {
+            grid-column: 2;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
         }
 
         .card {
@@ -226,7 +234,7 @@
 
 <body>
     <div class="layout">
-        <div class="card">
+        <div class="card board-card">
             <div class="board-row">
                 <div class="evalbar" aria-label="Evaluation bar" title="Position evaluation">
                     <div id="evalBlack" class="eval-black"></div>
@@ -235,79 +243,80 @@
                 <div id="board"></div>
             </div>
         </div>
-        <div class="card">
-            <h2 style="margin:0 0 10px; font-size:16px; color:var(--muted)">Controls</h2>
+        <div class="right-column">
+            <div class="card controls-card">
+                <h2 style="margin:0 0 10px; font-size:16px; color:var(--muted)">Controls</h2>
 
-            <label for="pgnFile">PGN File</label>
-            <div class="row">
-                <input id="pgnFile" type="file" accept=".pgn,.txt,text/plain" />
-                <button id="loadPgn" class="primary">Load</button>
+                <label for="pgnFile">PGN File</label>
+                <div class="row">
+                    <input id="pgnFile" type="file" accept=".pgn,.txt,text/plain" />
+                    <button id="loadPgn" class="primary">Load</button>
+                </div>
+
+                <label>Navigate</label>
+                <div class="row">
+                    <button id="toStart">⏮ Start</button>
+                    <button id="prev">◀ Prev</button>
+                    <button id="next">Next ▶</button>
+                    <button id="toEnd">End ⏭</button>
+                    <div class="spacer"></div>
+                    <label class="muted">Depth</label>
+                    <input id="depth" type="number" min="6" max="30" step="1" value="16" style="width:80px" />
+                </div>
+
+                <div class="row" style="margin-top:8px">
+                    <button id="analyzeCurrent" class="primary">Analyze Current</button>
+                    <button id="stop">Stop</button>
+                </div>
+
+                <div style="margin-top:12px">
+                    <div class="stat">
+                        <div class="muted">Status</div>
+                        <div id="status" class="mono">Idle</div>
+                    </div>
+                    <div class="stat">
+                        <div class="muted">Position</div>
+                        <div id="posInfo" class="mono">-/- (start)</div>
+                    </div>
+                    <div class="stat">
+                        <div class="muted">Move</div>
+                        <div id="moveSan" class="mono">-</div>
+                    </div>
+                    <div class="stat">
+                        <div class="muted">Blunder</div>
+                        <div id="blunder" class="mono">-</div>
+                    </div>
+                    <div class="stat">
+                        <div class="muted">Eval</div>
+                        <div id="eval" class="mono">-</div>
+                    </div>
+                    <div class="stat">
+                        <div class="muted">Best Move</div>
+                        <div id="best" class="mono">-</div>
+                    </div>
+                    <div class="stat">
+                        <div class="muted">Best Eval</div>
+                        <div id="bestEval" class="mono">-</div>
+                    </div>
+                    <div class="stat">
+                        <div class="muted">ΔScore</div>
+                        <div id="scoreDiff" class="mono">-</div>
+                    </div>
+                    <div class="stat">
+                        <div class="muted">Best ΔScore</div>
+                        <div id="bestScoreDiff" class="mono">-</div>
+                    </div>
+                    <div class="stat">
+                        <div class="muted">PV</div>
+                        <div id="pv" class="mono pv">-</div>
+                    </div>
+                </div>
+                <!-- Added: History card -->
             </div>
-
-            <label>Navigate</label>
-            <div class="row">
-                <button id="toStart">⏮ Start</button>
-                <button id="prev">◀ Prev</button>
-                <button id="next">Next ▶</button>
-                <button id="toEnd">End ⏭</button>
-                <div class="spacer"></div>
-                <label class="muted">Depth</label>
-                <input id="depth" type="number" min="6" max="30" step="1" value="16" style="width:80px" />
+            <div class="card history-card">
+                <h2 style="margin:0 0 10px; font-size:16px; color:var(--muted)">History</h2>
+                <div id="historyList" class="list"></div>
             </div>
-
-            <div class="row" style="margin-top:8px">
-                <button id="analyzeCurrent" class="primary">Analyze Current</button>
-                <button id="stop">Stop</button>
-            </div>
-
-            <div style="margin-top:12px">
-                <div class="stat">
-                    <div class="muted">Status</div>
-                    <div id="status" class="mono">Idle</div>
-                </div>
-                <div class="stat">
-                    <div class="muted">Position</div>
-                    <div id="posInfo" class="mono">-/- (start)</div>
-                </div>
-                <div class="stat">
-                    <div class="muted">Move</div>
-                    <div id="moveSan" class="mono">-</div>
-                </div>
-                <div class="stat">
-                    <div class="muted">Blunder</div>
-                    <div id="blunder" class="mono">-</div>
-                </div>
-                <div class="stat">
-                    <div class="muted">Eval</div>
-                    <div id="eval" class="mono">-</div>
-                </div>
-                <div class="stat">
-                    <div class="muted">Best Move</div>
-                    <div id="best" class="mono">-</div>
-                </div>
-                <div class="stat">
-                    <div class="muted">Best Eval</div>
-                    <div id="bestEval" class="mono">-</div>
-                </div>
-                <div class="stat">
-                    <div class="muted">ΔScore</div>
-                    <div id="scoreDiff" class="mono">-</div>
-                </div>
-                <div class="stat">
-                    <div class="muted">Best ΔScore</div>
-                    <div id="bestScoreDiff" class="mono">-</div>
-                </div>
-                <div class="stat">
-                    <div class="muted">PV</div>
-                    <div id="pv" class="mono pv">-</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Added: History card -->
-        <div class="card">
-            <h2 style="margin:0 0 10px; font-size:16px; color:var(--muted)">History</h2>
-            <div id="historyList" class="list"></div>
         </div>
     </div>
 

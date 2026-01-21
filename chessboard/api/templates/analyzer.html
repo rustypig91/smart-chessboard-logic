@@ -127,7 +127,7 @@
 
         .stat {
             display: grid;
-            grid-template-columns: 120px 1fr;
+            grid-template-columns: 100px 1fr;
             gap: 6px;
             align-items: center;
         }
@@ -151,26 +151,34 @@
             overflow: auto;
         }
 
+        .history-row {
+            display: flex;
+            gap: 8px;
+            align-items: stretch;
+            margin-bottom: 10px;
+        }
+
         .item {
             padding: 10px;
             border: 1px solid var(--border);
             border-radius: 10px;
-            margin-bottom: 10px;
             cursor: pointer;
             transition: background .15s ease, transform .05s ease;
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 8px;
+            flex: 1 1 auto;
         }
 
         .item:hover {
             background: var(--hover);
         }
 
-        /* When a child (e.g., download button) is hovered, suppress item hover */
-        .item.nohover:hover {
-            background: transparent;
+        /* Right-side column for download button */
+        .download-col {
+            display: flex;
+            align-items: center;
         }
 
         .item .title {
@@ -189,7 +197,6 @@
 </head>
 
 <body>
-    <h1>PGN Analyzer</h1>
     <div class="layout">
         <div class="card">
             <div id="board"></div>
@@ -512,6 +519,9 @@
                 const data = await res.json();
                 el.historyList.innerHTML = '';
                 (data.games || []).forEach((g) => {
+                    const row = document.createElement('div');
+                    row.className = 'history-row';
+
                     const div = document.createElement('div');
                     div.className = 'item';
                     div.title = `Load ${g.filename}`;
@@ -520,16 +530,14 @@
                     const title = document.createElement('div');
                     title.className = 'title';
                     title.textContent = summary;
+                    div.appendChild(title);
 
+                    const right = document.createElement('div');
+                    right.className = 'download-col';
                     const downloadBtn = document.createElement('button');
                     downloadBtn.className = 'icon-btn';
                     downloadBtn.title = `Download PGN (${summary})`;
                     downloadBtn.textContent = '⬇';
-                    // While hovering/focusing the button, suppress parent hover highlight
-                    downloadBtn.addEventListener('mouseenter', () => div.classList.add('nohover'));
-                    downloadBtn.addEventListener('mouseleave', () => div.classList.remove('nohover'));
-                    downloadBtn.addEventListener('focus', () => div.classList.add('nohover'));
-                    downloadBtn.addEventListener('blur', () => div.classList.remove('nohover'));
                     downloadBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
                         const a = document.createElement('a');
@@ -539,9 +547,8 @@
                         a.click();
                         a.remove();
                     });
+                    right.appendChild(downloadBtn);
 
-                    div.appendChild(title);
-                    div.appendChild(downloadBtn);
                     div.addEventListener('click', async () => {
                         try {
                             setStatus('Loading PGN…');
@@ -555,7 +562,10 @@
                             setStatus('Error');
                         }
                     });
-                    el.historyList.appendChild(div);
+
+                    row.appendChild(div);
+                    row.appendChild(right);
+                    el.historyList.appendChild(row);
                 });
             } catch (e) {
                 console.error(e);

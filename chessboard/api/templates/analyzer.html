@@ -22,6 +22,7 @@
             --muted: #8b949e;
             --accent: #1f6feb;
             --hover: #21262d;
+            --board-size: min(80vw, 560px);
         }
 
         @media (prefers-color-scheme: light) {
@@ -71,12 +72,39 @@
         }
 
         #board {
-            width: min(80vw, 560px);
-            height: min(80vw, 560px);
+            width: var(--board-size);
+            height: var(--board-size);
             border: 1px solid var(--border);
             border-radius: 12px;
             overflow: hidden;
             background: #fff;
+        }
+
+        .board-row {
+            display: flex;
+            align-items: stretch;
+            gap: 10px;
+        }
+
+        .evalbar {
+            width: 14px;
+            height: var(--board-size);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            background: #000;
+        }
+
+        .eval-white {
+            background: #fff;
+            height: 50%;
+        }
+
+        .eval-black {
+            background: #000;
+            height: 50%;
         }
 
         .row {
@@ -199,7 +227,13 @@
 <body>
     <div class="layout">
         <div class="card">
-            <div id="board"></div>
+            <div class="board-row">
+                <div class="evalbar" aria-label="Evaluation bar" title="Position evaluation">
+                    <div id="evalBlack" class="eval-black"></div>
+                    <div id="evalWhite" class="eval-white"></div>
+                </div>
+                <div id="board"></div>
+            </div>
         </div>
         <div class="card">
             <h2 style="margin:0 0 10px; font-size:16px; color:var(--muted)">Controls</h2>
@@ -301,6 +335,8 @@
             bestEval: document.getElementById('bestEval'),
             // Added
             historyList: document.getElementById('historyList'),
+            evalWhite: document.getElementById('evalWhite'),
+            evalBlack: document.getElementById('evalBlack'),
         };
 
         let engine = null;
@@ -375,6 +411,7 @@
             const bestmove_uci = getBestMoveUci(game.idx);
             await renderBoard({ fen, lastmove_uci, bestmove_uci });
             updateHeaderUI();
+            if (game.idx < 0) setEvalBar(0);
             await analyzeCurrentPosition(); // auto analyze on navigation
         }
 
@@ -417,6 +454,19 @@
             return '-';
         }
 
+        function setEvalBar(score) {
+            try {
+                if (!el.evalWhite || !el.evalBlack) return;
+                let s = Number(score);
+                if (!isFinite(s)) s = 0;
+                const clamped = Math.max(-10, Math.min(10, s));
+                const percentWhite = 50 + 50 * Math.tanh(clamped / 2);
+                const p = Math.max(0, Math.min(100, percentWhite));
+                el.evalWhite.style.height = p + '%';
+                el.evalBlack.style.height = (100 - p) + '%';
+            } catch (e) { /* noop */ }
+        }
+
         async function analyzeCurrentPosition() {
             try {
                 if (!engine) return;
@@ -452,6 +502,7 @@
                 el.blunder.textContent = result.blunder ? 'Yes' : 'No';
                 el.bestEval.textContent = result.best_move_score.toFixed(2);
                 setStatus(result.blunder ? 'Blunder' : 'Done');
+                setEvalBar(result.score);
             } catch (e) {
                 console.error(e);
                 setStatus('Error');
@@ -578,6 +629,7 @@
             updateHeaderUI();
             // Empty initial board
             await renderBoard({ fen: getFenAt(-1), lastmove_uci: null, bestmove_uci: null });
+            setEvalBar(0);
             // Added: populate history
             loadHistory();
         }

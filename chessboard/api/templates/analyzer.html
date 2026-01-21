@@ -168,6 +168,11 @@
             background: var(--hover);
         }
 
+        /* When a child (e.g., download button) is hovered, suppress item hover */
+        .item.nohover:hover {
+            background: transparent;
+        }
+
         .item .title {
             flex: 1;
             min-width: 0;
@@ -520,6 +525,11 @@
                     downloadBtn.className = 'icon-btn';
                     downloadBtn.title = `Download PGN (${summary})`;
                     downloadBtn.textContent = '⬇';
+                    // While hovering/focusing the button, suppress parent hover highlight
+                    downloadBtn.addEventListener('mouseenter', () => div.classList.add('nohover'));
+                    downloadBtn.addEventListener('mouseleave', () => div.classList.remove('nohover'));
+                    downloadBtn.addEventListener('focus', () => div.classList.add('nohover'));
+                    downloadBtn.addEventListener('blur', () => div.classList.remove('nohover'));
                     downloadBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
                         const a = document.createElement('a');

@@ -20,7 +20,7 @@ def create_certs() -> tuple[str, str]:
     if os.path.exists(cert_path) and os.path.exists(key_path):
         return cert_path, key_path
 
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, UTC
     from ipaddress import ip_address
     from socket import gethostname
     from cryptography import x509
@@ -50,8 +50,8 @@ def create_certs() -> tuple[str, str]:
         .issuer_name(subject)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.utcnow() - timedelta(minutes=1))
-        .not_valid_after(datetime.utcnow() + timedelta(days=3650))
+        .not_valid_before(datetime.now(UTC) - timedelta(minutes=1))
+        .not_valid_after(datetime.now(UTC) + timedelta(days=3650))
         .add_extension(x509.SubjectAlternativeName(alt_names), critical=False)
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
         .add_extension(
@@ -78,11 +78,6 @@ def create_certs() -> tuple[str, str]:
 
 def main():
     parser = argparse.ArgumentParser(description="Chessboard Web App")
-    parser.add_argument('--new-game', action='store_true', help='Start a new game instead of loading the old one')
-    parser.add_argument('--engine-weight', type=str, default=None,
-                        help='Engine weight file to use for the engine (if applicable)')
-    parser.add_argument('--engine-color', type=chess.Color, default=None,
-                        help='Engine color to use for the engine (if applicable)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     parser.add_argument('--port', type=int, default=5000, help='Port to run the web server on')
     parser.add_argument('--persistent-storage-dir', type=str, default=persistent_storage.PERSISTENT_STORAGE_DIR,
@@ -103,9 +98,6 @@ def main():
     import chessboard.api.api as api
     import chessboard.animations
     import chessboard.game
-
-    # if args.new_game:
-    #     game_state.new_game(engine_weight=args.engine_weight, engine_color=args.engine_color)
 
     cert_path, key_path = create_certs()
 

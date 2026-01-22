@@ -3,9 +3,6 @@
 // Engine API: ready(), analyze({ fen, depth, onInfo }), stop(), setOption(name, value), terminate()
 // Requires chess.js <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.13.4/chess.min.js" integrity="sha512-5nNBISa4noe7B2/Me0iHkkt7mUvXG9xYoeXuSrr8OmCQIxd5+Qwxhjy4npBLIuxGNQKwew/9fEup/f2SUVkkXg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-const DEFAULT_STOCKFISH_JS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js';
-const DEFAULT_STOCKFISH_WASM_JS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.wasm.js';
-const DEFAULT_STOCKFISH_WASM_BIN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.wasm';
 
 function uci_to_move(uci) {
     const from = uci.slice(0, 2);
@@ -78,51 +75,63 @@ function parseInfoLine(text) {
 async function createStockfishEngine(options = {}) {
     const wasmSupported = typeof WebAssembly === 'object' && WebAssembly.validate(Uint8Array.of(0x0, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00));
     const {
-        scriptUrl = wasmSupported ? DEFAULT_STOCKFISH_WASM_JS_URL : DEFAULT_STOCKFISH_JS_URL,
+        scriptUrl = '/static/node_modules/stockfish/src/stockfish-17.1-8e4d048.js',
         poolSize: poolSizeOpt
     } = options;
 
-    const poolSize = Math.max(1, Number.isFinite(poolSizeOpt) ? Number(poolSizeOpt) : navigator.hardwareConcurrency || 2);
+    const poolSize = 1; // Math.max(1, Number.isFinite(poolSizeOpt) ? Number(poolSizeOpt) : navigator.hardwareConcurrency / 4 || 2);
     console.log(`Loading ${poolSize} Stockfish worker(s) from:`, scriptUrl);
 
     // Shared cache across the pool: cache[fen][depth] -> final snapshot
     const cache = {};
 
-    function makeSnapshot(info, bestmove, done, fen) {
+    function makeSnapshot(info, bestmove, done, fen, engineOutput) {
         return {
             info: info ? { ...info } : null,
             bestmove: bestmove ? { ...bestmove } : null,
             done: !!done,
-            fen
+            fen,
+            engineOutput: engineOutput,
         };
     }
 
     // Worker slot factory
     async function createSlot(id) {
-        const worker = await createWorkerFromURL(scriptUrl, wasmSupported ? DEFAULT_STOCKFISH_WASM_BIN_URL : undefined);
-
-        let readyResolver = null;
-        const readyPromise = new Promise((resolve) => { readyResolver = resolve; });
+        const worker = await new Worker(scriptUrl);
 
         // State for the currently assigned job on this worker
         let current = null; // { job, lastInfo }
         let lastAnalyzeInfo = null;
         let currentAnalyzeFen = null;
         let busy = false;
+        let engineOutput = '';
 
-        function post(cmd) { worker && worker.postMessage(cmd); }
+        let postResolver = null;
+        let postPromise = Promise.resolve();
+
+        async function post(cmd) {
+            console.log(`[SF${id} ->]`, cmd);
+            /// Only await responses for commands that expect one
+            /// NOTE: setoption may or may not print a statement.
+            if (cmd !== "ucinewgame" && cmd !== "flip" && cmd !== "stop" && cmd !== "ponderhit" && cmd.substr(0, 8) !== "position" && cmd.substr(0, 9) !== "setoption" && cmd !== "stop") {
+                await postPromise;
+                postPromise = new Promise((resolve) => { postResolver = resolve; });
+            }
+            worker && worker.postMessage(cmd);
+            return postPromise;
+        }
 
         worker.onmessage = (ev) => {
             const text = typeof ev.data === 'string' ? ev.data : String(ev.data);
-            // console.log(`[SF${id}]`, text);
+            engineOutput += text + '\n';
+            console.log(`[SF${id}]`, text);
 
             if (text === 'uciok') {
                 // continue with isready
+                console.log(`[SF${id}] UCI initialized`);
+                postResolver();
             } else if (text === 'readyok') {
-                if (readyResolver) {
-                    readyResolver();
-                    readyResolver = null;
-                }
+                postResolver();
             } else if (text.startsWith('info ')) {
                 const info = parseInfoLine(text);
                 if (current) {
@@ -136,10 +145,11 @@ async function createStockfishEngine(options = {}) {
                 const parts = text.split(/\s+/);
                 const move = parts[1] || '-';
                 const ponder = parts[3] || null;
+                postResolver();
 
                 if (current) {
                     const bestmove = { move_uci: move, ponder_uci: ponder, raw: text };
-                    const finalResult = makeSnapshot(lastAnalyzeInfo, bestmove, true, currentAnalyzeFen);
+                    const finalResult = makeSnapshot(lastAnalyzeInfo, bestmove, true, currentAnalyzeFen, engineOutput);
 
                     // Write to shared cache keyed by requested depth
                     try {
@@ -149,7 +159,6 @@ async function createStockfishEngine(options = {}) {
                     } catch (_) { /* noop */ }
 
                     current.job.resolve(finalResult);
-
                     // Clear state
                     current = null;
                     lastAnalyzeInfo = null;
@@ -163,34 +172,32 @@ async function createStockfishEngine(options = {}) {
         };
 
         // Initial handshake
-        post('uci');
-        post('isready');
+        await post('uci');
+        await post('isready');
+        await post('setoption name Threads value 16');
 
-        async function ready() { await readyPromise; }
 
         async function runJob(job) {
             // Cancel any previous analysis on this worker
             if (current) {
-                try { post('stop'); } catch (_) { }
+                try { stop(); } catch (_) { }
                 current = null;
             }
 
-            await ready();
             // New game + position
-            post('ucinewgame');
-            post('isready');
-            await ready();
+            await post('ucinewgame');
+            await post('isready');
 
             currentAnalyzeFen = job.fen;
 
             if (job.fen === 'startpos') {
-                post('position startpos');
+                await post('position startpos');
             } else {
-                post('position fen ' + job.fen);
+                await post('position fen ' + job.fen);
             }
 
             current = { job, lastInfo: null };
-            post('go depth ' + Math.max(6, Math.min(30, Number(job.depth) || 16)));
+            return post('go depth ' + job.depth || 16);
         }
 
         function stop() {

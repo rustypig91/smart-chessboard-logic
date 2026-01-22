@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8" />
     <!-- <script src="{{ url_for('static', filename='node_modules/stockfish/src/stockfish-17.1-8e4d048.js')}}"></script> -->
-    <script src="{{ url_for('static', filename='stockfish-js-engine.js')}}"></script>
+    <!-- <script src="{{ url_for('static', filename='stockfish-js-engine.js')}}"></script> -->
     <script src="{{ url_for('static', filename='client-side-engine.js')}}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.2/chess.js"
         integrity="sha512-46pfErGq3YBnmXdl83JmFf2bW4nbtjw5PYGwO+biyXN6tgfeN0K+qjgiAjS4FA0ipfDZwyZaBK3LJwLFtzBzDA=="
@@ -148,12 +148,6 @@
             margin: 8px 0 6px;
         }
 
-        /* Inline depth label inside button row */
-        .row label {
-            display: inline-block;
-            margin: 0 8px 0 0;
-        }
-
         input[type="number"],
         input[type="file"] {
             padding: 8px 10px;
@@ -251,8 +245,6 @@
         </div>
         <div class="right-column">
             <div class="card controls-card">
-                <h2 style="margin:0 0 10px; font-size:16px; color:var(--muted)">Controls</h2>
-
                 <label for="pgnFile">PGN File</label>
                 <div class="row">
                     <input id="pgnFile" type="file" accept=".pgn,.txt,text/plain" />
@@ -265,7 +257,9 @@
                     <button id="prev">◀ Prev</button>
                     <button id="next">Next ▶</button>
                     <button id="toEnd">End ⏭</button>
-                    <div class="spacer"></div>
+                    <!-- <div class="spacer"></div> -->
+                </div>
+                <div class="row">
                     <label class="muted">Depth</label>
                     <input id="depth" type="number" min="6" max="30" step="1" value="16" style="width:80px" />
                 </div>
@@ -667,7 +661,6 @@
         });
 
         init();
-        stockfishEngine();
     </script>
 </body>
 

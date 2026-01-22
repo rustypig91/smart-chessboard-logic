@@ -59,7 +59,7 @@ var loadEngine = (function () {
             var line = typeof e === "string" ? e : e.data,
                 done,
                 que_num = 0,
-                my_que,
+                current_qitem,
                 split,
                 i;
 
@@ -89,24 +89,24 @@ var loadEngine = (function () {
 
             que_num = determine_que_num(line, que);
 
-            my_que = que[que_num];
+            current_qitem = que[que_num];
 
-            if (!my_que) {
+            if (!current_qitem) {
                 return;
             }
 
-            if (my_que.stream) {
-                my_que.stream(line);
+            if (current_qitem.stream) {
+                current_qitem.stream(line);
             }
 
-            if (typeof my_que.message === "undefined") {
-                my_que.message = "";
-            } else if (my_que.message !== "") {
-                my_que.message += "\n";
+            if (typeof current_qitem.message === "undefined") {
+                current_qitem.message = "";
+            } else if (current_qitem.message !== "") {
+                current_qitem.message += "\n";
             }
 
-            my_que.message += line;
-            console.log("MSG:", my_que.message);
+            current_qitem.message += line;
+            console.log("MSG:", current_qitem.message);
             /// Try to determine if the stream is done.
             if (line === "uciok") {
                 /// uci
@@ -116,22 +116,22 @@ var loadEngine = (function () {
                 /// isready
                 done = true;
                 engine.ready = true;
-            } else if (line.substr(0, 8) === "bestmove" && my_que.cmd !== "bench") {
+            } else if (line.substr(0, 8) === "bestmove" && current_qitem.cmd !== "bench") {
                 /// go [...]
                 done = true;
                 /// All "go" needs is the last line (use stream to get more)
-                my_que.message = line;
-            } else if (my_que.cmd === "d") {
+                current_qitem.message = line;
+            } else if (current_qitem.cmd === "d") {
                 if (line.substr(0, 15) === "Legal uci moves" || line.substr(0, 6) === "Key is") {
-                    my_que.done = true;
+                    current_qitem.done = true;
                     done = true;
                     /// If this is the hack, delete it.
                     if (line === "Key is") {
-                        my_que.message = my_que.message.slice(0, -7);
+                        current_qitem.message = current_qitem.message.slice(0, -7);
                     }
                 }
-            } else if (my_que.cmd === "eval") {
-                if (eval_regex.test(my_que.message)) {
+            } else if (current_qitem.cmd === "eval") {
+                if (eval_regex.test(current_qitem.message)) {
                     done = true;
                 }
             } else if (line.substr(0, 8) === "pawn key") { /// "key"
@@ -147,8 +147,8 @@ var loadEngine = (function () {
                 /// Remove this from the que.
                 que.splice(que_num, 1);
 
-                if (my_que.cb && !my_que.discard) {
-                    my_que.cb(my_que.message);
+                if (current_qitem.cb && !current_qitem.discard) {
+                    current_qitem.cb(current_qitem.message);
                 }
             }
         };
@@ -209,6 +209,35 @@ var loadEngine = (function () {
             }
         };
 
+        engine.analyzePGN = function ({ pgnText, depth = 32, stream } = {}) {
+            engine.send('stop');
+
+            const chess = new Chess();
+            const ok = chess.load_pgn(pgnText, { sloppy: true });
+            if (!ok) throw new Error('Invalid PGN');
+
+            // engine.send('ucinewgame');
+            // engine.send(`position startpos moves ${moves}`);
+            // engine.send(`go depth ${depth}`, (message) => {
+            //     resolve(message);
+            // }, (info) => {
+            //     console.log("info:", info);
+            // });
+        }
+
+        engine.newGame = function () {
+            engine.send('ucinewgame');
+            engine.send(`position startpos`);
+        }
+
+        engine.addMove = async function (move, depth = 16) {
+            engine.send(`position moves ${moves}`);
+            engine.send(`go depth ${depth}`, function (message) {
+                console.log("Best move:", message);
+            });
+        }
+
+
         engine.send('uci');
         engine.send('isready');
 
@@ -221,7 +250,6 @@ if (typeof module !== "undefined" && module.exports) {
     module.exports = loadEngine;
 }
 
-let sEngine = null;
 
 function stockfishEngine() {
     console.warn("Using Stockfish JS engine");
@@ -229,8 +257,9 @@ function stockfishEngine() {
     let path = "/static/node_modules/stockfish/src/stockfish-17.1-8e4d048.js"
     // let path = "/static/node_modules/stockfish/src/stockfish-17.1-single-a496a04.js"
     // let path = "https://cdn.jsdelivr.net/gh/nmrugg/stockfish.js@7fa3404b65c6d799bd2d4a5ccc29a94752d343c1/src/stockfish-17.1-8e4d048.js"
-    sEngine = loadEngine(path, function () {
+    let sEngine = loadEngine(path, function () {
         /// Engine is running.
         console.log("__up__")
     });
+    return sEngine;
 }

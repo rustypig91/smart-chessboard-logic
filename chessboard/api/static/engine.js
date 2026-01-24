@@ -149,6 +149,7 @@ export class StockfishEngine {
             const promise = this.queue.enqueue(() => {
                 return this._analyzePosition("startpos", currentMoves, depth,
                     (info) => {
+                        info.toWhiteScore({ fen: fen });
                         analysisCallback({
                             moveIndex: i,
                             info: info,
@@ -180,7 +181,6 @@ class BestMove {
 class Info {
     constructor(text) {
         // Parse an 'info' line from Stockfish into a structured object
-        // Example: info depth 20 seldepth 33 multipv 1 score cp 13 nodes 123456 nps 12345 time 100 pv e2e4 e7e5 ...
         this.raw = text;
         const tokens = text.trim().split(/\s+/);
         const getNum = (key) => {
@@ -199,7 +199,8 @@ class Info {
         this.nps = getNum('nps');
         this.time = getNum('time');
 
-        this.score = { type: null, value: null };
+        // Raw score as reported by Stockfish (from side-to-move perspective)
+        this.scoreToMove = { type: null, value: null };
 
         const si = tokens.indexOf('score');
         if (si >= 0 && si + 2 < tokens.length) {
@@ -208,19 +209,53 @@ class Info {
             const value = Number(valRaw);
             if (Number.isFinite(value)) {
                 if (type === 'mate') {
-                    this.score = { type: 'mate', value: value };
+                    this.scoreToMove = { type: 'mate', value: value };
                 } else if (type === 'cp') {
-                    this.score = { type: 'cp', value: value };
+                    this.scoreToMove = { type: 'cp', value: value };
                 }
             }
         }
 
-
+        // Principal variation
         this.pv = [];
         const pvi = tokens.indexOf('pv');
         if (pvi >= 0 && pvi + 1 < tokens.length) {
             this.pv = tokens.slice(pvi + 1);
         }
+
+        this.score = this.scoreToMove;
+    }
+
+    static _resolveTurn(ctx = {}) {
+        // Prefer explicit ctx.turn
+        if (ctx.turn === 'w' || ctx.turn === 'b') return ctx.turn;
+
+        // Try ctx.fen
+        if (typeof ctx.fen === 'string') {
+            const parts = ctx.fen.split(' ');
+            if (parts.length > 1 && (parts[1] === 'w' || parts[1] === 'b')) return parts[1];
+        }
+
+        // Default: assume White
+        return 'w';
+    }
+
+    static _toWhitePerspective(score, turn) {
+        if (!score || !Number.isFinite(score.value)) return { type: 'cp', value: 0 };
+        // Convert mate to a large cp proxy to keep sign behavior consistent
+        if (score.type === 'mate') {
+            const v = score.value > 0 ? 100000 : -100000;
+            return { type: 'cp', value: turn === 'b' ? -v : v };
+        }
+        // cp case
+        return { type: 'cp', value: turn === 'b' ? -score.value : score.value };
+    }
+
+    // Utility if you need to recompute with a different context later
+    toWhiteScore(ctx = {}) {
+        const turn = Info._resolveTurn(ctx);
+        this.score = Info._toWhitePerspective(this.scoreToMove, turn);
+        return this.score;
     }
 };
 

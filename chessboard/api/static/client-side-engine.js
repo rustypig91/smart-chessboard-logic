@@ -80,7 +80,7 @@ async function createStockfishEngine(options = {}) {
     } = options;
 
     const poolSize = 1; // Math.max(1, Number.isFinite(poolSizeOpt) ? Number(poolSizeOpt) : navigator.hardwareConcurrency / 4 || 2);
-    console.log(`Loading ${poolSize} Stockfish worker(s) from:`, scriptUrl);
+    // console.log(`Loading ${poolSize} Stockfish worker(s) from:`, scriptUrl);
 
     // Shared cache across the pool: cache[fen][depth] -> final snapshot
     const cache = {};
@@ -110,7 +110,7 @@ async function createStockfishEngine(options = {}) {
         let postPromise = Promise.resolve();
 
         async function post(cmd) {
-            console.log(`[SF${id} ->]`, cmd);
+            // console.log(`[SF${id} ->]`, cmd);
             /// Only await responses for commands that expect one
             /// NOTE: setoption may or may not print a statement.
             if (cmd !== "ucinewgame" && cmd !== "flip" && cmd !== "stop" && cmd !== "ponderhit" && cmd.substr(0, 8) !== "position" && cmd.substr(0, 9) !== "setoption" && cmd !== "stop") {
@@ -124,11 +124,11 @@ async function createStockfishEngine(options = {}) {
         worker.onmessage = (ev) => {
             const text = typeof ev.data === 'string' ? ev.data : String(ev.data);
             engineOutput += text + '\n';
-            console.log(`[SF${id}]`, text);
+            // console.log(`[SF${id}]`, text);
 
             if (text === 'uciok') {
                 // continue with isready
-                console.log(`[SF${id}] UCI initialized`);
+                // console.log(`[SF${id}] UCI initialized`);
                 postResolver();
             } else if (text === 'readyok') {
                 postResolver();
@@ -184,16 +184,23 @@ async function createStockfishEngine(options = {}) {
                 current = null;
             }
 
-            // New game + position
-            await post('ucinewgame');
-            await post('isready');
+            if (job.newgame) {
+                await post('ucinewgame');
+                await post('isready');
+            }
 
             currentAnalyzeFen = job.fen;
+            moves = job.moves || [];
+            if (moves.length > 0) {
+                moves_cmd = ' moves ' + moves.join(' ');
+            } else {
+                moves_cmd = '';
+            }
 
             if (job.fen === 'startpos') {
-                await post('position startpos');
+                await post('position startpos' + moves_cmd);
             } else {
-                await post('position fen ' + job.fen);
+                await post('position fen ' + job.fen + moves_cmd);
             }
 
             current = { job, lastInfo: null };
@@ -249,7 +256,7 @@ async function createStockfishEngine(options = {}) {
         await Promise.all(slots.map(s => s.ready()));
     }
 
-    async function analyze({ fen, depth = 32 } = {}) {
+    async function analyze({ fen, moves, newgame = false, depth = 32 } = {}) {
         if (typeof fen !== 'string' || fen.length === 0) {
             throw new Error('analyze() requires a FEN or "startpos"');
         }
@@ -267,7 +274,7 @@ async function createStockfishEngine(options = {}) {
         // Enqueue job
         let resolve, reject;
         cache[fen][boundedDepth] = new Promise((res, rej) => { resolve = res; reject = rej; });
-        queue.push({ fen, depth: boundedDepth, resolve, reject });
+        queue.push({ fen, moves, newgame, depth: boundedDepth, resolve, reject });
 
         dispatch();
         return cache[fen][boundedDepth]; // resolves with final snapshot
@@ -363,20 +370,25 @@ async function createStockfishEngine(options = {}) {
             throw new Error('Invalid PGN string');
         }
         const moves = chess.history({ verbose: true });
-        chess.reset();
 
         const result_promises = [];
+        current_moves = [];
 
-        for (const move of moves) {
-            const fenBeforeMove = chess.fen();
+        // Initial position
+        result_promises.push(analyze({
+            fen: "startpos",
+            depth: depth,
+            newgame: true
+        }));
 
-            result_promises.push(analyzeMove({
-                fenBeforeMove: fenBeforeMove,
-                move_san: move.san,
+        for (const move of moves.map(m => move_to_uci(m))) {
+            // console.log('Analyzing move:', move);
+            current_moves.push(move);
+            result_promises.push(analyze({
+                fen: "startpos",
+                moves: current_moves.slice(),
                 depth: depth
             }));
-
-            chess.move(move, { sloppy: true });
         }
 
         const results = [];

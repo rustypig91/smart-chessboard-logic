@@ -5,10 +5,10 @@
     <meta charset="utf-8" />
     <!-- <script src="{{ url_for('static', filename='node_modules/stockfish/src/stockfish-17.1-8e4d048.js')}}"></script> -->
     <!-- <script src="{{ url_for('static', filename='stockfish-js-engine.js')}}"></script> -->
-    <script src="{{ url_for('static', filename='client-side-engine.js')}}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.2/chess.js"
         integrity="sha512-46pfErGq3YBnmXdl83JmFf2bW4nbtjw5PYGwO+biyXN6tgfeN0K+qjgiAjS4FA0ipfDZwyZaBK3LJwLFtzBzDA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="{{ url_for('static', filename='engine.js')}}" type="module"></script>
     <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.13.4/chess.js"
         integrity="sha512-40VRp1+fauX7g61ZdQpOiOJTkBbYwVlTLjCXHK9Svf0Mmz9K8Smg5k6LVrc0eEc9+pApf1HNL6Cim/wFqZeRkw=="
         crossorigin="anonymous" referrerpolicy="no-referrer" type="module"></script> -->
@@ -261,7 +261,7 @@
                 </div>
                 <div class="row">
                     <label class="muted">Depth</label>
-                    <input id="depth" type="number" min="6" max="30" step="1" value="16" style="width:80px" />
+                    <input id="depthSelector" type="number" min="6" max="30" step="1" value="16" style="width:80px" />
                 </div>
 
                 <div class="row" style="margin-top:8px">
@@ -279,6 +279,10 @@
                         <div id="posInfo" class="mono">-/- (start)</div>
                     </div>
                     <div class="stat">
+                        <div class="muted">Depth</div>
+                        <div id="depth" class="mono">-</div>
+                    </div>
+                    <div class="stat">
                         <div class="muted">Move</div>
                         <div id="moveSan" class="mono">-</div>
                     </div>
@@ -292,19 +296,11 @@
                     </div>
                     <div class="stat">
                         <div class="muted">Best Move</div>
-                        <div id="best" class="mono">-</div>
-                    </div>
-                    <div class="stat">
-                        <div class="muted">Best Eval</div>
-                        <div id="bestEval" class="mono">-</div>
+                        <div id="bestMove" class="mono">-</div>
                     </div>
                     <div class="stat">
                         <div class="muted">ΔScore</div>
                         <div id="scoreDiff" class="mono">-</div>
-                    </div>
-                    <div class="stat">
-                        <div class="muted">Best ΔScore</div>
-                        <div id="bestScoreDiff" class="mono">-</div>
                     </div>
                     <div class="stat">
                         <div class="muted">PV</div>
@@ -331,39 +327,89 @@
             toEnd: document.getElementById('toEnd'),
             analyzeCurrent: document.getElementById('analyzeCurrent'),
             stop: document.getElementById('stop'),
+            depthSelector: document.getElementById('depthSelector'),
             depth: document.getElementById('depth'),
             status: document.getElementById('status'),
             posInfo: document.getElementById('posInfo'),
             moveSan: document.getElementById('moveSan'),
             eval: document.getElementById('eval'),
-            best: document.getElementById('best'),
+            bestMove: document.getElementById('bestMove'),
             scoreDiff: document.getElementById('scoreDiff'),
-            bestScoreDiff: document.getElementById('bestScoreDiff'),
             pv: document.getElementById('pv'),
             blunder: document.getElementById('blunder'),
-            bestEval: document.getElementById('bestEval'),
-            // Added
             historyList: document.getElementById('historyList'),
             evalWhite: document.getElementById('evalWhite'),
             evalBlack: document.getElementById('evalBlack'),
         };
 
         let engine = null;
-        let game = {
-            headers: {},
-            startFEN: 'startpos',
-            sans: [],
-            ucis: [],
-            fens: [],   // FEN after each ply
-            bestMoveSans: [],
-            // bestMoveUcis is filled during analysis; ensure array exists
-            bestMoveUcis: [],
-            idx: -1,    // -1 = starting position
-        };
+        let latestGameAnalysises = []; // per-move analysis results
+        let currentAnalysisIndex = 0;
+
+        function updateAnalysisUI() {
+            let analysis = latestGameAnalysises[currentAnalysisIndex];
+            console.log('Updating analysis UI for index', currentAnalysisIndex, analysis);
+            let lastAnalysis = currentAnalysisIndex > 0 ? latestGameAnalysises[currentAnalysisIndex - 1] : null;
+            if (!analysis) {
+                setEvalBar();
+                renderBoard({});
+                el.eval.textContent = '-';
+                el.bestMove.textContent = '-';
+                el.pv.textContent = '-';
+                el.blunder.textContent = '-';
+                el.scoreDiff.textContent = '-';
+                el.posInfo.textContent = `${currentAnalysisIndex}/${Math.max(latestGameAnalysises.length - 1, 0)}`;
+                el.moveSan.textContent = '-';
+                return;
+            };
+
+            el.depth.textContent = analysis.info.depth || '-';
+
+            if (lastAnalysis && analysis.info.score && lastAnalysis.info.score) {
+                const lastScore = lastAnalysis.info.score.type === 'cp' ? lastAnalysis.info.score.value / 100 :
+                    (analysis.info.score.type === 'mate' ? (analysis.info.score.value > 0 ? 1000 : -1000) : 0);
+                const currentScore = analysis.info.score.type === 'cp' ? analysis.info.score.value / 100 :
+                    (analysis.info.score.type === 'mate' ? (analysis.info.score.value > 0 ? 1000 : -1000) : 0);
+                const diff = currentScore - lastScore;
+                el.scoreDiff.textContent = (diff >= 0 ? '+' : '') + diff.toFixed(2);
+            } else {
+                el.scoreDiff.textContent = '-';
+            }
+
+            let bestMove_uci = null;
+            if (lastAnalysis && lastAnalysis.info.pv && lastAnalysis.info.pv.length > 0) {
+                bestMove_uci = lastAnalysis.info.pv[0];
+            }
+
+            el.bestMove.textContent = bestMove_uci || '-';
+
+            el.posInfo.textContent = `${currentAnalysisIndex}/${Math.max(latestGameAnalysises.length - 1, 0)}`;
+            el.moveSan.textContent = analysis.lastMove ? analysis.lastMove.san : '-';
+
+            setEvalBar(analysis.info.score);
+            el.eval.textContent = scoreToText(analysis.info);
+
+            el.pv.textContent = analysis.info.pv.join(' ') || '-';
+            el.blunder.textContent = analysis.isBlunder ? 'Yes' : 'No';
+
+            const lastMove_uci = analysis.lastMove ? move_to_uci(analysis.lastMove) : null;
+            renderBoard({
+                fen: analysis.fen,
+                lastmove_uci: lastMove_uci,
+                bestmove_uci: bestMove_uci,
+            });
+        }
 
         function setStatus(s) { el.status.textContent = s; }
 
+        svgBoardCache = {};
         async function renderBoard({ fen, lastmove_uci = null, bestmove_uci = null }) {
+            cacheHash = fen + lastmove_uci + bestmove_uci;
+            if (svgBoardCache[cacheHash]) {
+                el.board.innerHTML = svgBoardCache[cacheHash];
+                return;
+            }
+
             try {
                 const res = await fetch('/svg_board', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -376,85 +422,21 @@
                 });
                 const svg = await res.text();
                 el.board.innerHTML = svg;
+                svgBoardCache[cacheHash] = svg;
             } catch (e) {
                 console.error(e);
             }
         }
 
-        function updateHeaderUI() {
-            const n = game.sans.length;
-            const i = Math.max(-1, Math.min(game.idx, n - 1));
-            el.posInfo.textContent = `${i + 1}/${n <= 0 ? 0 : n}`;
-            el.moveSan.textContent = i >= 0 ? game.sans[i] : '(start position)';
-        }
-
-        function getFenAt(idx) {
-            if (idx < 0) {
-                // Initial position
-                if (game.startFEN && game.startFEN !== 'startpos') return game.startFEN;
-                return 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-            }
-            return game.fens[idx];
-        }
-
-        function getLastMoveSan(idx) {
-            return idx >= 0 ? (game.sans[idx] || null) : null;
-        }
-
-        function getBestMoveSan(idx) {
-            return idx >= 0 ? (game.bestMoveSans[idx] || null) : null;
-        }
-
-        function getLastMoveUci(idx) {
-            return idx >= 0 ? (game.ucis[idx] || null) : null;
-        }
-        function getBestMoveUci(idx) {
-            return idx >= 0 ? (game.bestMoveUcis[idx] || null) : null;
-        }
-
         async function goTo(index) {
-            if (!game.fens.length && index !== -1) return;
-            game.idx = Math.max(-1, Math.min(index, game.sans.length - 1));
-            const fen = getFenAt(game.idx);
-            const lastmove_uci = getLastMoveUci(game.idx);
-            const bestmove_uci = getBestMoveUci(game.idx);
-            await renderBoard({ fen, lastmove_uci, bestmove_uci });
-            updateHeaderUI();
-            if (game.idx < 0) setEvalBar(0);
-            await analyzeCurrentPosition(); // auto analyze on navigation
+            currentAnalysisIndex = Math.max(0, Math.min(index, latestGameAnalysises.length - 1));
+            updateAnalysisUI();
         }
 
         const goStart = () => goTo(-1);
-        const goPrev = () => goTo(game.idx - 1);
-        const goNext = () => goTo(game.idx + 1);
-        const goEnd = () => goTo(game.sans.length - 1);
-
-        function parsePGN(pgnText) {
-            const chess = new Chess();
-            const ok = chess.load_pgn(pgnText, { sloppy: true });
-            if (!ok) throw new Error('Invalid PGN');
-
-            const headers = chess.header();
-            const sanMoves = chess.history(); // SAN array
-
-            // Determine starting FEN if specified
-            let startFEN = 'startpos';
-            if (headers.SetUp === '1' && headers.FEN) startFEN = headers.FEN;
-
-            // Rebuild to capture FEN and UCI per ply
-            const replay = new Chess(startFEN === 'startpos' ? undefined : startFEN);
-            const fens = [];
-            const ucis = [];
-
-            sanMoves.forEach((san) => {
-                const mv = replay.move(san, { sloppy: true });
-                if (!mv) throw new Error('Illegal SAN in PGN: ' + san);
-                ucis.push(move_to_uci(mv));
-                fens.push(replay.fen());
-            });
-
-            return { headers, startFEN, sanMoves, ucis, fens };
-        }
+        const goPrev = () => goTo(currentAnalysisIndex - 1);
+        const goNext = () => goTo(currentAnalysisIndex + 1);
+        const goEnd = () => goTo(latestGameAnalysises.length - 1);
 
         function scoreToText(info) {
             if (!info || !info.score) return '-';
@@ -463,98 +445,42 @@
             return '-';
         }
 
-        function setEvalBar(score) {
-            try {
-                if (!el.evalWhite || !el.evalBlack) return;
-                let s = Number(score);
-                if (!isFinite(s)) s = 0;
-                const clamped = Math.max(-10, Math.min(10, s));
-                const percentWhite = 50 + 50 * Math.tanh(clamped / 2);
-                const p = Math.max(0, Math.min(100, percentWhite));
-                el.evalWhite.style.height = p + '%';
-                el.evalBlack.style.height = (100 - p) + '%';
-            } catch (e) { /* noop */ }
-        }
+        function setEvalBar(score = { type: 'cp', value: 0 }) {
+            white_win_prob = 0.5;
+            black_win_prob = 0.5;
+            [white_win_prob, black_win_prob] = score_to_probs(score);
+            const total = white_win_prob + black_win_prob;
+            const p = Math.max(0, Math.min(100, (white_win_prob / total) * 100));
 
-        async function analyzeCurrentPosition() {
-            try {
-                if (!engine) return;
-
-                const idx = game.idx;
-                if (idx < 0) { setStatus('Select a move'); return; }
-
-                const depth = Math.max(6, Math.min(50, Number(el.depth.value) || 16));
-                setStatus('Analyzing...');
-                el.eval.textContent = '-';
-                el.best.textContent = '-';
-                el.pv.textContent = '-';
-                el.scoreDiff.textContent = '-';
-                el.bestScoreDiff.textContent = '-';
-                el.blunder.textContent = '-';
-                el.bestEval.textContent = '-';
-
-                const fenBeforeMove = idx === 0 ? getFenAt(-1) : game.fens[idx - 1];
-                const moveSan = game.sans[idx];
-
-                const result = await engine.analyzeMove({
-                    fenBeforeMove,
-                    move_san: moveSan,
-                    depth,
-                });
-
-                // result.score is post-move eval in pawns
-                el.eval.textContent = result.score.toFixed(2);
-                el.best.textContent = result.best_move.san || '-';
-                el.pv.textContent = (result.end_result?.info?.pv || []).join(' ');
-                el.scoreDiff.textContent = result.score_diff_norm.toFixed(2);
-                el.bestScoreDiff.textContent = result.best_move_score_diff_norm.toFixed(2);
-                el.blunder.textContent = result.blunder ? 'Yes' : 'No';
-                el.bestEval.textContent = result.best_move_score.toFixed(2);
-                setStatus(result.blunder ? 'Blunder' : 'Done');
-                setEvalBar(result.score);
-            } catch (e) {
-                console.error(e);
-                setStatus('Error');
-            }
+            el.evalWhite.style.height = p + '%';
+            el.evalBlack.style.height = (100 - p) + '%';
         }
 
         // Added: factor out PGN loading from text so we can reuse for history click
         async function loadPGNFromText(text) {
             try {
-                const { headers, startFEN, sanMoves, ucis, fens } = parsePGN(text);
+                let chess = new Chess();
+                const pgnLoadResult = chess.load_pgn(text);
+                if (!pgnLoadResult) {
+                    alert('Failed to parse PGN');
+                    return;
+                }
+                const numMoves = chess.history().length;
+                currentAnalysisIndex = 0;
+                latestGameAnalysises = [];
+                updateAnalysisUI();
 
-                game.headers = headers;
-                game.startFEN = startFEN;
-                game.sans = sanMoves;
-                game.ucis = ucis;
-                game.fens = fens;
-                game.idx = -1;
-                game.bestMoveSans = [];
-                game.bestMoveUcis = [];
-
-                setStatus(`PGN loaded (${sanMoves.length} plies)`);
-                updateHeaderUI();
-
-                // Kick off background best move analysis list
-                engine.analyzePGN({
-                    pgn: text,
-                    depth: Math.max(6, Math.min(30, Number(el.depth.value) || 16)),
-                    onMoveAnalyzed: (result) => {
-                        // result.moveIndex is 0-based ply index
-                        while (game.bestMoveSans.length < result.moveIndex) {
-                            game.bestMoveSans.push(null);
-                        }
-                        game.bestMoveSans[result.moveIndex] = result.analysis.best_move.san || null;
-                        game.bestMoveUcis[result.moveIndex] = (typeof move_to_uci === 'function')
-                            ? move_to_uci(result.analysis.best_move) || null
-                            : (result.analysis.best_move?.uci || null);
-                    }
-                });
-
-                await goStart();
+                engine.analyzePgnGame(text, depth = parseInt(el.depthSelector.value) || 16,
+                    infoCallback = (info) => {
+                        latestGameAnalysises[info.moveIndex] = info;
+                        setStatus(`Analyzing move ${info.moveIndex}/${numMoves} (depth ${info.info.depth})`);
+                        updateAnalysisUI();
+                    },
+                    null
+                );
             } catch (e) {
                 console.error(e);
-                alert('Failed to load PGN: ' + e.message);
+                console.warn('Failed to load PGN: ' + e.message);
             }
         }
 
@@ -633,14 +559,24 @@
         }
 
         async function init() {
-            engine = await createStockfishEngine();
-            setStatus('Idle');
-            updateHeaderUI();
-            // Empty initial board
-            await renderBoard({ fen: getFenAt(-1), lastmove_uci: null, bestmove_uci: null });
-            setEvalBar(0);
-            // Added: populate history
             loadHistory();
+            await renderBoard({});
+
+            engine = new StockfishEngine(); // second engine for parallel analysis
+            setEvalBar();
+            setStatus('Idle');
+            updateAnalysisUI();
+            // Empty initial board
+
+            // Added: populate history
+
+        }
+
+        async function stop() {
+            if (engine) {
+                await engine.stop();
+                setStatus('Idle');
+            }
         }
 
         // Wire UI

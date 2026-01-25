@@ -56,7 +56,8 @@ class Event:
         elif isinstance(value, chess.Board):
             return {
                 "fen": value.fen(),
-                "last_move": value.move_stack[-1].uci() if value.move_stack else None
+                "last_move": value.move_stack[-1].uci() if value.move_stack else None,
+                "moves": [move.uci() for move in value.move_stack]
             }
         elif isinstance(value, ModuleType):
             return value.__name__

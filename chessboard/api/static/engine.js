@@ -10,15 +10,22 @@ export class StockfishEngine {
         //     console.log('Stockfish message:', event.data);
         // });
 
-        this._postMessageToQueue('uci', 'uciok', null, null);
-        this._postMessageToQueue('isready', 'readyok', null, null);
-        this._postMessageToQueue(`setoption name Threads value ${this.numThreads}`);
+        this.readyPromise = new Promise(async (resolve) => {
+            await this._postMessage('uci', 'uciok', null, null);
+            await this._postMessage('isready', 'readyok', null, null);
+            await this._postMessage(`setoption name Threads value ${this.numThreads}`);
+            console.log(`Stockfish engine ready and initialized with ${this.numThreads} threads.`);
+            resolve();
+        });
 
         this.analyzeCache = {};
     }
 
-    _postMessageToQueue(message, response = '', lineCallback = null, doneCallback = null) {
-        return this.queue.enqueue(() => this._postMessage(message, response, lineCallback, doneCallback));
+    async _postMessageToQueue(message, response = '', lineCallback = null, doneCallback = null) {
+        await this.readyPromise;
+        return this.queue.enqueue(() => this._postMessage(message, response, lineCallback, doneCallback)).catch((err) => {
+            console.error(`Error in _postMessageToQueue(${message}): ${err}`);
+        });
     }
 
     // Send a message to the engine and wait for a specific response
@@ -31,24 +38,29 @@ export class StockfishEngine {
             }
             return;
         }
-
-        return new Promise((resolve) => {
-            const handleMessage = (event) => {
-                const data = event.data;
-                if (lineCallback) {
-                    lineCallback(data);
-                }
-                if (data.startsWith(response)) {
-                    this.worker.removeEventListener('message', handleMessage);
-                    resolve(data);
-                    if (doneCallback) {
-                        doneCallback(data);
+        try {
+            return new Promise((resolve) => {
+                const handleMessage = (event) => {
+                    const data = event.data;
+                    if (lineCallback) {
+                        lineCallback(data);
                     }
-                    console.log('Received from engine:', data);
-                }
-            };
-            this.worker.addEventListener('message', handleMessage);
-        });
+                    if (data.startsWith(response)) {
+                        this.worker.removeEventListener('message', handleMessage);
+                        resolve(data);
+                        if (doneCallback) {
+                            doneCallback(data);
+                        }
+                        console.log('Received from engine:', data);
+                    }
+                };
+                this.worker.addEventListener('message', handleMessage);
+            }).catch((err) => {
+                console.error('Error in _postMessage promise:', err);
+            });
+        } catch (err) {
+            console.error('Error in _postMessage:', err);
+        }
     }
 
     _parsePgnMoves(pgnText) {
@@ -62,7 +74,14 @@ export class StockfishEngine {
     }
 
     async _position(fen = "startpos", moves = []) {
-        const uciMoves = moves.map(move => move_to_uci(move));
+        await self.readyPromise;
+
+        const uciMoves = moves.map(move => {
+            if (typeof move === 'string') {
+                return move;
+            }
+            return move_to_uci(move)
+        });
         let move_cmd = '';
         if (uciMoves.length > 0) {
             move_cmd = ' moves ' + uciMoves.join(' ');
@@ -80,15 +99,20 @@ export class StockfishEngine {
     }
 
     async _stop() {
+        await self.readyPromise;
         return this._postMessage('stop');
     }
 
     async stop() {
-        this.queue.clear();
-        return this._postMessage('stop');
+        await self.readyPromise;
+        this._postMessage('stop');
+        return this.queue.clear();
+
     }
 
-    async _analyzePosition(startpos = "startpos", moves = [], depth = 32, infoCallback = null) {
+    async analyzePosition(startpos = "startpos", moves = [], depth = 32, infoCallback = null) {
+        await this.readyPromise;
+        console.log('Moves:', moves);
         let cacheHash = `${startpos}${moves.map(move => move.san).join('')}${depth}`;
         let cacheHit = this.analyzeCache[cacheHash];
         if (cacheHit) {
@@ -110,42 +134,44 @@ export class StockfishEngine {
         let job = { callbacks: infoCallback ? [infoCallback] : [], promise: promise, latestInfo: null };
         this.analyzeCache[cacheHash] = job;
 
-        await this._stop();
-        await this._position(startpos, moves);
+        this.queue.enqueue(async () => {
+            console.log(`Analyzing position: ${startpos} with ${moves.length} moves to depth ${depth}`);
+            await this._stop();
+            await this._position(startpos, moves);
 
-        this._postMessage(`go depth ${depth}`, 'bestmove', (infoResponse) => {
-            if (infoResponse.startsWith('info depth ')) {
-                job.latestInfo = new Info(infoResponse, fenFromMoves(moves, startpos));
-                for (const callback of job.callbacks) {
-                    callback(job.latestInfo);
+            return this._postMessage(`go depth ${depth}`, 'bestmove', (infoResponse) => {
+                if (infoResponse.startsWith('info depth ')) {
+                    job.latestInfo = new Info(infoResponse, fenFromMoves(moves, startpos));
+                    for (const callback of job.callbacks) {
+                        callback(job.latestInfo);
+                    }
                 }
-            }
-        }, (bestmoveResponse) => {
-            if (job.latestInfo && (job.latestInfo.depth == depth || job.latestInfo.score.type === 'mate')) {
-                // Cache the result
-                job.callbacks = null;
-                resolve(job.latestInfo);
-            }
-            else {
-                reject(`Analysis did not reach desired depth(${depth}): ${job.latestInfo.depth}`);
-            }
+            }, (bestmoveResponse) => {
+                if (job.latestInfo && (job.latestInfo.depth == depth || job.latestInfo.score.type === 'mate')) {
+                    // Cache the result
+                    job.callbacks = null;
+                    job.latestInfo.final = true;
+                    resolve(job.latestInfo);
+                }
+                else {
+                    this.analyzeCache[cacheHash] = null; // Invalidate cache since we didn't reach desired depth
+                    reject(`Analysis did not reach desired depth(${depth}): ${job.latestInfo ? job.latestInfo.depth : 'unknown'}`);
+                }
+            });
         });
 
         return job.promise;
     }
 
-    analyzePosition(fen = "startpos", moves = [], depth = 32, analysisCallback) {
-        return this.queue.enqueue(async () => {
-            return this._analyzePosition(fen, moves, depth,
-                (info) => {
-                    analysisCallback(info);
-                });
-        });
+    async _startNewGame() {
+        await this._postMessage('ucinewgame');
+        return this._postMessage('isready', 'readyok');
     }
 
-    _startNewGame() {
-        this._postMessageToQueue('ucinewgame');
-        this._postMessageToQueue('isready', 'readyok');
+    async startNewGame() {
+        return this.queue.enqueue(async () => {
+            return this._startNewGame();
+        });
     }
 
     async analyzePgnGame(pgnText, depth = 32, analysisCallback) {
@@ -153,27 +179,26 @@ export class StockfishEngine {
         chess.load_pgn(pgnText);
         const moves = chess.history({ verbose: true });
 
-        this._startNewGame();
+        this.startNewGame();
 
         let promises = [];
 
         for (let i = 0; i <= moves.length; i++) {
             let currentMoves = moves.slice(0, i);
             let lastMove = i > 0 ? currentMoves[i - 1] : null;
-            const promise = this.queue.enqueue(() => {
-                return this._analyzePosition("startpos", currentMoves, depth,
-                    (info) => {
-                        analysisCallback({
-                            moveIndex: i,
-                            info: info,
-                            moves: currentMoves,
-                            fen: info.fen,
-                            lastMove: lastMove,
-                        });
+            await this.analyzePosition(
+                "startpos",
+                currentMoves,
+                depth,
+                (info) => {
+                    analysisCallback({
+                        moveIndex: i,
+                        info: info,
+                        moves: currentMoves,
+                        fen: info.fen,
+                        lastMove: lastMove,
                     });
-            });
-
-            promises.push(promise);
+                });
         }
 
         return Promise.all(promises);
@@ -229,6 +254,7 @@ class Info {
             return undefined;
         };
 
+        this.final = false;
         this.depth = getNum('depth');
         this.seldepth = getNum('seldepth');
         this.multipv = getNum('multipv') ?? 1;
@@ -266,7 +292,6 @@ class Info {
         if (pvi >= 0 && pvi + 1 < tokens.length) {
             this.pv = tokens.slice(pvi + 1);
         }
-        console.log('INFO:', this);
         [this.winProbabilityWhite, this.winProbabilityBlack] = this._getScoreProbability();
     }
 
@@ -297,9 +322,11 @@ class AsyncQueue {
         this.queue = [];
         this.running = false;
         this.clearRequested = false;
+
+        this.clearResolve = null;
     }
 
-    enqueue(asyncFn) {
+    async enqueue(asyncFn) {
         return new Promise((resolve, reject) => {
             this.queue.push({ asyncFn, resolve, reject });
             this.run();
@@ -307,7 +334,16 @@ class AsyncQueue {
     }
 
     async clear() {
-        this.clearRequested = true;
+        console.warn('AsyncQueue: Clear requested');
+        return new Promise((resolve) => {
+            this.clearRequested = true;
+            this.clearResolve = resolve;
+            if (!this.running) {
+                resolve();
+                this.clearRequested = false;
+                this.clearResolve = null;
+            }
+        });
     }
 
     async run() {
@@ -317,7 +353,7 @@ class AsyncQueue {
         while (this.queue.length) {
             const { asyncFn, resolve, reject } = this.queue.shift();
             if (this.clearRequested) {
-                reject('AsyncQueue cleared');
+                reject(`AsyncQueue cleared: ${asyncFn}`);
                 continue;
             }
 
@@ -330,6 +366,9 @@ class AsyncQueue {
         }
 
         this.running = false;
+        if (this.clearResolve) {
+            this.clearResolve();
+        }
         this.clearRequested = false;
     }
 }
@@ -343,6 +382,18 @@ function move_to_uci(move) {
     return uci;
 }
 window.move_to_uci = move_to_uci;
+
+function uci_to_move(uci) {
+    let move = {
+        from: uci.slice(0, 2),
+        to: uci.slice(2, 4),
+    };
+    if (uci.length > 4) {
+        move.promotion = uci[4];
+    }
+    return move;
+}
+window.uci_to_move = uci_to_move;
 
 function score_to_probs(score) {
     let value = 0;

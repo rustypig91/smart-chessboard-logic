@@ -347,14 +347,61 @@
         };
 
         let engine = null;
-        let latestGameAnalysises = []; // per-move analysis results
+        let gameInfos = []; // per-move analysis results
         let currentAnalysisIndex = 0;
+        let moves = [];
+
+        async function setCurrentAnalysisIndex(index) {
+            if (index < 0 || index >= moves.length) {
+                console.warn('Index out of bounds for analysis:', index, moves.length);
+                return;
+            }
+
+            currentAnalysisIndex = index;
+            updateAnalysisUI();
+
+            // Analyze position before and after this move
+            if (index > 0) {
+                await engine.analyzePosition(
+                    "startpos",
+                    moves.slice(0, index),
+                    parseInt(el.depthSelector.value) || 16,
+                    (info) => {
+                        console.log('Index:', index);
+                        gameInfos[index - 1] = info;
+                        setStatus(`Analyzing move ${index - 1} (depth ${info.depth || '-'})`);
+                        if (currentAnalysisIndex === index) {
+                            updateAnalysisUI();
+                        }
+                    }
+                ).catch((e) => {
+                    console.error('Error during analysis 2:', e);
+                });
+            }
+
+            await engine.analyzePosition(
+                "startpos",
+                moves.slice(0, index + 1),
+                parseInt(el.depthSelector.value) || 16,
+                (info) => {
+                    gameInfos[index] = info;
+                    console.log('IndeX:', index);
+                    setStatus(`Analyzing move ${index} (depth ${info.depth || '-'})`);
+                    if (currentAnalysisIndex === index) {
+                        updateAnalysisUI();
+                    }
+                }
+            ).catch((e) => {
+                console.error('Error during analysis:', e);
+            });
+            setStatus('Analysis complete');
+        }
+
 
         function updateAnalysisUI() {
-            let analysis = latestGameAnalysises[currentAnalysisIndex];
-            console.log('Updating analysis UI for index', currentAnalysisIndex, analysis);
-            let lastAnalysis = currentAnalysisIndex > 0 ? latestGameAnalysises[currentAnalysisIndex - 1] : null;
-            if (!analysis) {
+            let info = gameInfos[currentAnalysisIndex];
+            let lastInfo = gameInfos[currentAnalysisIndex - 1];
+            if (!info) {
                 setEvalBar();
                 renderBoard({});
                 el.eval.textContent = '-';
@@ -362,18 +409,18 @@
                 el.pv.textContent = '-';
                 el.blunder.textContent = '-';
                 el.scoreDiff.textContent = '-';
-                el.posInfo.textContent = `${currentAnalysisIndex}/${Math.max(latestGameAnalysises.length - 1, 0)}`;
+                el.posInfo.textContent = `${currentAnalysisIndex}/${Math.max(moves.length - 1, 0)}`;
                 el.moveSan.textContent = '-';
                 return;
             };
 
-            el.depth.textContent = analysis.info.depth || '-';
+            el.depth.textContent = info.depth || '-';
 
-            if (lastAnalysis && analysis.info.score && lastAnalysis.info.score) {
-                const lastScore = lastAnalysis.info.score.type === 'cp' ? lastAnalysis.info.score.value / 100 :
-                    (analysis.info.score.type === 'mate' ? (analysis.info.score.value > 0 ? 1000 : -1000) : 0);
-                const currentScore = analysis.info.score.type === 'cp' ? analysis.info.score.value / 100 :
-                    (analysis.info.score.type === 'mate' ? (analysis.info.score.value > 0 ? 1000 : -1000) : 0);
+            if (lastInfo && info.score && lastInfo.score) {
+                const lastScore = lastInfo.score.type === 'cp' ? lastInfo.score.value / 100 :
+                    (info.score.type === 'mate' ? (info.score.value > 0 ? 1000 : -1000) : 0);
+                const currentScore = info.score.type === 'cp' ? info.score.value / 100 :
+                    (info.score.type === 'mate' ? (info.score.value > 0 ? 1000 : -1000) : 0);
                 const diff = currentScore - lastScore;
                 el.scoreDiff.textContent = (diff >= 0 ? '+' : '') + diff.toFixed(2);
                 el.blunder.textContent = diff <= -1.0 ? 'Yes' : 'No';
@@ -383,26 +430,26 @@
             }
 
             let bestMove_uci = null;
-            if (lastAnalysis && lastAnalysis.info.pv && lastAnalysis.info.pv.length > 0) {
-                bestMove_uci = lastAnalysis.info.pv[0];
+            if (lastInfo && lastInfo.pv && lastInfo.pv.length > 0) {
+                bestMove_uci = lastInfo.pv[0];
             }
 
             el.bestMove.textContent = bestMove_uci || '-';
 
-            el.posInfo.textContent = `${currentAnalysisIndex}/${Math.max(latestGameAnalysises.length - 1, 0)}`;
-            el.moveSan.textContent = analysis.lastMove ? analysis.lastMove.san : '-';
+            el.posInfo.textContent = `${currentAnalysisIndex}/${Math.max(moves.length - 1, 0)}`;
+            el.moveSan.textContent = moves[currentAnalysisIndex] ? moves[currentAnalysisIndex].san : '-';
 
-            setEvalBar(analysis.info);
-            el.eval.textContent = scoreToText(analysis.info);
+            setEvalBar(info);
+            el.eval.textContent = scoreToText(info);
 
-            el.pv.textContent = analysis.info.pv.join(' ') || '-';
+            el.pv.textContent = info.pv.join(' ') || '-';
 
-            const lastMove_uci = analysis.lastMove ? move_to_uci(analysis.lastMove) : null;
+            const lastMove_uci = moves[currentAnalysisIndex - 1] ? move_to_uci(moves[currentAnalysisIndex - 1]) : null;
             renderBoard({
-                fen: analysis.fen,
+                fen: info.fen,
                 lastmove_uci: lastMove_uci,
                 bestmove_uci: bestMove_uci,
-                nextmove_uci: analysis.info.pv && analysis.info.pv.length > 1 ? analysis.info.pv[0] : null,
+                nextmove_uci: info.pv && info.pv.length > 1 ? info.pv[0] : null,
             });
         }
 
@@ -434,15 +481,16 @@
             }
         }
 
-        async function goTo(index) {
-            currentAnalysisIndex = Math.max(0, Math.min(index, latestGameAnalysises.length - 1));
-            updateAnalysisUI();
+        function goTo(index) {
+            next = Math.max(0, Math.min(index, moves.length - 1));
+            setCurrentAnalysisIndex(next);
+            // updateAnalysisUI();
         }
 
         const goStart = () => goTo(-1);
         const goPrev = () => goTo(currentAnalysisIndex - 1);
         const goNext = () => goTo(currentAnalysisIndex + 1);
-        const goEnd = () => goTo(latestGameAnalysises.length - 1);
+        const goEnd = () => goTo(moves.length - 1);
 
         function scoreToText(info) {
             if (!info || !info.score) return '-';
@@ -475,18 +523,21 @@
                     return;
                 }
                 const numMoves = chess.history().length;
+
+                moves = chess.history({ verbose: true });
+
                 currentAnalysisIndex = 0;
-                latestGameAnalysises = [];
+                gameInfos = [];
                 updateAnalysisUI();
 
-                await engine.analyzePgnGame(text, depth = parseInt(el.depthSelector.value) || 16,
-                    analysisCallback = (analysis) => {
-                        latestGameAnalysises[analysis.moveIndex] = analysis;
+                await engine.analyzePgnGame(
+                    text,
+                    parseInt(el.depthSelector.value) || 16,
+                    (analysis) => {
+                        gameInfos[analysis.moveIndex] = analysis.info;
                         setStatus(`Analyzing move ${analysis.moveIndex}/${numMoves} (depth ${analysis.info.depth || '-'})`);
                         updateAnalysisUI();
-                    },
-                    null
-                );
+                    });
                 setStatus('Analysis complete');
 
             } catch (e) {
@@ -509,12 +560,29 @@
         }
 
         function handleBoardStateEvent(event) {
+            console.log(`Received moves from BoardStateEvent: ${event.board.moves}`);
+            if (!event.board.moves) {
+                return;
+            }
 
+            let chess = new Chess();
+            for (const mv of event.board.moves) {
+                const moveResult = chess.move(mv, { sloppy: true });
+                if (!moveResult) {
+                    console.warn('Invalid move from board state:', mv.san);
+                    return;
+                }
+            }
+
+            moves = chess.history({ verbose: true });
+            setCurrentAnalysisIndex(moves.length - 1);
         }
 
-        function startLiveView() {
+        async function startLiveView() {
             setStatus('Live: viewing…');
-            setupLiveListenersOnce();
+            gameInfos = [];
+            await engine.stop();
+            await engine.startNewGame();
 
             addBoardEventListener('BoardStateEvent', handleBoardStateEvent);
         }
@@ -604,6 +672,7 @@
             if (engine) {
                 await engine.stop();
                 setStatus('Idle');
+                updateAnalysisUI();
             }
         }
 

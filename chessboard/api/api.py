@@ -141,7 +141,6 @@ def get_svg_board():
         except ValueError:
             lastmove = None
 
-    bestmove = None
     if bestmove_uci:
         try:
             bestmove = chess.Move.from_uci(bestmove_uci)
@@ -160,7 +159,8 @@ def get_svg_board():
             log.warning(f"Invalid nextmove UCI provided: {nextmove_uci}")
             return jsonify({'success': False, 'error': 'Invalid nextmove UCI string provided'}), 400
 
-    log.debug(f"Generating SVG board: FEN={board_fen}, lastmove={lastmove}, bestmove={bestmove}")
+    log.info(
+        f"Generating SVG board: FEN={board_fen}, lastmove={lastmove_uci}, bestmove={bestmove_uci} nextmove={nextmove_uci}")
     svg_data = chess.svg.board(board=board, size=size, lastmove=lastmove, arrows=arrows)
 
     return Response(svg_data, mimetype='image/svg+xml')

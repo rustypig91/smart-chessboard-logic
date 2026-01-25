@@ -232,6 +232,22 @@
             padding: 6px 8px;
             line-height: 1;
         }
+
+        /* Evaluation graph */
+        .eval-graph {
+            /* width: 460px; */
+            height: 160px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--panel);
+            overflow: hidden;
+        }
+
+        .eval-card h2 {
+            margin: 0 0 8px;
+            font-size: 16px;
+            color: var(--muted);
+        }
     </style>
 </head>
 
@@ -247,20 +263,22 @@
             </div>
         </div>
         <div class="right-column">
+            <div class="card eval-card">
+                <h2>Evaluation</h2>
+                <div id="evalGraph" class="eval-graph" role="img" aria-label="Evaluation graph"></div>
+                <div class="row" style="margin-top:12px; justify-content: center; gap:12px">
+                    <button id="toStart">⏮</button>
+                    <button id="prev">◀</button>
+                    <button id="next">▶</button>
+                    <button id="toEnd">⏭</button>
+                    <!-- <div class="spacer"></div> -->
+                </div>
+            </div>
             <div class="card controls-card">
                 <label for="pgnFile">PGN File</label>
                 <div class="row">
                     <input id="pgnFile" type="file" accept=".pgn,.txt,text/plain" />
                     <button id="loadPgn" class="primary">Load</button>
-                </div>
-
-                <label>Navigate</label>
-                <div class="row">
-                    <button id="toStart">⏮ Start</button>
-                    <button id="prev">◀ Prev</button>
-                    <button id="next">Next ▶</button>
-                    <button id="toEnd">End ⏭</button>
-                    <!-- <div class="spacer"></div> -->
                 </div>
                 <div class="row">
                     <label class="muted">Depth</label>
@@ -344,16 +362,22 @@
             historyList: document.getElementById('historyList'),
             evalWhite: document.getElementById('evalWhite'),
             evalBlack: document.getElementById('evalBlack'),
+            evalGraph: document.getElementById('evalGraph'),
         };
 
         let engine = null;
         let gameInfos = []; // per-move analysis results
         let currentAnalysisIndex = 0;
         let moves = [];
+        let evalScaleMax = 4; // sticky scale (pawns), expands if needed
+
+        function expectedEvalsCount() {
+            return moves.length + 1; // including starting position
+        }
 
         async function setCurrentAnalysisIndex(index) {
-            if (index < 0 || index >= moves.length) {
-                console.warn('Index out of bounds for analysis:', index, moves.length);
+            if (index < 0 || index >= expectedEvalsCount()) {
+                console.warn('Index out of bounds for analysis:', index, gameInfos.length);
                 return;
             }
 
@@ -364,10 +388,10 @@
             if (index > 0) {
                 await engine.analyzePosition(
                     "startpos",
-                    moves.slice(0, index),
+                    moves.slice(0, index - 1),
                     parseInt(el.depthSelector.value) || 16,
                     (info) => {
-                        console.log('Index:', index);
+                        console.log('Index:', index - 1);
                         gameInfos[index - 1] = info;
                         setStatus(`Analyzing move ${index - 1} (depth ${info.depth || '-'})`);
                         if (currentAnalysisIndex === index) {
@@ -381,7 +405,7 @@
 
             await engine.analyzePosition(
                 "startpos",
-                moves.slice(0, index + 1),
+                moves.slice(0, index),
                 parseInt(el.depthSelector.value) || 16,
                 (info) => {
                     gameInfos[index] = info;
@@ -409,7 +433,7 @@
                 el.pv.textContent = '-';
                 el.blunder.textContent = '-';
                 el.scoreDiff.textContent = '-';
-                el.posInfo.textContent = `${currentAnalysisIndex}/${Math.max(moves.length - 1, 0)}`;
+                el.posInfo.textContent = `${currentAnalysisIndex}/${Math.max(expectedEvalsCount() - 1, 0)}`;
                 el.moveSan.textContent = '-';
                 return;
             };
@@ -436,7 +460,7 @@
 
             el.bestMove.textContent = bestMove_uci || '-';
 
-            el.posInfo.textContent = `${currentAnalysisIndex}/${Math.max(moves.length - 1, 0)}`;
+            el.posInfo.textContent = `${currentAnalysisIndex}/${Math.max(expectedEvalsCount() - 1, 0)}`;
             el.moveSan.textContent = moves[currentAnalysisIndex] ? moves[currentAnalysisIndex].san : '-';
 
             setEvalBar(info);
@@ -449,15 +473,18 @@
                 fen: info.fen,
                 lastmove_uci: lastMove_uci,
                 bestmove_uci: bestMove_uci,
-                nextmove_uci: info.pv && info.pv.length > 1 ? info.pv[0] : null,
+                nextmove_uci: info.pv[0]
             });
+
+            renderEvalGraph();
         }
 
         function setStatus(s) { el.status.textContent = s; }
 
         svgBoardCache = {};
         async function renderBoard({ fen, lastmove_uci = null, bestmove_uci = null, nextmove_uci = null }) {
-            cacheHash = fen + lastmove_uci + bestmove_uci + nextmove_uci;
+            const cacheHash = fen + lastmove_uci + bestmove_uci + nextmove_uci;
+            console.log('HASH:', cacheHash);
             if (svgBoardCache[cacheHash]) {
                 el.board.innerHTML = svgBoardCache[cacheHash];
                 return;
@@ -482,15 +509,14 @@
         }
 
         function goTo(index) {
-            next = Math.max(0, Math.min(index, moves.length - 1));
+            next = Math.max(0, Math.min(index, expectedEvalsCount() - 1));
             setCurrentAnalysisIndex(next);
-            // updateAnalysisUI();
         }
 
         const goStart = () => goTo(-1);
         const goPrev = () => goTo(currentAnalysisIndex - 1);
         const goNext = () => goTo(currentAnalysisIndex + 1);
-        const goEnd = () => goTo(moves.length - 1);
+        const goEnd = () => goTo(expectedEvalsCount() - 1);
 
         function scoreToText(info) {
             if (!info || !info.score) return '-';
@@ -513,6 +539,218 @@
             el.evalBlack.style.height = (100 - p) + '%';
         }
 
+        let lastEvals = [];
+
+        function generateChessEvalSVG(
+            evaluations,
+            currentMove,
+            {
+                width = 600,
+                height = 200,
+                padding = 20,
+                whiteColor = "#ffffff",
+                blackColor = "#000000",
+                backgroundColor = "#1e1e1e",
+                gridColor = "#555",
+                dotColor = "#4da6ff",
+                dotRadius = 4
+            } = {}
+        ) {
+
+            for (let i = 0; i < evaluations.length; i++) {
+                if (evaluations[i]?.white != lastEvals[i]?.white || evaluations[i]?.black != lastEvals[i]?.black) {
+                    console.warn('Evaluation changed at index', i, 'from', lastEvals[i], 'to', evaluations[i]);
+                }
+            }
+            lastEvals = evaluations;
+
+            const usableHeight = height - padding * 2;
+            const usableWidth = width - padding * 2;
+            const centerY = padding + usableHeight / 2;
+            const stepX = usableWidth / Math.max(1, evaluations.length - 1);
+
+            // White 100% -> bottom, Black 100% -> top
+            function probToY(whiteProb) {
+                const normalized = (whiteProb - 50) / 50; // -1 to 1
+                return centerY + normalized * (usableHeight / 2);
+            }
+
+            let path = "";
+
+            evaluations.forEach((evalPos, i) => {
+                const x = padding + i * stepX;
+                const y = probToY(evalPos.white);
+
+                if (i === 0) {
+                    path += `M ${x} ${centerY} L ${x} ${y} `;
+                } else {
+                    path += `L ${x} ${y} `;
+                }
+            });
+
+            const lastX = padding + (evaluations.length - 1) * stepX;
+            path += `L ${lastX} ${centerY} Z`;
+
+            // Current move dot
+            let dot = "";
+            if (currentMove >= 0 && currentMove < evaluations.length) {
+                const x = padding + currentMove * stepX;
+                const y = probToY(evaluations[currentMove].white);
+                dot = `<circle cx="${x}" cy="${y}" r="${dotRadius}" fill="${dotColor}" />`;
+            }
+
+            return `
+<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="${backgroundColor}" />
+
+  <!-- Center line (equal position) -->
+  <line
+    x1="${padding}"
+    y1="${centerY}"
+    x2="${width - padding}"
+    y2="${centerY}"
+    stroke="${gridColor}"
+    stroke-dasharray="4 4"
+  />
+
+  <!-- Black advantage (top) -->
+  <path d="${path}" fill="${blackColor}" fill-opacity="0.85"
+        clip-path="url(#aboveCenter)" />
+
+  <!-- White advantage (bottom) -->
+  <path d="${path}" fill="${whiteColor}" fill-opacity="0.85"
+        clip-path="url(#belowCenter)" />
+
+  ${dot}
+
+  <clipPath id="aboveCenter">
+    <rect x="0" y="0" width="${width}" height="${centerY}" />
+  </clipPath>
+
+  <clipPath id="belowCenter">
+    <rect x="0" y="${centerY}" width="${width}" height="${height}" />
+  </clipPath>
+</svg>
+`.trim();
+        }
+
+        function renderEvalGraph() {
+            if (!el.evalGraph) return;
+            const width = el.evalGraph.clientWidth || 460;
+            const height = el.evalGraph.clientHeight || 160;
+            const evaluations = [];
+            const totalEvals = moves.length + 1;
+
+            for (let i = 0; i < totalEvals; i++) {
+                const info = gameInfos[i];
+                if (info && info.winProbabilityWhite !== undefined && info.winProbabilityBlack !== undefined) {
+                    const total = info.winProbabilityWhite + info.winProbabilityBlack;
+                    const whiteProb = (info.winProbabilityWhite / total) * 100;
+                    evaluations.push({ white: whiteProb, black: 100 - whiteProb });
+                } else {
+                    evaluations.push({ white: 50, black: 50 });
+                }
+            }
+            const svg = generateChessEvalSVG(evaluations, currentAnalysisIndex, { width: width, height: height });
+            // Click to navigate
+            el.evalGraph.innerHTML = svg;
+            el.evalGraph.onclick = (e) => {
+                const rect = el.evalGraph.getBoundingClientRect();
+                const x = e.clientX - rect.left - 20; // padding
+                const usableWidth = rect.width - 40; // padding * 2
+                const index = Math.floor((x / usableWidth) * evaluations.length);
+                goTo(index);
+            };
+        }
+
+        // Evaluation graph renderer
+        // function renderEvalGraph() {
+        //     if (!el.evalGraph) return;
+        //     const width = el.evalGraph.clientWidth || (el.board ? el.board.clientWidth : 560) || 560;
+        //     const height = el.evalGraph.clientHeight || 160;
+
+        //     const margin = { left: 30, right: 12, top: 12, bottom: 22 };
+        //     const plotW = Math.max(1, width - margin.left - margin.right);
+        //     const plotH = Math.max(1, height - margin.top - margin.bottom);
+
+        //     const values = [];
+        //     for (let i = 0; i < moves.length; i++) {
+        //         const info = gameInfos[i];
+        //         if (info && info.score) {
+        //             if (info.score.type === 'cp') values.push(info.score.value / 100);
+        //             else if (info.score.type === 'mate') values.push(info.score.value > 0 ? 10 : -10);
+        //             else values.push(null);
+        //         } else {
+        //             values.push(null);
+        //         }
+        //     }
+
+        //     const nonNull = values.filter(v => v !== null);
+        //     const currentMaxAbs = nonNull.length ? Math.max(...nonNull.map(v => Math.abs(v))) : 1;
+        //     const proposedScale = Math.max(2, Math.min(10, Math.ceil(currentMaxAbs)));
+        //     // Sticky scaling: only expand, never shrink during a single analysis session
+        //     if (proposedScale > evalScaleMax) {
+        //         evalScaleMax = proposedScale;
+        //     }
+        //     const yMax = evalScaleMax;
+        //     const xStep = values.length > 1 ? plotW / (values.length - 1) : plotW;
+
+        //     // Build path
+        //     let path = '';
+        //     values.forEach((v, i) => {
+        //         const x = margin.left + i * xStep;
+        //         const y = margin.top + (plotH / 2) - (v !== null ? (v / yMax) * (plotH / 2) : 0);
+        //         if (v === null) {
+        //             // break in path
+        //             path += '';
+        //         } else if (path === '') {
+        //             path += `M ${x.toFixed(2)} ${y.toFixed(2)}`;
+        //         } else {
+        //             path += ` L ${x.toFixed(2)} ${y.toFixed(2)}`;
+        //         }
+        //     });
+
+        //     // Axis and grid
+        //     const midY = margin.top + plotH / 2;
+        //     const currentX = margin.left + (Math.max(0, Math.min(currentAnalysisIndex, values.length - 1))) * xStep;
+
+        //     const ticks = [-yMax, -yMax / 2, 0, yMax / 2, yMax];
+        //     const tickEls = ticks.map(t => {
+        //         const ty = margin.top + (plotH / 2) - (t / yMax) * (plotH / 2);
+        //         return `
+        //             <line x1="${margin.left}" y1="${ty.toFixed(2)}" x2="${(width - margin.right)}" y2="${ty.toFixed(2)}" stroke="${getComputedStyle(document.documentElement).getPropertyValue('--border').trim()}" stroke-opacity="0.5" stroke-width="1" />
+        //             <text x="${(width - margin.right - 4)}" y="${(ty - 2).toFixed(2)}" text-anchor="end" font-size="10" fill="${getComputedStyle(document.documentElement).getPropertyValue('--muted').trim()}">${t}</text>
+        //         `;
+        //     }).join('');
+
+        //     const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#1f6feb';
+        //     const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#c9d1d9';
+        //     const border = getComputedStyle(document.documentElement).getPropertyValue('--border').trim() || '#30363d';
+
+        //     const svg = `
+        //         <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+        //             <rect x="0" y="0" width="${width}" height="${height}" fill="none" />
+        //             <rect x="${margin.left}" y="${margin.top}" width="${plotW}" height="${plotH}" fill="none" stroke="${border}" rx="8" />
+        //             ${tickEls}
+        //             <line x1="${margin.left}" y1="${midY}" x2="${(width - margin.right)}" y2="${midY}" stroke="${textColor}" stroke-opacity="0.4" stroke-width="1.5" />
+        //             ${path ? `<path d="${path}" fill="none" stroke="${accent}" stroke-width="2" />` : ''}
+        //             ${values[currentAnalysisIndex] !== null ? `<circle cx="${currentX.toFixed(2)}" cy="${(margin.top + (plotH / 2) - (values[currentAnalysisIndex] / yMax) * (plotH / 2)).toFixed(2)}" r="3.5" fill="${accent}" />` : ''}
+        //             <text x="${margin.left}" y="${(margin.top + 12)}" font-size="11" fill="${getComputedStyle(document.documentElement).getPropertyValue('--muted').trim()}">Eval (pawns), click to jump</text>
+        //         </svg>
+        //     `;
+
+        //     el.evalGraph.innerHTML = svg;
+
+        //     // Click to navigate
+        //     el.evalGraph.onclick = (e) => {
+        //         const rect = el.evalGraph.getBoundingClientRect();
+        //         const x = e.clientX - rect.left - margin.left;
+        //         const idx = Math.max(0, Math.min(moves.length - 1, Math.round(x / xStep)));
+        //         if (!isFinite(idx)) return;
+        //         goTo(idx);
+        //     };
+        // }
+
         // Added: factor out PGN loading from text so we can reuse for history click
         async function loadPGNFromText(text) {
             try {
@@ -528,7 +766,10 @@
 
                 currentAnalysisIndex = 0;
                 gameInfos = [];
+                svgBoardCache = {};
+                evalScaleMax = 4;
                 updateAnalysisUI();
+                renderEvalGraph();
 
                 await engine.analyzePgnGame(
                     text,
@@ -536,7 +777,7 @@
                     (analysis) => {
                         gameInfos[analysis.moveIndex] = analysis.info;
                         setStatus(`Analyzing move ${analysis.moveIndex}/${numMoves} (depth ${analysis.info.depth || '-'})`);
-                        updateAnalysisUI();
+                        renderEvalGraph();
                     });
                 setStatus('Analysis complete');
 
@@ -575,12 +816,15 @@
             }
 
             moves = chess.history({ verbose: true });
-            setCurrentAnalysisIndex(moves.length - 1);
+            gameInfos[moves.length] = null;
+            goEnd();
         }
 
         async function startLiveView() {
             setStatus('Live: viewing…');
             gameInfos = [];
+            svgBoardCache = {};
+            evalScaleMax = 4;
             await engine.stop();
             await engine.startNewGame();
 
@@ -662,10 +906,7 @@
             setEvalBar();
             setStatus('Idle');
             updateAnalysisUI();
-            // Empty initial board
-
-            // Added: populate history
-
+            renderEvalGraph();
         }
 
         async function stop() {

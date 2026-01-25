@@ -112,7 +112,6 @@ export class StockfishEngine {
 
     async analyzePosition(startpos = "startpos", moves = [], depth = 32, infoCallback = null) {
         await this.readyPromise;
-        console.log('Moves:', moves);
         let cacheHash = `${startpos}${moves.map(move => move.san).join('')}${depth}`;
         let cacheHit = this.analyzeCache[cacheHash];
         if (cacheHit) {

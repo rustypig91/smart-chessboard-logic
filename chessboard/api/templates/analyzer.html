@@ -421,13 +421,29 @@
             setStatus('Analysis complete');
         }
 
+        function getGameStateInfo() {
+            let chess = new Chess();
+            const _moves = moves.slice(0, currentAnalysisIndex);
+            _moves.forEach(m => chess.move(m.san));
+
+            const fen = chess.fen();
+            const lastMove_uci = moves[currentAnalysisIndex - 1] ? move_to_uci(moves[currentAnalysisIndex - 1]) : null;
+            const bestMove_uci = gameInfos[currentAnalysisIndex - 1] ? gameInfos[currentAnalysisIndex - 1].pv[0] : null;
+            const nextMove_uci = gameInfos[currentAnalysisIndex] ? gameInfos[currentAnalysisIndex].pv[0] : null;
+
+            return { lastMove_uci, bestMove_uci, nextMove_uci, chess };
+        }
 
         function updateAnalysisUI() {
-            let info = gameInfos[currentAnalysisIndex];
-            let lastInfo = gameInfos[currentAnalysisIndex - 1];
+            const info = gameInfos[currentAnalysisIndex];
+            const lastInfo = gameInfos[currentAnalysisIndex - 1];
+            const gameState = getGameStateInfo();
+
+            renderBoard(gameState);
+
             if (!info) {
                 setEvalBar();
-                renderBoard({});
+
                 el.eval.textContent = '-';
                 el.bestMove.textContent = '-';
                 el.pv.textContent = '-';
@@ -448,42 +464,33 @@
                 const diff = currentScore - lastScore;
                 el.scoreDiff.textContent = (diff >= 0 ? '+' : '') + diff.toFixed(2);
                 el.blunder.textContent = diff <= -1.0 ? 'Yes' : 'No';
-
             } else {
                 el.scoreDiff.textContent = '-';
             }
 
-            let bestMove_uci = null;
-            if (lastInfo && lastInfo.pv && lastInfo.pv.length > 0) {
-                bestMove_uci = lastInfo.pv[0];
-            }
-
-            el.bestMove.textContent = bestMove_uci || '-';
+            el.bestMove.textContent = gameState.bestMove_uci || '-';
 
             el.posInfo.textContent = `${currentAnalysisIndex}/${Math.max(expectedEvalsCount() - 1, 0)}`;
-            el.moveSan.textContent = moves[currentAnalysisIndex] ? moves[currentAnalysisIndex].san : '-';
+            el.moveSan.textContent = gameState.lastMove_uci || '-'; //  moves[currentAnalysisIndex] ? moves[currentAnalysisIndex].san : '-';
 
             setEvalBar(info);
             el.eval.textContent = scoreToText(info);
 
             el.pv.textContent = info.pv.join(' ') || '-';
 
-            const lastMove_uci = moves[currentAnalysisIndex - 1] ? move_to_uci(moves[currentAnalysisIndex - 1]) : null;
-            renderBoard({
-                fen: info.fen,
-                lastmove_uci: lastMove_uci,
-                bestmove_uci: bestMove_uci,
-                nextmove_uci: info.pv[0]
-            });
-
             renderEvalGraph();
         }
+
 
         function setStatus(s) { el.status.textContent = s; }
 
         svgBoardCache = {};
-        async function renderBoard({ fen, lastmove_uci = null, bestmove_uci = null, nextmove_uci = null }) {
-            const cacheHash = fen + lastmove_uci + bestmove_uci + nextmove_uci;
+        async function renderBoard(gameState = null) {
+            if (!gameState) {
+                gameState = getGameStateInfo();
+            }
+            const fen = gameState.chess.fen();
+            const cacheHash = fen + gameState.lastMove_uci + gameState.bestMove_uci + gameState.nextMove_uci;
             console.log('HASH:', cacheHash);
             if (svgBoardCache[cacheHash]) {
                 el.board.innerHTML = svgBoardCache[cacheHash];
@@ -495,9 +502,9 @@
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         board_fen: fen,
-                        lastmove_uci: lastmove_uci,
-                        bestmove_uci: bestmove_uci,
-                        nextmove_uci: nextmove_uci,
+                        lastmove_uci: gameState.lastMove_uci,
+                        bestmove_uci: gameState.bestMove_uci,
+                        nextmove_uci: gameState.nextMove_uci,
                     })
                 });
                 const svg = await res.text();
@@ -814,9 +821,7 @@
                     return;
                 }
             }
-
             moves = chess.history({ verbose: true });
-            gameInfos[moves.length] = null;
             goEnd();
         }
 
@@ -900,7 +905,7 @@
 
         async function init() {
             loadHistory();
-            await renderBoard({});
+            await renderBoard();
 
             engine = new StockfishEngine(); // second engine for parallel analysis
             setEvalBar();

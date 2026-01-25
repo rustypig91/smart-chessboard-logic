@@ -79,22 +79,6 @@ export class StockfishEngine {
         await this._postMessage(positionCommand);
     }
 
-    async _go(depth = 32, infoCallback = null, bestMoveCallback = null) {
-        return new Promise((resolve, reject) => {
-            this._postMessage(`go depth ${depth}`, 'bestmove', (infoResponse) => {
-                if (infoResponse.startsWith('info ') && infoCallback) {
-                    infoCallback(new Info(infoResponse));
-                }
-            }, (bestmoveResponse) => {
-                const bestMove = new BestMove(bestmoveResponse);
-                resolve({ bestMove });
-                if (bestMoveCallback) {
-                    bestMoveCallback(bestMove);
-                }
-            });
-        });
-    }
-
     async _stop() {
         return this._postMessage('stop');
     }
@@ -107,7 +91,19 @@ export class StockfishEngine {
     async _analyzePosition(startpos = "startpos", moves = [], depth = 32, infoCallback = null, bestMoveCallback = null) {
         await this._stop();
         await this._position(startpos, moves);
-        return this._go(depth, infoCallback, bestMoveCallback);
+        return new Promise((resolve, reject) => {
+            this._postMessage(`go depth ${depth}`, 'bestmove', (infoResponse) => {
+                if (infoResponse.startsWith('info ') && infoCallback) {
+                    infoCallback(new Info(infoResponse, fenFromMoves(moves, startpos)));
+                }
+            }, (bestmoveResponse) => {
+                const bestMove = new BestMove(bestmoveResponse);
+                resolve({ bestMove });
+                if (bestMoveCallback) {
+                    bestMoveCallback(bestMove);
+                }
+            });
+        });
     }
 
     async analyzeGame(moves = [], depth = 32) {
@@ -137,35 +133,54 @@ export class StockfishEngine {
 
         this._startNewGame();
 
-        let currentChess = new Chess();
-
         let promises = [];
-
 
         for (let i = 0; i <= moves.length; i++) {
             let currentMoves = moves.slice(0, i);
-            let fen = currentChess.fen();
             let lastMove = i > 0 ? currentMoves[i - 1] : null;
             const promise = this.queue.enqueue(() => {
                 return this._analyzePosition("startpos", currentMoves, depth,
                     (info) => {
-                        info.toWhiteScore({ fen: fen });
                         analysisCallback({
                             moveIndex: i,
                             info: info,
                             moves: currentMoves,
-                            fen: fen,
+                            fen: info.fen,
                             lastMove: lastMove,
                         });
                     }, null);
             });
 
             promises.push(promise);
-            currentChess.move(moves[i]);
         }
 
         return Promise.all(promises);
     }
+}
+
+function fenFromMoves(moves, startfen = null) {
+    let chess = new Chess();
+    if (startfen && startfen !== 'startpos') {
+        chess.load(startfen);
+    }
+    for (const move of moves) {
+        chess.move(move);
+    }
+    return chess.fen();
+}
+
+function resolveTurn(fen) {
+    if (!fen) {
+        console.error('resolveTurn called with empty FEN');
+        return 'w';
+    }
+    const parts = fen.split(' ');
+    if (parts.length > 1 && (parts[1] === 'w' || parts[1] === 'b')) {
+        return parts[1];
+    }
+
+    // Default: assume White
+    return 'w';
 }
 
 class BestMove {
@@ -179,7 +194,7 @@ class BestMove {
 
 
 class Info {
-    constructor(text) {
+    constructor(text, fen) {
         // Parse an 'info' line from Stockfish into a structured object
         this.raw = text;
         const tokens = text.trim().split(/\s+/);
@@ -198,10 +213,10 @@ class Info {
         this.nodes = getNum('nodes');
         this.nps = getNum('nps');
         this.time = getNum('time');
+        this.fen = fen;
 
         // Raw score as reported by Stockfish (from side-to-move perspective)
-        this.scoreToMove = { type: null, value: null };
-
+        this.povScore = { type: null, value: null };
         const si = tokens.indexOf('score');
         if (si >= 0 && si + 2 < tokens.length) {
             const type = tokens[si + 1];
@@ -209,12 +224,19 @@ class Info {
             const value = Number(valRaw);
             if (Number.isFinite(value)) {
                 if (type === 'mate') {
-                    this.scoreToMove = { type: 'mate', value: value };
+                    this.povScore = { type: 'mate', value: value };
                 } else if (type === 'cp') {
-                    this.scoreToMove = { type: 'cp', value: value };
+                    this.povScore = { type: 'cp', value: value };
                 }
             }
         }
+        this.turn = resolveTurn(this.fen);
+        this.score = { type: null, value: null };
+        this.score.type = this.povScore.type;
+        this.score.value = this.turn === 'b' && this.povScore.value !== null
+            ? -this.povScore.value
+            : this.povScore.value;
+
 
         // Principal variation
         this.pv = [];
@@ -223,39 +245,27 @@ class Info {
             this.pv = tokens.slice(pvi + 1);
         }
 
-        this.score = this.scoreToMove;
+        [this.winProbabilityWhite, this.winProbabilityBlack] = this._getScoreProbability();
     }
 
-    static _resolveTurn(ctx = {}) {
-        // Prefer explicit ctx.turn
-        if (ctx.turn === 'w' || ctx.turn === 'b') return ctx.turn;
-
-        // Try ctx.fen
-        if (typeof ctx.fen === 'string') {
-            const parts = ctx.fen.split(' ');
-            if (parts.length > 1 && (parts[1] === 'w' || parts[1] === 'b')) return parts[1];
+    _getScoreProbability() {
+        let value = 0;
+        if (this.score.value == null || !Number.isFinite(this.score.value)) {
+            console.warn('Info: Invalid score value for probability calculation:', this.score.value);
+            value = 0;
+        } else if (this.score.type === 'cp') {
+            value = this.score.value;
+        } else if (this.score.type === 'mate') {
+            value = this.score.value > 0 ? 100000 : -100000;
+            if (this.score.value == 0) {
+                value = this.turn === 'w' ? -100000 : 100000;
+            }
         }
 
-        // Default: assume White
-        return 'w';
-    }
-
-    static _toWhitePerspective(score, turn) {
-        if (!score || !Number.isFinite(score.value)) return { type: 'cp', value: 0 };
-        // Convert mate to a large cp proxy to keep sign behavior consistent
-        if (score.type === 'mate') {
-            const v = score.value > 0 ? 100000 : -100000;
-            return { type: 'cp', value: turn === 'b' ? -v : v };
-        }
-        // cp case
-        return { type: 'cp', value: turn === 'b' ? -score.value : score.value };
-    }
-
-    // Utility if you need to recompute with a different context later
-    toWhiteScore(ctx = {}) {
-        const turn = Info._resolveTurn(ctx);
-        this.score = Info._toWhitePerspective(this.scoreToMove, turn);
-        return this.score;
+        const exp = Math.exp(-value / 400.0);
+        const probWhite = 1 / (1 + exp);
+        const probBlack = exp / (1 + exp);
+        return [probWhite, probBlack];
     }
 };
 

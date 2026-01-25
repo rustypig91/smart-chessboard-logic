@@ -372,6 +372,8 @@
                     (analysis.info.score.type === 'mate' ? (analysis.info.score.value > 0 ? 1000 : -1000) : 0);
                 const diff = currentScore - lastScore;
                 el.scoreDiff.textContent = (diff >= 0 ? '+' : '') + diff.toFixed(2);
+                el.blunder.textContent = diff <= -1.0 ? 'Yes' : 'No';
+
             } else {
                 el.scoreDiff.textContent = '-';
             }
@@ -386,11 +388,10 @@
             el.posInfo.textContent = `${currentAnalysisIndex}/${Math.max(latestGameAnalysises.length - 1, 0)}`;
             el.moveSan.textContent = analysis.lastMove ? analysis.lastMove.san : '-';
 
-            setEvalBar(analysis.info.score);
+            setEvalBar(analysis.info);
             el.eval.textContent = scoreToText(analysis.info);
 
             el.pv.textContent = analysis.info.pv.join(' ') || '-';
-            el.blunder.textContent = analysis.isBlunder ? 'Yes' : 'No';
 
             const lastMove_uci = analysis.lastMove ? move_to_uci(analysis.lastMove) : null;
             renderBoard({
@@ -445,12 +446,15 @@
             return '-';
         }
 
-        function setEvalBar(score = { type: 'cp', value: 0 }) {
-            white_win_prob = 0.5;
-            black_win_prob = 0.5;
-            [white_win_prob, black_win_prob] = score_to_probs(score);
-            const total = white_win_prob + black_win_prob;
-            const p = Math.max(0, Math.min(100, (white_win_prob / total) * 100));
+        function setEvalBar(info) {
+            if (!info || !info.winProbabilityWhite || !info.winProbabilityBlack) {
+                el.evalWhite.style.height = '50%';
+                el.evalBlack.style.height = '50%';
+                return;
+            }
+
+            const total = info.winProbabilityWhite + info.winProbabilityBlack;
+            const p = Math.max(0, Math.min(100, (info.winProbabilityWhite / total) * 100));
 
             el.evalWhite.style.height = p + '%';
             el.evalBlack.style.height = (100 - p) + '%';
@@ -473,7 +477,7 @@
                 engine.analyzePgnGame(text, depth = parseInt(el.depthSelector.value) || 16,
                     infoCallback = (info) => {
                         latestGameAnalysises[info.moveIndex] = info;
-                        setStatus(`Analyzing move ${info.moveIndex}/${numMoves} (depth ${info.info.depth})`);
+                        setStatus(`Analyzing move ${info.moveIndex}/${numMoves} (depth ${info.info.depth || '-'})`);
                         updateAnalysisUI();
                     },
                     null

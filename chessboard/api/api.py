@@ -145,7 +145,7 @@ def get_svg_board():
         except ValueError:
             bestmove = None
 
-    log.error(f"Generating SVG board: FEN={board_fen}, lastmove={lastmove}, bestmove={bestmove}")
+    log.debug(f"Generating SVG board: FEN={board_fen}, lastmove={lastmove}, bestmove={bestmove}")
     svg_data = chess.svg.board(board=board, size=size, lastmove=lastmove,
                                arrows=[(bestmove.from_square, bestmove.to_square)] if bestmove else [])
 

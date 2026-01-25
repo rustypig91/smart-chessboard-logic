@@ -18,6 +18,13 @@ function addBoardEventListener(eventType, callback) {
     });
 }
 
+function removeBoardEventListener(eventType, callback) {
+    socket.off("board_event." + eventType, callback);
+    socket.emit("unsubscribe", {
+        event_type: eventType
+    });
+}
+
 // if (!window._socketOnAnySet) {
 //     window.socket.onAny((event, ...args) => {
 //         if (event === "board_event.SetSquareColorEvent") return; // Disabled to not spam the console

@@ -9,6 +9,9 @@
         integrity="sha512-46pfErGq3YBnmXdl83JmFf2bW4nbtjw5PYGwO+biyXN6tgfeN0K+qjgiAjS4FA0ipfDZwyZaBK3LJwLFtzBzDA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="{{ url_for('static', filename='engine.js')}}" type="module"></script>
+    <!-- Socket + event helpers for live view -->
+    <script src="{{ url_for('static', filename='socket.io.min.js')}}"></script>
+    <script src="{{ url_for('static', filename='events.js')}}"></script>
     <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.13.4/chess.js"
         integrity="sha512-40VRp1+fauX7g61ZdQpOiOJTkBbYwVlTLjCXHK9Svf0Mmz9K8Smg5k6LVrc0eEc9+pApf1HNL6Cim/wFqZeRkw=="
         crossorigin="anonymous" referrerpolicy="no-referrer" type="module"></script> -->
@@ -265,8 +268,10 @@
                 </div>
 
                 <div class="row" style="margin-top:8px">
-                    <button id="analyzeCurrent" class="primary">Analyze Current</button>
                     <button id="stop">Stop</button>
+                    <div class="spacer"></div>
+                    <button id="startLive" title="Subscribe to board events">Live View</button>
+                    <button id="stopLive" title="Stop live updates">Stop Live</button>
                 </div>
 
                 <div style="margin-top:12px">
@@ -325,7 +330,6 @@
             prev: document.getElementById('prev'),
             next: document.getElementById('next'),
             toEnd: document.getElementById('toEnd'),
-            analyzeCurrent: document.getElementById('analyzeCurrent'),
             stop: document.getElementById('stop'),
             depthSelector: document.getElementById('depthSelector'),
             depth: document.getElementById('depth'),
@@ -398,14 +402,15 @@
                 fen: analysis.fen,
                 lastmove_uci: lastMove_uci,
                 bestmove_uci: bestMove_uci,
+                nextmove_uci: analysis.info.pv && analysis.info.pv.length > 1 ? analysis.info.pv[0] : null,
             });
         }
 
         function setStatus(s) { el.status.textContent = s; }
 
         svgBoardCache = {};
-        async function renderBoard({ fen, lastmove_uci = null, bestmove_uci = null }) {
-            cacheHash = fen + lastmove_uci + bestmove_uci;
+        async function renderBoard({ fen, lastmove_uci = null, bestmove_uci = null, nextmove_uci = null }) {
+            cacheHash = fen + lastmove_uci + bestmove_uci + nextmove_uci;
             if (svgBoardCache[cacheHash]) {
                 el.board.innerHTML = svgBoardCache[cacheHash];
                 return;
@@ -418,7 +423,7 @@
                         board_fen: fen,
                         lastmove_uci: lastmove_uci,
                         bestmove_uci: bestmove_uci,
-
+                        nextmove_uci: nextmove_uci,
                     })
                 });
                 const svg = await res.text();
@@ -474,14 +479,16 @@
                 latestGameAnalysises = [];
                 updateAnalysisUI();
 
-                engine.analyzePgnGame(text, depth = parseInt(el.depthSelector.value) || 16,
-                    infoCallback = (info) => {
-                        latestGameAnalysises[info.moveIndex] = info;
-                        setStatus(`Analyzing move ${info.moveIndex}/${numMoves} (depth ${info.info.depth || '-'})`);
+                await engine.analyzePgnGame(text, depth = parseInt(el.depthSelector.value) || 16,
+                    analysisCallback = (analysis) => {
+                        latestGameAnalysises[analysis.moveIndex] = analysis;
+                        setStatus(`Analyzing move ${analysis.moveIndex}/${numMoves} (depth ${analysis.info.depth || '-'})`);
                         updateAnalysisUI();
                     },
                     null
                 );
+                setStatus('Analysis complete');
+
             } catch (e) {
                 console.error(e);
                 console.warn('Failed to load PGN: ' + e.message);
@@ -500,6 +507,23 @@
                 setStatus('Error');
             }
         }
+
+        function handleBoardStateEvent(event) {
+
+        }
+
+        function startLiveView() {
+            setStatus('Live: viewing…');
+            setupLiveListenersOnce();
+
+            addBoardEventListener('BoardStateEvent', handleBoardStateEvent);
+        }
+
+        function stopLiveView() {
+            setStatus('Idle');
+            removeBoardEventListener('BoardStateEvent', handleBoardStateEvent);
+        }
+
 
         // Added: load history list and hook clicks to load into analyzer
         async function loadHistory() {
@@ -589,8 +613,9 @@
         el.prev.onclick = () => goPrev();
         el.next.onclick = () => goNext();
         el.toEnd.onclick = () => goEnd();
-        el.analyzeCurrent.onclick = () => analyzeCurrentPosition();
         el.stop.onclick = stop;
+        document.getElementById('startLive').onclick = startLiveView;
+        document.getElementById('stopLive').onclick = stopLiveView;
 
         // Keyboard: arrows to navigate
         window.addEventListener('keydown', (e) => {

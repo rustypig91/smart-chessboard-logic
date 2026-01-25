@@ -121,7 +121,10 @@ def get_svg_board():
     board_fen = data.get('board_fen')
     lastmove_uci = data.get('lastmove_uci')
     bestmove_uci = data.get('bestmove_uci')
+    nextmove_uci = data.get('nextmove_uci')
     size = data.get('size')
+
+    arrows = []
 
     if board_fen:
         try:
@@ -142,12 +145,23 @@ def get_svg_board():
     if bestmove_uci:
         try:
             bestmove = chess.Move.from_uci(bestmove_uci)
+            arrow = chess.svg.Arrow(bestmove.from_square, bestmove.to_square, color="green")
+            arrows.append(arrow)
         except ValueError:
-            bestmove = None
+            log.warning(f"Invalid bestmove UCI provided: {bestmove_uci}")
+            return jsonify({'success': False, 'error': 'Invalid bestmove UCI string provided'}), 400
+
+    if nextmove_uci:
+        try:
+            nextmove = chess.Move.from_uci(nextmove_uci)
+            arrow = chess.svg.Arrow(nextmove.from_square, nextmove.to_square, color="blue")
+            arrows.append(arrow)
+        except ValueError:
+            log.warning(f"Invalid nextmove UCI provided: {nextmove_uci}")
+            return jsonify({'success': False, 'error': 'Invalid nextmove UCI string provided'}), 400
 
     log.debug(f"Generating SVG board: FEN={board_fen}, lastmove={lastmove}, bestmove={bestmove}")
-    svg_data = chess.svg.board(board=board, size=size, lastmove=lastmove,
-                               arrows=[(bestmove.from_square, bestmove.to_square)] if bestmove else [])
+    svg_data = chess.svg.board(board=board, size=size, lastmove=lastmove, arrows=arrows)
 
     return Response(svg_data, mimetype='image/svg+xml')
 
@@ -222,6 +236,42 @@ def handle_subscribe(data: dict[str, Any]) -> None:
     except Exception as e:
         traceback_lines = "\n    ".join(traceback.format_exc().splitlines())
         log.info(f"Error handling subscribe: {e}: \n    {traceback_lines}")
+        return
+
+
+@socketio.on('unsubscribe')
+def handle_unsubscribe(data: dict[str, Any]) -> None:
+    """
+    Handle event unsubscription requests from clients.
+    Expects 'event_type' in data.
+    """
+    event_type = data.get('event_type')
+    if not event_type:
+        log.error("unsubscribe missing 'event_type'")
+        return
+
+    try:
+        event_class = getattr(chessboard.events, event_type)
+        log.debug(f"unsubscribe from event: {event_type}")
+
+        sid = request.sid  # type: ignore
+
+        if sid not in _subscriptions:
+            return
+
+        to_remove = []
+        for callback, subscribed_event_class in _subscriptions[sid]:
+            if subscribed_event_class == event_class:
+                chessboard.events.event_manager.unsubscribe(event_class, callback)
+                to_remove.append((callback, subscribed_event_class))
+        for item in to_remove:
+            _subscriptions[sid].remove(item)
+
+        if not _subscriptions[sid]:
+            del _subscriptions[sid]
+    except Exception as e:
+        traceback_lines = "\n    ".join(traceback.format_exc().splitlines())
+        log.error(f"Error handling unsubscribe: {e}: \n    {traceback_lines}")
         return
 
 

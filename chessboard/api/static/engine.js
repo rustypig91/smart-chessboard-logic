@@ -88,37 +88,59 @@ export class StockfishEngine {
         return this._postMessage('stop');
     }
 
-    async _analyzePosition(startpos = "startpos", moves = [], depth = 32, infoCallback = null, bestMoveCallback = null) {
-        await this._stop();
-        await this._position(startpos, moves);
-        return new Promise((resolve, reject) => {
-            this._postMessage(`go depth ${depth}`, 'bestmove', (infoResponse) => {
-                if (infoResponse.startsWith('info ') && infoCallback) {
-                    infoCallback(new Info(infoResponse, fenFromMoves(moves, startpos)));
-                }
-            }, (bestmoveResponse) => {
-                const bestMove = new BestMove(bestmoveResponse);
-                resolve({ bestMove });
-                if (bestMoveCallback) {
-                    bestMoveCallback(bestMove);
-                }
-            });
-        });
-    }
-
-    async analyzeGame(moves = [], depth = 32) {
-        const resultPromises = [];
-        let currentMoves = [];
-
-        // Initial position
-        resultPromises.push(this._analyzePosition("startpos", currentMoves.slice(), depth, true));
-
-        for (const move of moves) {
-            currentMoves.push(move_to_uci(move));
-            resultPromises.push(this._analyzePosition("startpos", currentMoves.slice(), depth, false));
+    async _analyzePosition(startpos = "startpos", moves = [], depth = 32, infoCallback = null) {
+        let cacheHash = `${startpos}${moves.map(move => move.san).join('')}${depth}`;
+        let cacheHit = this.analyzeCache[cacheHash];
+        if (cacheHit) {
+            if (cacheHit.latestInfo && infoCallback) {
+                infoCallback(cacheHit.latestInfo);
+            }
+            if (infoCallback && cacheHit.callbacks != null) {
+                this.analyzeCache[cacheHash].callbacks.push(infoCallback);
+            }
+            return this.analyzeCache[cacheHash].promise;
         }
 
-        return Promise.all(resultPromises);
+        let resolve, reject;
+        let promise = new Promise((res, rej) => {
+            resolve = res;
+            reject = rej;
+        });
+
+        let job = { callbacks: infoCallback ? [infoCallback] : [], promise: promise, latestInfo: null };
+        this.analyzeCache[cacheHash] = job;
+
+        await this._stop();
+        await this._position(startpos, moves);
+
+        this._postMessage(`go depth ${depth}`, 'bestmove', (infoResponse) => {
+            if (infoResponse.startsWith('info depth ')) {
+                job.latestInfo = new Info(infoResponse, fenFromMoves(moves, startpos));
+                for (const callback of job.callbacks) {
+                    callback(job.latestInfo);
+                }
+            }
+        }, (bestmoveResponse) => {
+            if (job.latestInfo && (job.latestInfo.depth == depth || job.latestInfo.score.type === 'mate')) {
+                // Cache the result
+                job.callbacks = null;
+                resolve(job.latestInfo);
+            }
+            else {
+                reject(`Analysis did not reach desired depth(${depth}): ${job.latestInfo.depth}`);
+            }
+        });
+
+        return job.promise;
+    }
+
+    analyzePosition(fen = "startpos", moves = [], depth = 32, analysisCallback) {
+        return this.queue.enqueue(async () => {
+            return this._analyzePosition(fen, moves, depth,
+                (info) => {
+                    analysisCallback(info);
+                });
+        });
     }
 
     _startNewGame() {
@@ -148,7 +170,7 @@ export class StockfishEngine {
                             fen: info.fen,
                             lastMove: lastMove,
                         });
-                    }, null);
+                    });
             });
 
             promises.push(promise);
@@ -244,14 +266,14 @@ class Info {
         if (pvi >= 0 && pvi + 1 < tokens.length) {
             this.pv = tokens.slice(pvi + 1);
         }
-
+        console.log('INFO:', this);
         [this.winProbabilityWhite, this.winProbabilityBlack] = this._getScoreProbability();
     }
 
     _getScoreProbability() {
         let value = 0;
         if (this.score.value == null || !Number.isFinite(this.score.value)) {
-            console.warn('Info: Invalid score value for probability calculation:', this.score.value);
+            console.warn('Info: Invalid score value for probability calculation:', this.score);
             value = 0;
         } else if (this.score.type === 'cp') {
             value = this.score.value;
